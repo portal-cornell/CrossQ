@@ -33,6 +33,7 @@ parser.add_argument("-env",         type=str, required=False, default="HumanoidS
 parser.add_argument("-algo",        type=str, required=False, default='sac', choices=['crossq', 'sac', 'redq', 'droq', 'td3'], help="critic activation function")
 parser.add_argument("-seed",        type=int, required=False, default=1, help="Set Seed.")
 parser.add_argument("-log_freq",    type=int, required=False, default=300, help="how many times to log during training")
+parser.add_argument("-model_save_freq",   type=int, required=False, default=1e6, help="frequency to save the model")
 
 parser.add_argument('-wandb_project', type=str, required=False, default='crossQ', help='wandb project name')
 parser.add_argument("-wandb_mode",    type=str, required=False, default='disabled', choices=['disabled', 'online'], help="enable/disable wandb logging")
@@ -43,7 +44,7 @@ parser.add_argument("-bn",                type=float, required=False, default=Fa
 parser.add_argument("-bn_momentum",       type=float, required=False, default=0.99, help="batch norm momentum parameter")
 parser.add_argument("-bn_mode",           type=str,   required=False, default='brn_actor', help="batch norm mode (bn or brn)")
 parser.add_argument("-critic_activation", type=str,   required=False, default='relu', help="critic activation function")
-parser.add_argument("-crossq_style",      type=float, required=False, default=1,choices=[0,1], help="crossq style joint forward pass through critic network")
+parser.add_argument("-crossq_style",      type=float, required=False, defaul=1,choices=[0,1], help="crossq style joint forward pass through critic network")
 parser.add_argument("-dropout",           type=int,   required=False, default=0, choices=[0,1], help="whether to use dropout for SAC")
 parser.add_argument("-ln",                type=float, required=False, default=False, choices=[0,1], help="layernorm in critic network")
 parser.add_argument("-lr",                type=float, required=False, default=1e-3, help="actor and critic learning rate")
@@ -143,23 +144,26 @@ args_dict.update({
 })
 
 with wandb.init(
-    entity='your_entity',
+    # entity='your_entity',
     project=args.wandb_project,
     name=f"seed={seed}",
     group=group,
     tags=[],
     sync_tensorboard=True,
     config=args_dict,
-    settings=wandb.Settings(start_method="fork") if is_slurm_job() else None,
+    # setting="spawn"
+    # settings=wandb.Settings(start_method="fork") if is_slurm_job() else None,
     mode=args.wandb_mode
 ) as wandb_run:
     
     # SLURM maintainance
-    if is_slurm_job():
-        print(f"SLURM_JOB_ID: {os.environ.get('SLURM_JOB_ID')}")
-        wandb_run.summary['SLURM_JOB_ID'] = os.environ.get('SLURM_JOB_ID')
+    # if is_slurm_job():
+    #     print(f"SLURM_JOB_ID: {os.environ.get('SLURM_JOB_ID')}")
+    #     wandb_run.summary['SLURM_JOB_ID'] = os.environ.get('SLURM_JOB_ID')
 
-    training_env = gym.make(args.env)
+    # training_env = gym.make(args.env)
+
+    training_env = SubprocVecEnv([lambda: gym.make(args.env) for i in range(8)], start_method="spawn")
 
     if args.env == 'dm_control/humanoid-stand':
         training_env.observation_space['head_height'] = gym.spaces.Box(-np.inf, np.inf, (1,))
@@ -206,8 +210,10 @@ with wandb.init(
     # Create log dir where evaluation results will be saved
     eval_log_dir = f"./eval_logs/{group + 'seed=' + str(seed) + '_time=' + str(experiment_time)}/eval/"
     qbias_log_dir = f"./eval_logs/{group + 'seed=' + str(seed) + '_time=' + str(experiment_time)}/qbias/"
+    checkpoint_dir = f"./checkpoints/{group + 'seed=' + str(seed) + '_time=' + str(experiment_time)}/"
     os.makedirs(eval_log_dir, exist_ok=True)
     os.makedirs(qbias_log_dir, exist_ok=True)
+    os.makedirs(checkpoint_dir, exist_ok=True)
 
     # Create callback that evaluates agent
     eval_callback = EvalCallback(
@@ -227,8 +233,16 @@ with wandb.init(
         n_eval_episodes=1, render=False
     )
 
+    wandb_callback = WandbCallback(
+        model_save_path=str(checkpoint_dir),
+        model_save_freq=args.model_save_freq,
+        verbose=2,
+    )
+
     callback_list = CallbackList(
-        [eval_callback, q_bias_callback, WandbCallback(verbose=0,)] if args.eval_qbias else 
-        [eval_callback, WandbCallback(verbose=0,)]
+        [eval_callback, q_bias_callback] if args.eval_qbias else 
+        [eval_callback]
     )
     model.learn(total_timesteps=total_timesteps, progress_bar=True, callback=callback_list)
+
+    model.save(str(os.path.join(checkpoint_dir, "final_model")))
