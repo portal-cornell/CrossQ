@@ -54,3 +54,4 @@ wandb/
 *.png
 *.pdf
 /checkpoints
+/train_logs
