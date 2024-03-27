@@ -13,8 +13,8 @@ RENDER_DIM = {
 def get_make_env(
     env_name: str,
     *,
+    seed: int,
     render_mode: str = "rgb_array",
-    seed:int,
     **kwargs,
 ) -> Callable:
     def make_env_wrapper() -> gymnasium.Env:
@@ -24,10 +24,7 @@ def get_make_env(
             render_mode=render_mode,
             **kwargs,
         )
-
-        env.reset(seed=seed)
         return Monitor(env)
-        # return env
     
     set_random_seed(seed)
     return make_env_wrapper

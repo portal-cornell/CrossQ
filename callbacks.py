@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional
 
 import gymnasium
 import torch as th
+import numpy as np
 from numpy import array
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.callbacks import (
@@ -12,6 +13,27 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.logger import Video
 from wandb.integration.sb3 import WandbCallback as SB3WandbCallback
 from stable_baselines3.common.base_class import BaseAlgorithm
+
+from PIL import Image, ImageDraw, ImageFont
+from numbers import Number
+
+def plot_info_on_frame(pil_image, info, font_size=20):
+    # TODO: this is a hard-coded path
+    font = ImageFont.truetype("/share/portal/hw575/vlmrm/src/vlmrm/cli/arial.ttf", font_size)
+    draw = ImageDraw.Draw(pil_image)
+
+    x = font_size  # X position of the text
+    y = pil_image.height - font_size  # Beginning of the y position of the text
+    
+    i = 0
+    for k in info:
+        # TODO: This is pretty ugly
+        if isinstance(info[k], Number) and "TimeLimit" not in k:
+            reward_text = f"{k}:{info[k]:.2f}"
+            # Plot the text from bottom to top
+            text_position = (x, y - 30*(i+1))
+            draw.text(text_position, reward_text, fill=(255, 255, 255), font=font)
+        i += 1
 
 
 class VideoRecorderCallback(BaseCallback):
@@ -53,8 +75,15 @@ class VideoRecorderCallback(BaseCallback):
                  callback's scope
                 """
                 screen = self._eval_env.render()
+
+                image = np.uint8(screen)
+                pil_image = Image.fromarray(image)
+                info = _locals.get('info', {})
+
+                plot_info_on_frame(pil_image, info)
+
                 # PyTorch uses CxHxW vs HxWxC gym (and tensorflow) image convention
-                screens.append(screen.transpose(2, 0, 1))
+                screens.append(np.uint8(pil_image).transpose(2, 0, 1))
 
             evaluate_policy(
                 self.model,
@@ -63,6 +92,7 @@ class VideoRecorderCallback(BaseCallback):
                 n_eval_episodes=self._n_eval_episodes,
                 deterministic=self._deterministic,
             )
+
             self.logger.record(
                 "trajectory/video",
                 Video(th.ByteTensor(array([screens])), fps=40),

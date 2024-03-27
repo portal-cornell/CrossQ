@@ -33,6 +33,7 @@ os.environ["NVIDIA_DRIVER_CAPABILITIES"] = "compute,graphics,utility,video"
 os.environ["MUJOCO_GL"] = "egl"
 os.environ["PYOPENGL_PLATFORM"] = "egl"
 os.environ["EGL_PLATFORM"] = "device"
+os.environ["WANDB_DIR"] = "/share/portal/hw575/CrossQ/wandb"
 
 if __name__ == "__main__":
     os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
@@ -162,11 +163,14 @@ if __name__ == "__main__":
         "layer_norm": layer_norm
     })
 
+
     make_env_kwargs = dict(
-        max_episode_steps = args.episode_length
+        # max_episode_steps = args.episode_length
+        episode_length = args.episode_length
     )
 
     training_env = SubprocVecEnv([get_make_env(args.env, seed=seed+i, **make_env_kwargs) for i in range(args.num_envs)], start_method="spawn")
+
 
     if args.env == 'dm_control/humanoid-stand':
         training_env.observation_space['head_height'] = gym.spaces.Box(-np.inf, np.inf, (1,))
@@ -253,7 +257,7 @@ if __name__ == "__main__":
         )
 
         video_callback = VideoRecorderCallback(
-            eval_env=get_make_env(args.env, seed=seed, **make_env_kwargs)(),
+            eval_env=get_make_env(args.env, seed=seed, episode_length=args.episode_length)(),
             render_freq=args.video_save_freq // args.num_envs,
         )
 
