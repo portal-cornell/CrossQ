@@ -14,6 +14,7 @@ from sbx import SAC
 
 from utils import get_run_hash, set_egl_env_vars
 from envs.base import get_make_env
+from envs.mujoco.humanoid_standup_curriculum import REWARD_FN_MAPPING
 
 
 def plot_info_on_frame(pil_image, info, font_size=20):
@@ -60,9 +61,15 @@ def generate_dataset(args):
     print(f"Generating dataset in {inference_log_dir} ...")
 
     # Initialize the environment
-    make_env_kwargs = dict(
-        episode_length = args.episode_length
-    )
+    if "Curriculum" in args.env:
+        make_env_kwargs = dict(
+            episode_length = args.episode_length,
+            reward_type = args.reward_type
+        )
+    else:
+        make_env_kwargs = dict(
+            max_episode_steps = args.episode_length
+        )
 
     make_env_fn = get_make_env(args.env, seed=args.seed, **make_env_kwargs)
     env = make_env_fn()
@@ -118,13 +125,15 @@ def generate_dataset(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-env",         type=str, required=False, default="HumanoidStandup-v4", help="Set Environment.")
+    parser.add_argument("-reward_type", type=str, required=False, default="original", choices=list(REWARD_FN_MAPPING.keys()), help='Type of rewards to use')
+    
     parser.add_argument("-seed",        type=int, required=False, default=1, help="Set Seed.")
-
+    
     parser.add_argument("-n_rollouts",        type=int, required=False, default=1, help="Number of rollouts / videos to generate.")
     parser.add_argument("-video_base_name",        type=str, required=False, default="standing_up", help="Name of the video when we just generate one video")
     
-    parser.add_argument("-model_checkpoint",  type=str, required=True, help="Model checkpoint zip file name (without .zip).")
-    parser.add_argument("-model_base_path",        type=str, required=False, default=1, help="Folder to all the checkpoints in a run.")
+    parser.add_argument("-model_checkpoint",  type=str, required=False, default="final_model", help="Model checkpoint zip file name (without .zip).")
+    parser.add_argument("-model_base_path",        type=str, required=True, help="Folder to all the checkpoints in a run.")
 
     parser.add_argument("-episode_length",   type=int,   required=False, default=240, help="maximum timestep in an episode")
 

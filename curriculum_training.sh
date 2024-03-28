@@ -1,0 +1,13 @@
+python train.py \
+    -algo crossq \
+    -env HumanoidStandupCurriculum \
+    -reward_type stage1 \
+    -num_envs 8 \
+    -seed 9 \
+    -wandb_mode 'online' \
+    -total_timesteps=1000000 \
+    -model_save_freq=100000 \
+    -video_save_freq=50000 \
+    -episode_length=240 \
+    -model_checkpoint final_model \
+    -model_base_path /share/portal/hw575/CrossQ/train_logs/CrossQ_HumanoidStandupCurriculum_name=HumanoidStandupCurriculum_s=9_stage=0_r=stage0_2024-03-28_00-06-49__fef520ed/checkpoint \

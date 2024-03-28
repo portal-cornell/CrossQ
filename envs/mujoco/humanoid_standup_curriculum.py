@@ -17,6 +17,7 @@ DEFAULT_CAMERA_CONFIG = {
 }
 
 
+
 class HumanoidStandupCurriculum(GymHumanoidStandupEnv):
     # TODO: add init that takes in an stage indicator
     #   in this init, let's define a mapping from stage indicator to reward function
@@ -25,6 +26,7 @@ class HumanoidStandupCurriculum(GymHumanoidStandupEnv):
     def __init__(
         self, 
         episode_length=240, 
+        reward_type="original",
         render_mode = "rgb_array",
         **kwargs,
     ):
@@ -45,11 +47,14 @@ class HumanoidStandupCurriculum(GymHumanoidStandupEnv):
         self.episode_length = episode_length
         self.num_steps = 0
 
+        assert reward_type in REWARD_FN_MAPPING.keys()
+        self.reward_fn = REWARD_FN_MAPPING[reward_type]
+
 
     def step(self, action) -> Tuple[NDArray, float, bool, bool, Dict]:
         obs, _, terminated, truncated, _ = super().step(action)
 
-        reward, info = reward_stage0(self.data, timestep=self.model.opt.timestep)
+        reward, info = self.reward_fn(self.data, timestep=self.model.opt.timestep)
 
         self.num_steps += 1
         terminated = self.num_steps >= self.episode_length
@@ -142,8 +147,10 @@ def reward_stage1(data, **kwargs):
         fabv=f"{feet_above_com_cost:.2f}",
         fdist=f"{feet_dist_cost:.2f}",
         sat=f"{is_sitting_up(data):.2f}",
-        fmid=dist_info["feet_midpt"],
-        dist=dist_info["dist"],
+        # fmid=dist_info["feet_midpt"],
+        fmid_d=dist_info["feet_midpt_dist"],
+        ftR_d=dist_info["right_foot_dist"],
+        ftL_d=dist_info["left_foot_dist"],
         com=str([f"{data.qpos.flat[:3][i]:.2f}" for i in range(3)]),
         ftR=str([f"{data.geom_xpos[8][i]:.2f}" for i in range(3)]),
         ftL=str([f"{data.geom_xpos[11][i]:.2f}" for i in range(3)]),
@@ -201,6 +208,7 @@ def is_sitting_up(data):
     com_z = data.qpos[2]
     return np.abs(com_z - SITUP_HEIGHT) < SITUP_TOLERANCE
 
+
 def dist_btw_com_and_feet_cost(data, timestep):
     """Penalising the cost between the distance between the center of mass and feet
     """
@@ -210,14 +218,25 @@ def dist_btw_com_and_feet_cost(data, timestep):
 
     feet_midpt = np.array([(left_foot_xy[0]-right_foot_xy[0])/2.0, (left_foot_xy[1]-right_foot_xy[1])/2.0])
 
-    dist = np.sqrt(np.sum((com_xy - feet_midpt)**2))
+    left_foot_dist = np.sqrt(np.sum((com_xy - left_foot_xy)**2))
+    right_foot_dist = np.sqrt(np.sum((com_xy - right_foot_xy)**2))
+    feet_midpt_dist = np.sqrt(np.sum((com_xy - feet_midpt)**2))
 
     terms_to_plot = dict(
-        feet_midpt = str([f"{feet_midpt[i]:.2f}" for i in range(len(feet_midpt))]),
-        dist = f"{dist:.2f}"
+        # feet_midpt = str([f"{feet_midpt[i]:.2f}" for i in range(len(feet_midpt))]),
+        feet_midpt_dist = f"{feet_midpt_dist:.2f}",
+        left_foot_dist = f"{left_foot_dist:.2f}",
+        right_foot_dist = f"{right_foot_dist:.2f}",
     )
 
     # TODO: Remove debugging terms to plot
     # return dist / timestep, terms_to_plot
-    scale = 40
-    return min(dist * scale, scale), terms_to_plot
+    scale = 15
+    return min(scale * (left_foot_dist + right_foot_dist + feet_midpt_dist), scale*3), terms_to_plot
+
+
+REWARD_FN_MAPPING = dict(
+        original = reward_original,
+        stage0 = reward_stage0,
+        stage1 = reward_stage1
+    )

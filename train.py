@@ -26,6 +26,8 @@ from shimmy.registration import DM_CONTROL_SUITE_ENVS
 
 from utils import get_run_hash
 from envs.base import get_make_env
+from envs.mujoco.humanoid_standup_curriculum import REWARD_FN_MAPPING
+
 from callbacks import VideoRecorderCallback, WandbCallback
 
 os.environ["NVIDIA_VISIBLE_DEVICES"] = "all"
@@ -44,6 +46,9 @@ if __name__ == "__main__":
     parser.add_argument("-seed",        type=int, required=False, default=1, help="Set Seed.")
     parser.add_argument("-num_envs",     type=int, required=False, default=1, help="Set up multiple env (one per cpu)")
 
+    parser.add_argument("-model_checkpoint",  type=str, required=False, default="final_model", help="Model checkpoint zip file name (without .zip).")
+    parser.add_argument("-model_base_path",        type=str, required=False, default="", help="Folder to all the checkpoints in a run.")
+
     parser.add_argument("-log_freq",    type=int, required=False, default=300, help="how many times to log during training")
     parser.add_argument("-model_save_freq",   type=int, required=False, default=1e6, help="frequency to save the model")
     parser.add_argument("-video_save_freq",   type=int, required=False, default=1e6, help="frequency to save the model")
@@ -52,6 +57,8 @@ if __name__ == "__main__":
     parser.add_argument("-wandb_mode",    type=str, required=False, default='disabled', choices=['disabled', 'online'], help="enable/disable wandb logging")
     parser.add_argument("-eval_qbias",    type=int, required=False, default=0, choices=[0,1], help="enable/diasble q bias evaluation (expensive)")
 
+    parser.add_argument("-reward_type", type=str, required=False, default="original", choices=list(REWARD_FN_MAPPING.keys()), help='Type of rewards to use')
+    
     parser.add_argument("-adam_b1",           type=float, required=False, default=0.5, help="adam b1 parameter")
     parser.add_argument("-bn",                type=float, required=False, default=False,  choices=[0,1], help="Use batch norm layers in the actor and critic networks")
     parser.add_argument("-bn_momentum",       type=float, required=False, default=0.99, help="batch norm momentum parameter")
@@ -163,10 +170,15 @@ if __name__ == "__main__":
     })
 
 
-    make_env_kwargs = dict(
-        # max_episode_steps = args.episode_length
-        episode_length = args.episode_length
-    )
+    if "Curriculum" in args.env:
+        make_env_kwargs = dict(
+            episode_length = args.episode_length,
+            reward_type = args.reward_type
+        )
+    else:
+        make_env_kwargs = dict(
+            max_episode_steps = args.episode_length
+        )
 
     training_env = SubprocVecEnv([get_make_env(args.env, seed=seed+i, **make_env_kwargs) for i in range(args.num_envs)], start_method="spawn")
 
@@ -176,6 +188,7 @@ if __name__ == "__main__":
         training_env.observation_space['upright'] = gym.spaces.Box(-np.inf, np.inf, (1,))
 
     import optax
+    # Train a model from scatch
     model = SAC(
         "MultiInputPolicy" if isinstance(training_env.observation_space, gym.spaces.Dict) else "MlpPolicy",
         training_env,
@@ -211,6 +224,12 @@ if __name__ == "__main__":
         stats_window_size=1,  # don't smooth the episode return stats over time
         tensorboard_log=f"train_logs/{group + '_name=' + run_name}/",
     )
+    
+    # TODO: Not sure if .load() is better than .set_parameters()
+    if args.model_base_path:
+        checkpoint_path = os.path.join(args.model_base_path, args.model_checkpoint)
+        print(f"Loading parameters from checkpoint: {checkpoint_path}")
+        model.set_parameters(checkpoint_path)
 
     # Create log dir where evaluation results will be saved
     eval_log_dir = f"./eval_logs/{group + '_name=' + run_name}/eval/"
@@ -232,6 +251,7 @@ if __name__ == "__main__":
     ) as wandb_run:
         # Create callback that evaluates agent
         eval_callback = EvalCallback(
+            # TODO: this does not actually match the train env, so far the default value makes it ok
             make_vec_env(args.env, n_envs=1, seed=seed, vec_env_cls=SubprocVecEnv),
             jax_random_key_for_seeds=args.seed,
             best_model_save_path=None,
@@ -255,7 +275,7 @@ if __name__ == "__main__":
         )
 
         video_callback = VideoRecorderCallback(
-            eval_env=get_make_env(args.env, seed=seed, episode_length=args.episode_length)(),
+            eval_env=get_make_env(args.env, seed=seed, **make_env_kwargs)(),
             render_freq=args.video_save_freq // args.num_envs,
         )
 
