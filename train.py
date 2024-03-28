@@ -33,11 +33,10 @@ os.environ["NVIDIA_DRIVER_CAPABILITIES"] = "compute,graphics,utility,video"
 os.environ["MUJOCO_GL"] = "egl"
 os.environ["PYOPENGL_PLATFORM"] = "egl"
 os.environ["EGL_PLATFORM"] = "device"
-os.environ["WANDB_DIR"] = "/share/portal/hw575/CrossQ/wandb"
+os.environ["WANDB_DIR"] = "/share/portal/hw575/CrossQ/"
 
 if __name__ == "__main__":
     os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
-    os.environ['WANDB_DIR'] = '/tmp'
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-env",         type=str, required=False, default="HumanoidStandup-v4", help="Set Environment.")
@@ -170,7 +169,6 @@ if __name__ == "__main__":
     )
 
     training_env = SubprocVecEnv([get_make_env(args.env, seed=seed+i, **make_env_kwargs) for i in range(args.num_envs)], start_method="spawn")
-
 
     if args.env == 'dm_control/humanoid-stand':
         training_env.observation_space['head_height'] = gym.spaces.Box(-np.inf, np.inf, (1,))

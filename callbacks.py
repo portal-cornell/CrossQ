@@ -28,8 +28,8 @@ def plot_info_on_frame(pil_image, info, font_size=20):
     i = 0
     for k in info:
         # TODO: This is pretty ugly
-        if isinstance(info[k], Number) and "TimeLimit" not in k:
-            reward_text = f"{k}:{info[k]:.2f}"
+        if "TimeLimit" not in k:
+            reward_text = f"{k}:{info[k]}"
             # Plot the text from bottom to top
             text_position = (x, y - 30*(i+1))
             draw.text(text_position, reward_text, fill=(255, 255, 255), font=font)
