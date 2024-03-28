@@ -55,3 +55,4 @@ wandb/
 *.pdf
 /checkpoints
 /train_logs
+/inference_logs
