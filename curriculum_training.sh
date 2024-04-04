@@ -1,7 +1,7 @@
 python train.py \
     -algo crossq \
     -env HumanoidStandupCurriculum \
-    -reward_type stage1 \
+    -reward_type stage1_v1 \
     -num_envs 8 \
     -seed 9 \
     -wandb_mode 'online' \
