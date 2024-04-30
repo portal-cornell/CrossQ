@@ -7,7 +7,7 @@ from gymnasium.envs.mujoco import MujocoEnv
 from gymnasium.envs.mujoco.humanoidstandup_v4 import HumanoidStandupEnv as GymHumanoidStandupEnv
 from gymnasium.spaces import Box
 from numpy.typing import NDArray
-
+from envs.mujoco.reward_helpers_humanoid_standup import *
 
 DEFAULT_CAMERA_CONFIG = {
     "trackbodyid": 1,
@@ -17,28 +17,31 @@ DEFAULT_CAMERA_CONFIG = {
 }
 
 
-
 class HumanoidStandupCurriculum(GymHumanoidStandupEnv):
-    # TODO: add init that takes in an stage indicator
-    #   in this init, let's define a mapping from stage indicator to reward function
-
-    # TODO: reward function for sit up
     def __init__(
         self, 
         episode_length=240, 
         reward_type="original",
         render_mode = "rgb_array",
+        camera_config: Optional[Dict[str, Any]] = DEFAULT_CAMERA_CONFIG,
+        textured: bool = False,
         **kwargs,
     ):
         observation_space = Box(
             low=-np.inf, high=np.inf, shape=(376,), dtype=np.float64
         )
+        env_file_name = None
+        if textured:
+            env_file_name = "humanoidstandup_textured.xml"
+        else:
+            env_file_name = "humanoidstandup.xml"
+        model_path = str(pathlib.Path(__file__).parent / env_file_name)
         MujocoEnv.__init__(
             self,
-            "humanoidstandup.xml",
+            model_path,
             5,
             observation_space=observation_space,
-            default_camera_config=DEFAULT_CAMERA_CONFIG,
+            default_camera_config=camera_config,
             render_mode=render_mode,
             **kwargs,
         )
@@ -49,6 +52,9 @@ class HumanoidStandupCurriculum(GymHumanoidStandupEnv):
 
         assert reward_type in REWARD_FN_MAPPING.keys()
         self.reward_fn = REWARD_FN_MAPPING[reward_type]
+
+        if textured:
+            self.camera_id = -1
 
 
     def step(self, action) -> Tuple[NDArray, float, bool, bool, Dict]:
@@ -92,6 +98,326 @@ def reward_original(data, **kwargs):
     
     return reward, terms_to_plot
 
+
+def reward_tassa_mpc(data, **kwargs):
+    """Reward described in https://ieeexplore.ieee.org/document/6386025
+    """
+    original_mujoco_reward, _ = reward_original(data, **kwargs)
+
+    ## All three terms use the smooth-abs norm (Figure 2).
+
+    # penalizes the horizontal distance (in the xy-plane) between
+    # the center-of-mass (CoM) and the mean of the feet positions.
+    com_and_mean_feet_dist_cost, info = hori_dist_btw_com_and_mean_feet(data)
+    com_and_mean_feet_dist_cost_w = 10
+
+    # penalizes the horizontal distance between
+    # the torso and the CoM
+    torso_and_com_dist_cost = hori_dist_btw_com_and_torso(data)
+    torso_and_com_dist_cost_w = 1
+
+    # penalizes the vertical
+    # distance between the torso and a point 1.3m over the mean of
+    # the feet.
+    torso_and_standing_cost = vert_dist_btw_torso_and_standing_height(data)
+    torso_and_standing_cost_w = 100
+
+    # quadratic penalty on the horizontal COM velocity
+    com_vel_cost = hori_com_vel_cost(data)
+    com_vel_cost_w = 0.05
+
+    reward = - com_and_mean_feet_dist_cost_w * com_and_mean_feet_dist_cost - torso_and_com_dist_cost_w * torso_and_com_dist_cost - torso_and_standing_cost_w * torso_and_standing_cost - com_vel_cost_w * com_vel_cost
+
+    terms_to_plot = dict(
+        ctrl=f"{com_vel_cost:.2f}",
+        uph=f"{torso_and_standing_cost:.2f}",
+        ctor=f"{torso_and_com_dist_cost:.2f}",
+        cft=f"{com_and_mean_feet_dist_cost:.2f}",
+        vel=str([f"{data.qvel.flat[:3][i]:.2f}" for i in range(3)]),
+        ft=info['feet_midpt'],
+        tor=str([f"{data.qpos.flat[:3][i]:.2f}" for i in range(3)]),
+        com=str([f"{data.xipos[1][i]:.2f}" for i in range(3)]),
+        r=f"{reward:.2f}",
+        og_r=f"{original_mujoco_reward:.2f}",
+    )
+    
+    return reward, terms_to_plot
+
+
+def reward_tassa_mpc_with_upward_reward(data, **kwargs):
+    """Reward described in https://ieeexplore.ieee.org/document/6386025
+    """
+    timestep = kwargs.get('timestep', None)
+    original_mujoco_reward, _ = reward_original(data, **kwargs)
+
+    ## All three terms use the smooth-abs norm (Figure 2).
+
+    # penalizes the horizontal distance (in the xy-plane) between
+    # the center-of-mass (CoM) and the mean of the feet positions.
+    com_and_mean_feet_dist_cost, info = hori_dist_btw_com_and_mean_feet_no_smooth_abs(data)
+    com_and_mean_feet_dist_cost_w = 100
+
+    # penalizes the horizontal distance between
+    # the torso and the CoM
+    torso_and_com_dist_cost = hori_dist_btw_com_and_torso_no_smooth_abs(data)
+    torso_and_com_dist_cost_w = 1
+    
+    # provide an upward reward
+    uph_reward = upward_reward(data, timestep)
+    uph_reward_w = 1
+
+    # quadratic penalty on the horizontal COM velocity
+    com_vel_cost = hori_com_vel_cost(data)
+    com_vel_cost_w = 0.05
+
+    reward = uph_reward_w * uph_reward - com_and_mean_feet_dist_cost_w * com_and_mean_feet_dist_cost - torso_and_com_dist_cost_w * torso_and_com_dist_cost - com_vel_cost_w * com_vel_cost + 1
+
+    terms_to_plot = dict(
+        ogctrl=f"{control_cost(data):.2f}",
+        ctrl=f"{com_vel_cost:.2f}",
+        uph=f"{uph_reward:.2f}",
+        ctor=f"{torso_and_com_dist_cost:.2f}",
+        cft=f"{com_and_mean_feet_dist_cost:.2f}",
+        vel=str([f"{data.qvel.flat[:3][i]:.2f}" for i in range(3)]),
+        ft=info['feet_midpt'],
+        tor=str([f"{data.qpos.flat[:3][i]:.2f}" for i in range(3)]),
+        com=str([f"{data.xipos[1][i]:.2f}" for i in range(3)]),
+        r=f"{reward:.2f}",
+        og_r=f"{original_mujoco_reward:.2f}",
+    )
+    
+    return reward, terms_to_plot
+
+
+def reward_tassa_mpc_with_upward_reward_each_feet_dist(data, **kwargs):
+    """Reward described in https://ieeexplore.ieee.org/document/6386025
+    """
+    timestep = kwargs.get('timestep', None)
+    original_mujoco_reward, _ = reward_original(data, **kwargs)
+
+    ## All three terms use the smooth-abs norm (Figure 2).
+
+    # penalizes the horizontal distance (in the xy-plane) between
+    # the center-of-mass (CoM) and the mean of the feet positions.
+    com_and_left_foot_dist_cost, com_and_right_foot_dist_cost, info = hori_dist_btw_com_and_feet_no_smooth_abs(data)
+    com_and_feet_dist_cost_w = 100
+
+    # penalizes the horizontal distance between
+    # the torso and the CoM
+    torso_and_com_dist_cost = hori_dist_btw_com_and_torso_no_smooth_abs(data)
+    torso_and_com_dist_cost_w = 1
+    
+    # provide an upward reward
+    uph_reward = upward_reward(data, timestep)
+    uph_reward_w = 1
+
+    # quadratic penalty on the horizontal COM velocity
+    com_vel_cost = hori_com_vel_cost(data)
+    com_vel_cost_w = 0.05
+
+    reward = uph_reward_w * uph_reward \
+                - com_and_feet_dist_cost_w * (com_and_left_foot_dist_cost + com_and_right_foot_dist_cost) \
+                - torso_and_com_dist_cost_w * torso_and_com_dist_cost \
+                - com_vel_cost_w * com_vel_cost \
+                + 1
+
+    terms_to_plot = dict(
+        ogctrl=f"{control_cost(data):.2f}",
+        ctrl=f"{com_vel_cost:.2f}",
+        uph=f"{uph_reward:.2f}",
+        ctor=f"{torso_and_com_dist_cost:.2f}",
+        cLft=f"{com_and_left_foot_dist_cost:.2f}",
+        cRft=f"{com_and_right_foot_dist_cost:.2f}",
+        vel=str([f"{data.qvel.flat[:3][i]:.2f}" for i in range(3)]),
+        Rft=info['right_foot_xy'],
+        Lft=info['left_foot_xy'],
+        tor=str([f"{data.qpos.flat[:3][i]:.2f}" for i in range(3)]),
+        com=str([f"{data.xipos[1][i]:.2f}" for i in range(3)]),
+        r=f"{reward:.2f}",
+        og_r=f"{original_mujoco_reward:.2f}",
+    )
+    
+    return reward, terms_to_plot
+
+
+def reward_tassa_mpc_with_upward_reward_each_feet_dist_bottom_up(data, **kwargs):
+    """Reward described in https://ieeexplore.ieee.org/document/6386025
+    """
+    timestep = kwargs.get('timestep', None)
+    original_mujoco_reward, _ = reward_original(data, **kwargs)
+
+    ## All three terms use the smooth-abs norm (Figure 2).
+
+    # penalizes the horizontal distance (in the xy-plane) between
+    # the center-of-mass (CoM) and the mean of the feet positions.
+    com_and_left_foot_dist_cost, com_and_right_foot_dist_cost, info = hori_dist_btw_com_and_feet_no_smooth_abs(data)
+    com_and_feet_dist_cost_w = 100
+
+    # provide an reward for distance between the legs and bottom
+    bottom_and_left_foot_dist_r, bottom_and_right_foot_dist_r, bottom_info = vert_dist_btw_bottom_and_feet(data)
+    bottom_and_feet_dist_r_w = 50
+    
+    # penalizes the horizontal distance between
+    # the torso and the CoM
+    torso_and_com_dist_cost = hori_dist_btw_com_and_torso_no_smooth_abs(data)
+    torso_and_com_dist_cost_w = 1
+    
+    # provide an upward reward
+    uph_reward = upward_reward(data, timestep)
+    uph_reward_w = 1
+
+    # quadratic penalty on the horizontal COM velocity
+    com_vel_cost = hori_com_vel_cost(data)
+    com_vel_cost_w = 0.05
+
+    reward = uph_reward_w * uph_reward \
+                + bottom_and_feet_dist_r_w * (bottom_and_left_foot_dist_r + bottom_and_right_foot_dist_r) \
+                - com_and_feet_dist_cost_w * (com_and_left_foot_dist_cost + com_and_right_foot_dist_cost) \
+                - torso_and_com_dist_cost_w * torso_and_com_dist_cost \
+                - com_vel_cost_w * com_vel_cost \
+                + 1
+
+    terms_to_plot = dict(
+        ogctrl=f"{control_cost(data):.2f}",
+        ctrl=f"{com_vel_cost:.2f}",
+        uph=f"{uph_reward:.2f}",
+        ctor=f"{torso_and_com_dist_cost:.2f}",
+        cLft=f"{com_and_left_foot_dist_cost:.2f}",
+        cRft=f"{com_and_right_foot_dist_cost:.2f}",
+        cBLft=f"{bottom_and_left_foot_dist_r:.2f}",
+        cBRft=f"{bottom_and_right_foot_dist_r:.2f}",
+        vel=str([f"{data.qvel.flat[:3][i]:.2f}" for i in range(3)]),
+        Rft=info['right_foot_xy'],
+        Lft=info['left_foot_xy'],
+        btm=bottom_info['bottom_z'],
+        tor=str([f"{data.qpos.flat[:3][i]:.2f}" for i in range(3)]),
+        com=str([f"{data.xipos[1][i]:.2f}" for i in range(3)]),
+        r=f"{reward:.2f}",
+        og_r=f"{original_mujoco_reward:.2f}",
+    )
+    
+    return reward, terms_to_plot
+
+def reward_tassa_mpc_with_upward_reward_each_feet_dist_to_torso_bottom_up(data, **kwargs):
+    """Reward described in https://ieeexplore.ieee.org/document/6386025
+    """
+    timestep = kwargs.get('timestep', None)
+    original_mujoco_reward, _ = reward_original(data, **kwargs)
+
+    ## All three terms use the smooth-abs norm (Figure 2).
+
+    # penalizes the horizontal distance (in the xy-plane) between
+    # the center-of-mass (CoM) and the mean of the feet positions.
+    com_and_left_foot_dist_cost, com_and_right_foot_dist_cost, info = hori_dist_btw_torso_and_feet_no_smooth_abs(data)
+    com_and_feet_dist_cost_w = 50
+
+    # provide an reward for distance between the legs and bottom
+    bottom_and_left_foot_dist_r, bottom_and_right_foot_dist_r, bottom_info = vert_dist_btw_bottom_and_feet(data)
+    bottom_and_feet_dist_r_w = 50
+    
+    # penalizes the horizontal distance between
+    # the torso and the CoM
+    torso_and_com_dist_cost = hori_dist_btw_com_and_torso_no_smooth_abs(data)
+    torso_and_com_dist_cost_w = 1
+    
+    # provide an upward reward
+    uph_reward = upward_reward(data, timestep)
+    uph_reward_w = 1
+
+    # quadratic penalty on the horizontal COM velocity
+    com_vel_cost = hori_com_vel_cost(data)
+    com_vel_cost_w = 0.05
+    quad_ctrl_cost = control_cost(data)
+    quad_impact_cost = impact_cost(data)
+
+    reward = uph_reward_w * uph_reward \
+                + bottom_and_feet_dist_r_w * (bottom_and_left_foot_dist_r + bottom_and_right_foot_dist_r) \
+                - com_and_feet_dist_cost_w * (com_and_left_foot_dist_cost + com_and_right_foot_dist_cost) \
+                - torso_and_com_dist_cost_w * torso_and_com_dist_cost \
+                - com_vel_cost_w * com_vel_cost \
+                - quad_ctrl_cost - quad_impact_cost \
+                + 1
+
+    terms_to_plot = dict(
+        ctrl=f"{com_vel_cost:.2f}",
+        uph=f"{uph_reward:.2f}",
+        ctor=f"{torso_and_com_dist_cost:.2f}",
+        cLft=f"{com_and_left_foot_dist_cost:.2f}",
+        cRft=f"{com_and_right_foot_dist_cost:.2f}",
+        cBLft=f"{bottom_and_left_foot_dist_r:.2f}",
+        cBRft=f"{bottom_and_right_foot_dist_r:.2f}",
+        vel=str([f"{data.qvel.flat[:3][i]:.2f}" for i in range(3)]),
+        Rft=info['right_foot_xy'],
+        Lft=info['left_foot_xy'],
+        btm=bottom_info['bottom_z'],
+        tor=str([f"{data.qpos.flat[:3][i]:.2f}" for i in range(3)]),
+        com=str([f"{data.xipos[1][i]:.2f}" for i in range(3)]),
+        r=f"{reward:.2f}",
+        og_r=f"{original_mujoco_reward:.2f}",
+    )
+    
+    return reward, terms_to_plot
+
+
+# From here onwards, tassa mpc that use upward reward + individual feet as reward_tassa_improved
+def reward_tassa_improved_feet_to_circle_bottom_up(data, **kwargs):
+    """Reward described in https://ieeexplore.ieee.org/document/6386025
+    """
+    timestep = kwargs.get('timestep', None)
+    original_mujoco_reward, _ = reward_original(data, **kwargs)
+
+    ## All three terms use the smooth-abs norm (Figure 2).
+
+    # penalizes the horizontal distance (in the xy-plane) between
+    # the center-of-mass (CoM) and the mean of the feet positions.
+    torso_and_left_foot_dist_cost, torso_and_right_foot_dist_cost, com_and_left_foot_dist_cost, com_and_right_foot_dist_cost, info = hori_dist_btw_torso_and_com_circular_range_and_feet_no_smooth_abs(data)
+    torso_and_feet_dist_cost_w = 50
+    com_and_feet_dist_cost_w = 25
+
+    # provide an reward for distance between the legs and bottom
+    bottom_and_left_foot_dist_r, bottom_and_right_foot_dist_r, bottom_info = vert_dist_btw_bottom_and_feet(data)
+    bottom_and_feet_dist_r_w = 50
+    
+    # penalizes the horizontal distance between
+    # the torso and the CoM
+    torso_and_com_dist_cost = hori_dist_btw_com_and_torso_no_smooth_abs(data)
+    torso_and_com_dist_cost_w = 1
+    
+    # provide an upward reward
+    uph_reward = upward_reward(data, timestep)
+    uph_reward_w = 1
+
+    # quadratic penalty on the horizontal COM velocity
+    com_vel_cost = hori_com_vel_cost(data)
+    com_vel_cost_w = 0.05
+
+    reward = uph_reward_w * uph_reward \
+                + bottom_and_feet_dist_r_w * (bottom_and_left_foot_dist_r + bottom_and_right_foot_dist_r) \
+                - torso_and_feet_dist_cost_w * (torso_and_left_foot_dist_cost + torso_and_right_foot_dist_cost) \
+                - com_and_feet_dist_cost_w * (com_and_left_foot_dist_cost + com_and_right_foot_dist_cost) \
+                - torso_and_com_dist_cost_w * torso_and_com_dist_cost \
+                - com_vel_cost_w * com_vel_cost \
+                + 1
+
+    terms_to_plot = dict(
+        ctrl=f"{com_vel_cost:.2f}",
+        uph=f"{uph_reward:.2f}",
+        ctor=f"{torso_and_com_dist_cost:.2f}",
+        cLft=f"{torso_and_left_foot_dist_cost:.2f}, {com_and_left_foot_dist_cost:.2f}",
+        cRft=f"{torso_and_right_foot_dist_cost:.2f}, {com_and_right_foot_dist_cost:.2f}",
+        cBLft=f"{bottom_and_left_foot_dist_r:.2f}",
+        cBRft=f"{bottom_and_right_foot_dist_r:.2f}",
+        # vel=str([f"{data.qvel.flat[:3][i]:.2f}" for i in range(3)]),
+        Rft=info['right_foot_xy'],
+        Lft=info['left_foot_xy'],
+        btm=bottom_info['bottom_z'],
+        tor=str([f"{data.qpos.flat[:3][i]:.2f}" for i in range(3)]),
+        com=str([f"{data.xipos[1][i]:.2f}" for i in range(3)]),
+        r=f"{reward:.2f}",
+        og_r=f"{original_mujoco_reward:.2f}",
+    )
+    
+    return reward, terms_to_plot
 
 def reward_stage0(data, **kwargs):
     """Original reward with cost to prevent feet from going up
@@ -211,109 +537,16 @@ def reward_stage1_v1(data, **kwargs):
 # v2: prevent cross the legs
 
 # stage 3: force the feet to touch the ground?
-
-"""++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-Helper functions
-
-++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"""
-
-SITUP_HEIGHT = 0.5  # From looking at the environment
-SITUP_TOLERANCE = 0.1
-
-def upward_reward(data, timestep):
-    """A reward for moving upward (in an attempt to stand up)
-    """
-    com_z = data.qpos[2]
-    return (com_z - 0) / timestep
-
-
-def control_cost(data):
-    """Penalizing the humanoid if it has too large of a control force.
-    """
-    return 0.1 * np.square(data.ctrl).sum()
-
-
-def impact_cost(data):
-    """Penalizing the humanoid if the external contact force is too large.
-    """
-    quad_impact_cost = 0.5e-6 * np.square(data.cfrc_ext).sum()
-    return min(quad_impact_cost, 10)
-
-
-def feet_are_above_com_cost(data):
-    """Penalizing the cost of putting feet above com
-    """
-    com_z = data.qpos[2]
-    left_foot_z = data.geom_xpos[11][2]
-    right_foot_z = data.geom_xpos[8][2]
-
-    # When the humanoid is resting, upward reward is still about 40
-    #   It will be suboptimal to just keep my feet up in the air (max=0.75) while my com (0.1) is on the ground
-    left_foot_cost = 100 * (left_foot_z > com_z) * (left_foot_z - com_z)
-    right_foot_cost = 100 * (right_foot_z > com_z) * (right_foot_z - com_z)
-    # We want the maximum value to be bad, but not too bad (TODO: tune these values)
-    return min(left_foot_cost + right_foot_cost, 100)
-
-
-def is_sitting_up(data):
-    com_z = data.qpos[2]
-    return np.abs(com_z - SITUP_HEIGHT) < SITUP_TOLERANCE
-
-
-def dist_btw_com_and_feet_cost(data, timestep):
-    """Penalising the cost between the distance between the center of mass and feet
-    """
-    com_xy = data.qpos[:2]
-    left_foot_xy = data.geom_xpos[11][:2]
-    right_foot_xy = data.geom_xpos[8][:2]
-
-    feet_midpt = np.array([(left_foot_xy[0]-right_foot_xy[0])/2.0, (left_foot_xy[1]-right_foot_xy[1])/2.0])
-
-    left_foot_dist = np.sqrt(np.sum((com_xy - left_foot_xy)**2))
-    right_foot_dist = np.sqrt(np.sum((com_xy - right_foot_xy)**2))
-    feet_midpt_dist = np.sqrt(np.sum((com_xy - feet_midpt)**2))
-
-    terms_to_plot = dict(
-        # feet_midpt = str([f"{feet_midpt[i]:.2f}" for i in range(len(feet_midpt))]),
-        feet_midpt_dist = f"{feet_midpt_dist:.2f}",
-        left_foot_dist = f"{left_foot_dist:.2f}",
-        right_foot_dist = f"{right_foot_dist:.2f}",
-    )
-
-    # TODO: Remove debugging terms to plot
-    # return dist / timestep, terms_to_plot
-    scale = 15
-    return min(scale * (left_foot_dist + right_foot_dist + feet_midpt_dist), scale*3), terms_to_plot
-
-def dist_btw_com_and_feet_cost_v1(data, timestep):
-    """Penalising the cost between the distance between the center of mass and feet
-    """
-    com_xy = data.qpos[:2]
-    left_foot_xy = data.geom_xpos[11][:2]
-    right_foot_xy = data.geom_xpos[8][:2]
-
-    feet_midpt = np.array([(left_foot_xy[0]-right_foot_xy[0])/2.0, (left_foot_xy[1]-right_foot_xy[1])/2.0])
-
-    left_foot_dist = np.sqrt(np.sum((com_xy - left_foot_xy)**2))
-    right_foot_dist = np.sqrt(np.sum((com_xy - right_foot_xy)**2))
-    # feet_midpt_dist = np.sqrt(np.sum((com_xy - feet_midpt)**2))
-
-    terms_to_plot = dict(
-        # feet_midpt = str([f"{feet_midpt[i]:.2f}" for i in range(len(feet_midpt))]),
-        # feet_midpt_dist = f"{feet_midpt_dist:.2f}",
-        left_foot_dist = f"{left_foot_dist:.2f}",
-        right_foot_dist = f"{right_foot_dist:.2f}",
-    )
-
-    # TODO: Remove debugging terms to plot
-    # return dist / timestep, terms_to_plot
-    scale = 20
-    return min(scale * (left_foot_dist + right_foot_dist), scale*2), terms_to_plot
-
+    
 
 REWARD_FN_MAPPING = dict(
         original = reward_original,
+        tassa_mpc = reward_tassa_mpc,
+        tassa_mpc_uph = reward_tassa_mpc_with_upward_reward,
+        tassa_mpc_each_feet = reward_tassa_mpc_with_upward_reward_each_feet_dist,
+        tassa_mpc_bottom_up = reward_tassa_mpc_with_upward_reward_each_feet_dist_bottom_up,
+        tassa_mpc_torso_bottom_up = reward_tassa_mpc_with_upward_reward_each_feet_dist_to_torso_bottom_up,
+        tassa_imp_circle_dist = reward_tassa_improved_feet_to_circle_bottom_up,
         stage0 = reward_stage0,
         stage1_v0 = reward_stage1_v0,
         stage1_v1 = reward_stage1_v1,

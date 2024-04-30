@@ -63,9 +63,17 @@ def generate_dataset(args):
     # Initialize the environment
     if "Curriculum" in args.env:
         make_env_kwargs = dict(
-            episode_length = args.episode_length,
-            reward_type = args.reward_type
-        )
+                episode_length = args.episode_length,
+                textured = args.textured,
+                reward_type = args.reward_type
+            )
+        if args.textured:
+            make_env_kwargs["camera_config"] = dict(
+                lookat = [0.5, -1.5, 1.25],  # x, y, z
+                distance = 2.5,  # Distance from the camera to the humanoid
+                azimuth = 90,  # Make camera look at negative x (90 = positive y, 0 = positive x)
+                elevation = -5,  # How high the camera is above ground
+            )
     else:
         make_env_kwargs = dict(
             max_episode_steps = args.episode_length
@@ -136,7 +144,7 @@ if __name__ == "__main__":
     parser.add_argument("-model_base_path",        type=str, required=True, help="Folder to all the checkpoints in a run.")
 
     parser.add_argument("-episode_length",   type=int,   required=False, default=240, help="maximum timestep in an episode")
-
+    parser.add_argument("-textured", type=bool, required=False, default=True, help="True to match the visual to vlmrm")
     args = parser.parse_args()
 
     print(json.dumps(vars(args), indent=4))
