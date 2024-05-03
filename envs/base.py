@@ -13,7 +13,6 @@ RENDER_DIM = {
 def get_make_env(
     env_name: str,
     *,
-    seed: int,
     render_mode: str = "rgb_array",
     **kwargs,
 ) -> Callable:
@@ -26,5 +25,4 @@ def get_make_env(
         )
         return Monitor(env)
     
-    set_random_seed(seed)
     return make_env_wrapper

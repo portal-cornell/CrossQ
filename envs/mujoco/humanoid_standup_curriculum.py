@@ -7,7 +7,7 @@ from gymnasium.envs.mujoco import MujocoEnv
 from gymnasium.envs.mujoco.humanoidstandup_v4 import HumanoidStandupEnv as GymHumanoidStandupEnv
 from gymnasium.spaces import Box
 from numpy.typing import NDArray
-from envs.mujoco.reward_helpers_humanoid_standup import *
+from envs.humanoid.reward_helpers_humanoid_standup import *
 
 DEFAULT_CAMERA_CONFIG = {
     "trackbodyid": 1,
@@ -24,7 +24,7 @@ class HumanoidStandupCurriculum(GymHumanoidStandupEnv):
         reward_type="original",
         render_mode = "rgb_array",
         camera_config: Optional[Dict[str, Any]] = DEFAULT_CAMERA_CONFIG,
-        textured: bool = False,
+        textured: bool = True,
         **kwargs,
     ):
         observation_space = Box(
@@ -92,8 +92,7 @@ def reward_original(data, **kwargs):
         imp=f"{quad_impact_cost:.2f}",
         uph=f"{uph_reward:.2f}",
         com=str([f"{data.qpos.flat[:3][i]:.2f}" for i in range(3)]),
-        r=f"{reward:.2f}",
-        og_r=f"{reward:.2f}",
+        og_r=f"{reward:.2f}"
     )
     
     return reward, terms_to_plot

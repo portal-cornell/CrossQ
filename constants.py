@@ -1,0 +1,1 @@
+WANDB_DIR = "/share/portal/hw575/CrossQ/"

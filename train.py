@@ -6,6 +6,11 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import warnings
 import wandb
 import json
+import yaml
+
+import torch
+from torch import multiprocessing
+import torch.distributed as dist
 
 import numpy as np
 import jax
@@ -15,50 +20,264 @@ import flax.linen as nn
 
 from stable_baselines3.common import type_aliases
 from stable_baselines3.common.callbacks import EvalCallback, CallbackList, BaseCallback
-from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnv, VecMonitor, is_vecenv_wrapped, sync_envs_normalization
-from sbx import SAC
+# from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.vec_env import DummyVecEnv, VecEnv, VecMonitor, is_vecenv_wrapped, sync_envs_normalization
+from sbx import SAC, VLM_SAC
+
+from sbx.common.make_vec_env import make_vec_env
+from sbx.common.subproc_vec_env import SubprocVecEnv
 from sbx.sac.actor_critic_evaluation_callback import CriticBiasCallback, EvalCallback
 from sbx.sac.utils import *
 
 import gymnasium as gym
-from shimmy.registration import DM_CONTROL_SUITE_ENVS
+# from shimmy.registration import DM_CONTROL_SUITE_ENVS
 
-from utils import get_run_hash
+from loguru import logger
+
+import utils
+import multiprocess
 from envs.base import get_make_env
-from envs.mujoco.humanoid_standup_curriculum import REWARD_FN_MAPPING
-
+from sbx.vlm_reward.reward_main import load_reward_model, dist_worker_compute_reward
 from callbacks import VideoRecorderCallback, WandbCallback
+    
 
-os.environ["NVIDIA_VISIBLE_DEVICES"] = "all"
-os.environ["NVIDIA_DRIVER_CAPABILITIES"] = "compute,graphics,utility,video"
-os.environ["MUJOCO_GL"] = "egl"
-os.environ["PYOPENGL_PLATFORM"] = "egl"
-os.environ["EGL_PLATFORM"] = "device"
-os.environ["WANDB_DIR"] = "/share/portal/hw575/CrossQ/"
+# TODO:
+def primary_worker(run_name, args, stop_event: Optional[multiprocessing.Event] = None):
+    """
+    Load the environments
+    Initialize wandb
+    Define policy
+    Define wandb callback fn
+    Start learning
+    Stop event catching
+    """
+    train_log_dir = os.path.join("./train_logs", run_name)
+    logger.add(os.path.join(train_log_dir, "logs.txt"), enqueue=True)
+
+    args, args_dict = utils.get_model_args_dict(args)
+
+    use_vlm_for_reward = utils.vlm_for_reward(args)
+
+    if use_vlm_for_reward or "Curriculum" in args.env:
+        make_env_kwargs = dict(
+            episode_length = args.episode_length,
+            reward_type = args.reward_type
+        )
+    else:
+        make_env_kwargs = dict(
+            max_episode_steps = args.episode_length
+        )
+        
+    logger.info("Creating environment instances")
+    # TODO: Not sure if the thing below still works for vanilla RL
+    # training_env = SubprocVecEnv([get_make_env(args.env, seed=args.seed+i, **make_env_kwargs) for i in range(args.n_envs)], start_method="spawn")
+    make_env_fn = get_make_env(args.env, **make_env_kwargs)
+    training_env = make_vec_env(
+        make_env_fn,
+        n_envs=args.n_envs,
+        seed=args.seed,
+        vec_env_cls=SubprocVecEnv,
+        use_gpu_ids=list(range(args.n_workers)),
+        vec_env_kwargs=dict(render_dim=(args.render_dim[0], args.render_dim[1], 3)),
+    )
+
+    import optax
+
+    logger.info("Creating the learner")
+    # Train a model from scatch
+    sac_class = VLM_SAC if use_vlm_for_reward else SAC
+    model = sac_class(
+        "MultiInputPolicy" if isinstance(training_env.observation_space, gym.spaces.Dict) else "MlpPolicy",
+        args,
+        training_env,
+        policy_kwargs=dict({
+            'activation_fn': activation_fn[args.critic_activation],  # From sbx.sac.utils import *
+            'layer_norm': args_dict["layer_norm"],
+            'batch_norm': bool(args.bn),
+            'batch_norm_momentum': float(args.bn_momentum),
+            'batch_norm_mode': args.bn_mode,
+            'dropout_rate': args_dict["dropout_rate"],
+            'n_critics': args.n_critics,
+            'net_arch': args_dict["net_arch"],
+            'optimizer_class': optax.adam,
+            'optimizer_kwargs': dict({
+                'b1': args.adam_b1,
+                'b2': 0.999 # default
+            })
+        }),
+        gradient_steps=args.utd,
+        policy_delay=args.policy_delay,
+        crossq_style=bool(args.crossq_style),
+        td3_mode=args_dict["td3_mode"],
+        use_bnstats_from_live_net=bool(args.bnstats_live_net),
+        policy_q_reduce_fn=args_dict["policy_q_reduce_fn"],
+        learning_starts=5000,
+        learning_rate=args.lr,
+        qf_learning_rate=args.lr,
+        tau=args.tau,
+        gamma=0.99 if not args.env == 'Swimmer-v4' else 0.9999,
+        verbose=0,
+        buffer_size=1_000_000,
+        seed=args.seed,
+        stats_window_size=1,  # don't smooth the episode return stats over time
+        tensorboard_log=os.path.join("./train_logs", run_name),
+    )
+
+    # TODO: Not sure if .load() is better than .set_parameters()
+    if args.model_base_path:
+        existing_checkpoint_path = os.path.join(args.model_base_path, args.model_checkpoint)
+        logger.info(f"Loading parameters from checkpoint: {existing_checkpoint_path}")
+        model.set_parameters(existing_checkpoint_path)
+
+    with wandb.init(
+        project=args.wandb_project,
+        name=run_name,
+        tags=[],
+        sync_tensorboard=True,
+        config=args_dict,
+        mode=args.wandb_mode,
+        monitor_gym=True,  # auto-upload the videos of agents playing the game
+    ) as wandb_run:
+        # TODO: This is not the most efficient setup
+        eval_log_dir = os.path.join("./eval_logs", run_name, "eval")
+        qbias_log_dir = os.path.join("./eval_logs", run_name, "qbias") # CrossQ doesn't actually use this
+        checkpoint_dir = os.path.join("./train_logs", run_name, "checkpoint")
+
+        # Create callback that evaluates agent
+        # eval_callback = EvalCallback(
+        #     # TODO: this does not actually match the train env, so far the default value makes it ok
+        #     # make_vec_env(args.env, n_envs=1, seed=args.seed, vec_env_cls=SubprocVecEnv),
+        #     # make_env_fn(),
+        #     SubprocVecEnv([make_env_fn], render_dim=(args.render_dim[0], args.render_dim[1], 3)),
+        #     jax_random_key_for_seeds=args.seed,
+        #     best_model_save_path=None,
+        #     log_path=eval_log_dir, eval_freq=args.eval_freq // args.n_envs,
+        #     n_eval_episodes=1, deterministic=True, render=False
+        # )
+
+        # Callback that evaluates q bias according to the REDQ paper.
+        # q_bias_callback = CriticBiasCallback(
+        #     # make_vec_env(args.env, n_envs=1, seed=args.seed, vec_env_cls=SubprocVecEnv), 
+        #     make_env_fn(),
+        #     jax_random_key_for_seeds=args.seed,
+        #     best_model_save_path=None,
+        #     log_path=qbias_log_dir, eval_freq=args_dict["eval_freq"],
+        #     n_eval_episodes=1, render=False
+        # )
+
+        wandb_callback = WandbCallback(
+            model_save_path=str(checkpoint_dir),
+            model_save_freq=args.model_save_freq // args.n_envs,
+            verbose=2,
+        )
+
+        video_callback = VideoRecorderCallback(
+            SubprocVecEnv([make_env_fn], render_dim=(args.render_dim[0], args.render_dim[1], 3)),
+            # eval_env=get_make_env(args.env, seed=args.seed, **make_env_kwargs)(),
+            render_freq=args.video_save_freq // args.n_envs,
+        )
+
+        # callback_list = CallbackList(
+        #     [eval_callback, q_bias_callback, wandb_callback, video_callback] if args.eval_qbias else 
+        #     [eval_callback, wandb_callback, video_callback]
+        # )
+        callback_list = CallbackList(
+            [wandb_callback, video_callback]
+        )
+
+        model.learn(total_timesteps=args.total_timesteps, progress_bar=True, callback=callback_list)
+
+        model.save(str(os.path.join(checkpoint_dir, "final_model")))
+
+
+def vlm_inference_worker(run_name:str, rank: int, args, stop_event: multiprocessing.Event):
+    train_log_dir = os.path.join("./train_logs", run_name)
+    logger.add(os.path.join(train_log_dir, "logs.txt"), enqueue=True)
+
+    assert args.reward_batch_size % args.n_workers == 0
+    logger.info(f"[Worker {rank}] Loading CLIP model....")
+
+    with open(args.reward_config, "r") as fin:
+        model_config_dict = yaml.safe_load(fin)
+
+    reward_model = load_reward_model(args.reward_model_name, model_config_dict).eval().cuda(rank)
+    worker_frames_tensor = torch.zeros(
+                (args.reward_batch_size // args.n_workers, args.render_dim[0], args.render_dim[1], 3),
+                dtype=torch.uint8,
+            ).cuda(rank)
+    while not stop_event.is_set():
+        logger.info(f"[Worker {rank}] Entering wait for compute_embeddings_dist...")
+        dist_worker_compute_reward(
+            rank,
+            reward_model=reward_model,
+            render_dim=(args.render_dim[0], args.render_dim[1], 3),
+            batch_size=args.reward_batch_size // args.n_workers,
+            num_workers=args.n_workers,
+            worker_frames_tensor=worker_frames_tensor,
+        )
+    logger.info(f"[Worker {rank}] Received stop event. Exiting worker")
+
+
+def init_process(
+    rank: int,
+    stop_event: multiprocessing.Event,
+    /,
+    backend: str,
+    run_name: str,
+    args: argparse.Namespace,
+):
+    """Used by multiprocessing to spawn worker
+    """
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = "29500"
+    # if backend == "nccl":
+    # TODO: come back to this after fixing the kube setup
+    # os.environ["NCCL_SHM_DISABLE"] = "1"
+    dist.init_process_group(backend, rank=rank, world_size=args.n_workers)
+    if rank == 0:
+        primary_worker(run_name, args, stop_event)
+    else:
+        vlm_inference_worker(run_name, rank, args, stop_event)
+
 
 if __name__ == "__main__":
-    os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
+    utils.set_os_vars()
 
     parser = argparse.ArgumentParser()
+    parser.add_argument("-total_timesteps",   type=int,   required=False, default=5e6, help="total number of training steps")
+    parser.add_argument("-episode_length",   type=int,   required=False, default=240, help="maximum timestep in an episode")
+
     parser.add_argument("-env",         type=str, required=False, default="HumanoidStandup-v4", help="Set Environment.")
+    parser.add_argument("-reward_type", type=str, required=False, default="original", help='Type of rewards to use')
+    parser.add_argument("-render_dim", type=int, nargs="+", default=[480, 480], help="Dimension of the rendered frames of the environment")
+    
     parser.add_argument("-algo",        type=str, required=False, default='sac', choices=['crossq', 'sac', 'redq', 'droq', 'td3'], help="critic activation function")
     parser.add_argument("-seed",        type=int, required=False, default=1, help="Set Seed.")
-    parser.add_argument("-num_envs",     type=int, required=False, default=1, help="Set up multiple env (one per cpu)")
+    parser.add_argument("-n_envs",     type=int, required=False, default=1, help="Set up multiple env (one per cpu)")
 
+    # Multiprocessing
+    parser.add_argument("-n_workers",         type=int, required=False, default=1, help="Number of workers in the run")
+
+    # VLM reward model
+    parser.add_argument("-reward_model_name", type=str, required=False, default="", help="Batch size sent to the VLM reward model")
+    parser.add_argument("-reward_batch_size", type=int, required=False, help="Batch size sent to the VLM reward model")
+    parser.add_argument("-reward_config", type=str, required=False, default="", help="Path to the reward config file")
+
+    # Checkpoint and logging
     parser.add_argument("-model_checkpoint",  type=str, required=False, default="final_model", help="Model checkpoint zip file name (without .zip).")
     parser.add_argument("-model_base_path",        type=str, required=False, default="", help="Folder to all the checkpoints in a run.")
 
     parser.add_argument("-log_freq",    type=int, required=False, default=300, help="how many times to log during training")
+    parser.add_argument("-eval_freq",    type=int, required=False, default=300, help="how many times to evaluate during training")
     parser.add_argument("-model_save_freq",   type=int, required=False, default=1e6, help="frequency to save the model")
     parser.add_argument("-video_save_freq",   type=int, required=False, default=1e6, help="frequency to save the model")
 
+    # Wandb related
     parser.add_argument('-wandb_project', type=str, required=False, default='crossQ', help='wandb project name')
     parser.add_argument("-wandb_mode",    type=str, required=False, default='disabled', choices=['disabled', 'online'], help="enable/disable wandb logging")
     parser.add_argument("-eval_qbias",    type=int, required=False, default=0, choices=[0,1], help="enable/diasble q bias evaluation (expensive)")
-
-    parser.add_argument("-reward_type", type=str, required=False, default="original", choices=list(REWARD_FN_MAPPING.keys()), help='Type of rewards to use')
     
+    # Trainer related dataset
     parser.add_argument("-adam_b1",           type=float, required=False, default=0.5, help="adam b1 parameter")
     parser.add_argument("-bn",                type=float, required=False, default=False,  choices=[0,1], help="Use batch norm layers in the actor and critic networks")
     parser.add_argument("-bn_momentum",       type=float, required=False, default=0.99, help="batch norm momentum parameter")
@@ -73,217 +292,49 @@ if __name__ == "__main__":
     parser.add_argument("-policy_delay",      type=int,   required=False, default=1, help="policy is updated after this many critic updates")
     parser.add_argument("-tau",               type=float, required=False, default=0.005, help="target network averaging")
     parser.add_argument("-utd",               type=int,   required=False, default=1, help="number of critic updates per env step (update to data ratio)")
-    parser.add_argument("-total_timesteps",   type=int,   required=False, default=5e6, help="total number of training steps")
-    parser.add_argument("-episode_length",   type=int,   required=False, default=240, help="maximum timestep in an episode")
-
     parser.add_argument("-bnstats_live_net",  type=int,   required=False, default=0,choices=[0,1], help="use bn running statistics from live network within the target network")
 
-    experiment_time, run_id = get_run_hash()
+    # TODO: do some args validation
+
+    experiment_time, run_id = utils.get_run_hash()
     args = parser.parse_args()
 
-    print(json.dumps(vars(args), indent=4))
-
-    seed = args.seed
-    run_name = f"{args.env}_s={seed}_{experiment_time}_{run_id}"
-
-    args.algo = str.lower(args.algo)
-    args.bn = bool(args.bn)
-    args.crossq_style = bool(args.crossq_style)
-    args.tau = float(args.tau) if not args.crossq_style else 1.0
-    args.bn_momentum = float(args.bn_momentum) if args.bn else 0.0
-    dropout_rate, layer_norm = None, False
-    policy_q_reduce_fn = jax.numpy.min
-    net_arch = {'pi': [256, 256], 'qf': [args.n_neurons, args.n_neurons]}
-
-    total_timesteps = int(args.total_timesteps)
-    eval_freq = max(5_000_000 // args.log_freq, 1)
-
-    # Deepmind control
-    if 'dm_control' in args.env:
-        total_timesteps = {
-            'dm_control/reacher-easy'     : 100_000,
-            'dm_control/reacher-hard'     : 100_000,
-            'dm_control/ball_in_cup-catch': 200_000,
-            'dm_control/finger-spin'      : 500_000,
-            'dm_control/fish-swim'        : 5_000_000,
-            'dm_control/humanoid-stand'   : 5_000_000,
-        }[args.env]
-        eval_freq = max(total_timesteps // args.log_freq, 1)
-
-    td3_mode = False
-
-    if args.algo == 'droq':
-        dropout_rate = 0.01
-        layer_norm = True
-        policy_q_reduce_fn = jax.numpy.mean
-        args.n_critics = 2
-        # args.adam_b1 = 0.9  # adam default
-        args.adam_b2 = 0.999  # adam default
-        args.policy_delay = 20
-        args.utd = 20
-        group = f'DroQ_{args.env}_bn({args.bn})_ln{(args.ln)}_xqstyle({args.crossq_style}/{args.tau})_utd({args.utd}/{args.policy_delay})_Adam({args.adam_b1})_Q({net_arch["qf"][0]})'
-
-    elif args.algo == 'redq':
-        policy_q_reduce_fn = jax.numpy.mean
-        args.n_critics = 10
-        # args.adam_b1 = 0.9  # adam default
-        args.adam_b2 = 0.999  # adam default
-        args.policy_delay = 20
-        args.utd = 20
-        group = f'REDQ_{args.env}_bn({args.bn})_ln{(args.ln)}_xqstyle({args.crossq_style}/{args.tau})_utd({args.utd}/{args.policy_delay})_Adam({args.adam_b1})_Q({net_arch["qf"][0]})'
-
-    elif args.algo == 'td3':
-        # With the right hyperparameters, this here can run all the above algorithms
-        # and ablations.
-        td3_mode = True
-        layer_norm = args.ln
-        if args.dropout: 
-            dropout_rate = 0.01
-        group = f'TD3_{args.env}_bn({args.bn}/{args.bn_momentum}/{args.bn_mode})_ln{(args.ln)}_xq({args.crossq_style}/{args.tau})_utd({args.utd}/{args.policy_delay})_A{args.adam_b1}_Q({net_arch["qf"][0]})_l{args.lr}'
-
-    elif args.algo == 'sac':
-        # With the right hyperparameters, this here can run all the above algorithms
-        # and ablations.
-        layer_norm = args.ln
-        if args.dropout: 
-            dropout_rate = 0.01
-        group = f'SAC_{args.env}_bn({args.bn}/{args.bn_momentum}/{args.bn_mode})_ln{(args.ln)}_xq({args.crossq_style}/{args.tau})_utd({args.utd}/{args.policy_delay})_A{args.adam_b1}_Q({net_arch["qf"][0]})_l{args.lr}'
-
-    elif args.algo == 'crossq':
-        args.adam_b1 = 0.5
-        args.policy_delay = 3
-        args.n_critics = 2
-        args.utd = 1                    # nice
-        net_arch["qf"] = [2048, 2048]   # wider critics
-        args.bn = True                  # use batch norm
-        args.crossq_style = True        # with a joint forward pass
-        args.tau = 1.0                  # without target networks
-        group = f'CrossQ_{args.env}'
-
-    else:
-        raise NotImplemented
-
-    args_dict = vars(args)
-    args_dict.update({
-        "dropout_rate": dropout_rate,
-        "layer_norm": layer_norm
-    })
-
-
-    if "Curriculum" in args.env:
-        make_env_kwargs = dict(
-            episode_length = args.episode_length,
-            reward_type = args.reward_type
-        )
-    else:
-        make_env_kwargs = dict(
-            max_episode_steps = args.episode_length
-        )
-
-    training_env = SubprocVecEnv([get_make_env(args.env, seed=seed+i, **make_env_kwargs) for i in range(args.num_envs)], start_method="spawn")
-
-    if args.env == 'dm_control/humanoid-stand':
-        training_env.observation_space['head_height'] = gym.spaces.Box(-np.inf, np.inf, (1,))
-    if args.env == 'dm_control/fish-swim':
-        training_env.observation_space['upright'] = gym.spaces.Box(-np.inf, np.inf, (1,))
-
-    import optax
-    # Train a model from scatch
-    model = SAC(
-        "MultiInputPolicy" if isinstance(training_env.observation_space, gym.spaces.Dict) else "MlpPolicy",
-        training_env,
-        policy_kwargs=dict({
-            'activation_fn': activation_fn[args.critic_activation],
-            'layer_norm': layer_norm,
-            'batch_norm': bool(args.bn),
-            'batch_norm_momentum': float(args.bn_momentum),
-            'batch_norm_mode': args.bn_mode,
-            'dropout_rate': dropout_rate,
-            'n_critics': args.n_critics,
-            'net_arch': net_arch,
-            'optimizer_class': optax.adam,
-            'optimizer_kwargs': dict({
-                'b1': args.adam_b1,
-                'b2': 0.999 # default
-            })
-        }),
-        gradient_steps=args.utd,
-        policy_delay=args.policy_delay,
-        crossq_style=bool(args.crossq_style),
-        td3_mode=td3_mode,
-        use_bnstats_from_live_net=bool(args.bnstats_live_net),
-        policy_q_reduce_fn=policy_q_reduce_fn,
-        learning_starts=5000,
-        learning_rate=args.lr,
-        qf_learning_rate=args.lr,
-        tau=args.tau,
-        gamma=0.99 if not args.env == 'Swimmer-v4' else 0.9999,
-        verbose=0,
-        buffer_size=1_000_000,
-        seed=seed,
-        stats_window_size=1,  # don't smooth the episode return stats over time
-        tensorboard_log=f"train_logs/{group + '_name=' + run_name}/",
-    )
-    
-    # TODO: Not sure if .load() is better than .set_parameters()
-    if args.model_base_path:
-        checkpoint_path = os.path.join(args.model_base_path, args.model_checkpoint)
-        print(f"Loading parameters from checkpoint: {checkpoint_path}")
-        model.set_parameters(checkpoint_path)
+    run_name = f"{args.algo}_{args.env}_s={args.seed}_{experiment_time}_{run_id}"
 
     # Create log dir where evaluation results will be saved
-    eval_log_dir = f"./eval_logs/{group + '_name=' + run_name}/eval/"
-    qbias_log_dir = f"./eval_logs/{group + '_name=' + run_name}/qbias/"
-    checkpoint_dir = f"./train_logs/{group + '_name=' + run_name}/checkpoint/"
+    eval_log_dir = os.path.join("./eval_logs", run_name, "eval")
+    qbias_log_dir = os.path.join("./eval_logs", run_name, "qbias") # CrossQ doesn't actually use this
+    checkpoint_dir = os.path.join("./train_logs", run_name, "checkpoint")
     os.makedirs(eval_log_dir, exist_ok=True)
     os.makedirs(qbias_log_dir, exist_ok=True)
     os.makedirs(checkpoint_dir, exist_ok=True)
 
-    with wandb.init(
-        project=args.wandb_project,
-        name=run_name,
-        group=group,
-        tags=[],
-        sync_tensorboard=True,
-        config=args_dict,
-        mode=args.wandb_mode,
-        monitor_gym=True,  # auto-upload the videos of agents playing the game
-    ) as wandb_run:
-        # Create callback that evaluates agent
-        eval_callback = EvalCallback(
-            # TODO: this does not actually match the train env, so far the default value makes it ok
-            make_vec_env(args.env, n_envs=1, seed=seed, vec_env_cls=SubprocVecEnv),
-            jax_random_key_for_seeds=args.seed,
-            best_model_save_path=None,
-            log_path=eval_log_dir, eval_freq=eval_freq,
-            n_eval_episodes=1, deterministic=True, render=False
-        )
+    # Register logging files and save parameteres
+    train_log_dir = os.path.join("./train_logs", run_name)
+    
+    with open(os.path.join(train_log_dir, "params.json"), "w") as fout:
+        params = json.dumps(vars(args), indent=4)
+        logger.info(params)
+        fout.write(params)
 
-        # Callback that evaluates q bias according to the REDQ paper.
-        q_bias_callback = CriticBiasCallback(
-            make_vec_env(args.env, n_envs=1, seed=seed, vec_env_cls=SubprocVecEnv), 
-            jax_random_key_for_seeds=args.seed,
-            best_model_save_path=None,
-            log_path=qbias_log_dir, eval_freq=eval_freq,
-            n_eval_episodes=1, render=False
-        )
+    logger.info(f"Started run with run_name={run_name}")
 
-        wandb_callback = WandbCallback(
-            model_save_path=str(checkpoint_dir),
-            model_save_freq=args.model_save_freq // args.num_envs,
-            verbose=2,
-        )
+    @logger.catch
+    def _train():
+        use_vlm_for_reward = utils.vlm_for_reward(args)
+        if use_vlm_for_reward:
+            logger.info("Running VLM-rewarded RL. Spawning workers.")
+            args_with_multiprocessing = ("nccl", run_name, args)
+            multiprocess.spawn(
+                fn=init_process,
+                args=args_with_multiprocessing,
+                nprocs=args.n_workers,
+                join=True,
+                daemon=False,
+                start_method="spawn",
+            )
+        else:
+            logger.info("Running RL for ground truth.")
+            primary_worker(run_name, args)
 
-        video_callback = VideoRecorderCallback(
-            eval_env=get_make_env(args.env, seed=seed, **make_env_kwargs)(),
-            render_freq=args.video_save_freq // args.num_envs,
-        )
-
-        callback_list = CallbackList(
-            [eval_callback, q_bias_callback, wandb_callback, video_callback] if args.eval_qbias else 
-            [eval_callback, wandb_callback, video_callback]
-        )
-
-        model.learn(total_timesteps=total_timesteps, progress_bar=True, callback=callback_list)
-
-        model.save(str(os.path.join(checkpoint_dir, "final_model")))
+    _train()

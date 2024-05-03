@@ -1,33 +1,21 @@
-# python train.py \
-#     -algo crossq \
-#     -env HumanoidStandupCurriculum \
-#     -reward_type tassa_mpc_torso_bottom_up\
-#     -num_envs 8 \
-#     -seed 9 \
-#     -wandb_mode 'online' \
-#     -total_timesteps=2000000 \
-#     -model_save_freq=200000 \
-#     -video_save_freq=100000 \
-#     -episode_length=240 \
+# CLIP batch size per synchronous inference step.
+# Batch size must be divisible by n_workers (GPU count)
+# so that it can be shared among workers, and must be a divisor
+# of n_envs * episode_length so that all batches can be of the
+# same size (no support for variable batch size as of now.)
+
 python train.py \
     -algo crossq \
     -env HumanoidStandupCurriculum \
-    -reward_type tassa_imp_circle_dist\
-    -num_envs 8 \
+    -n_envs 8 \
     -seed 9 \
+    -n_workers 2\
+    -reward_model_name 'ViT-g-14/laion2b_s34b_b88k'\
+    -reward_batch_size 240\
+    -reward_config './configs/clip_reward_config.yml'\
     -wandb_mode 'online' \
-    -total_timesteps=5000000 \
-    -model_save_freq=500000 \
-    -video_save_freq=250000 \
+    -total_timesteps=1000000 \
+    -eval_freq=100000 \
+    -model_save_freq=100000 \
+    -video_save_freq=25000 \
     -episode_length=240 \
-# python train.py \
-#     -algo crossq \
-#     -env HumanoidStandupCurriculum \
-#     -reward_type tassa_mpc_torso_bottom_up\
-#     -num_envs 8 \
-#     -seed 9 \
-#     -wandb_mode 'online' \
-#     -total_timesteps=10000000 \
-#     -model_save_freq=1000000 \
-#     -video_save_freq=500000 \
-#     -episode_length=240 \

@@ -28,7 +28,7 @@ def plot_info_on_frame(pil_image, info, font_size=20):
     i = 0
     for k in info:
         # TODO: This is pretty ugly
-        if "TimeLimit" not in k:
+        if not any([text in k for text in ["TimeLimit", "render_array"]]):
             reward_text = f"{k}:{info[k]}"
             # Plot the text from bottom to top
             text_position = (x, y - 30*(i+1))

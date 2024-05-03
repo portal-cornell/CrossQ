@@ -14,7 +14,7 @@ from sbx import SAC
 
 from utils import get_run_hash, set_egl_env_vars
 from envs.base import get_make_env
-from envs.mujoco.humanoid_standup_curriculum import REWARD_FN_MAPPING
+from envs.humanoid.humanoid_standup_curriculum import REWARD_FN_MAPPING
 
 
 def plot_info_on_frame(pil_image, info, font_size=20):
