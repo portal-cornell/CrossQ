@@ -6,7 +6,7 @@ import torch.distributed as dist
 from loguru import logger
 
 # TODO: finish all the imports needed here
-# from sbx.vlm_reward.reward_models.dino_models import load_dino_reward_model
+from sbx.vlm_reward.reward_models.dino_models import load_dino_reward_model
 from sbx.vlm_reward.reward_models.clip_models import load_clip_reward_model
 
 def load_reward_model(
@@ -14,12 +14,12 @@ def load_reward_model(
                     model_config_dict):
     assert any([model_base_name in model_name.lower() for model_base_name in ["vit", "dino"]])
 
-    # if "dino" in model_name.lower():
-    #     reward_model = load_dino_reward_model(dino_model_name=model_name,
-    #                                         metric=model_config_dict["metric"],
-    #                                         human_seg_weight_path=model_config_dict["human_seg_weight_path"],
-    #                                         target_human_threshold=model_config_dict["target_human_threshold"],
-    #                                         tmp_dir=model_config_dict["tmp_dir"])
+    if "dino" in model_name.lower():
+        feature_extractor = Dino2FeatureExtractor(model_name=model_name)
+        human_seg_model = HumanSegmentationModel(model_config_dict["human_seg_model_path"])
+        reward_model = load_dino_reward_model(image_metric=model_config_dict["image_metric"],
+                                                feature_extractor=feature_extractor,
+                                                patch_masker=human_seq_model)
     if "vit" in model_name.lower():
         reward_model = load_clip_reward_model(model_name=model_name,
                                                 target_prompts=model_config_dict["target_prompts"],
