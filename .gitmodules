@@ -1,0 +1,4 @@
+[submodule "sbx/vlm_reward/reward_models/language_irl"]
+	path = sbx/vlm_reward/reward_models/language_irl
+	url = https://github.com/annshin/language_irl.git
+	branch = preferences
