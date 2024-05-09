@@ -58,16 +58,19 @@ def primary_worker(run_name, args, stop_event: Optional[multiprocessing.Event] =
 
     use_vlm_for_reward = utils.vlm_for_reward(args)
 
-    if use_vlm_for_reward or "Curriculum" in args.env:
+    if use_vlm_for_reward:
         make_env_kwargs = dict(
             episode_length = args.episode_length,
-            reward_type = args.reward_type
         )
     else:
         make_env_kwargs = dict(
-            max_episode_steps = args.episode_length
+            max_episode_steps = args.episode_length,
         )
-    logger.info("Creating environment instances")
+
+    if "custom" in args.env.lower():
+        make_env_kwargs["reward_type"] = args.reward_type
+
+    logger.info(f"Creating environment={args.env} instances with {make_env_kwargs=}")
         
     # TODO: Not sure if the thing below still works for vanilla RL
     # training_env = SubprocVecEnv([get_make_env(args.env, seed=args.seed+i, **make_env_kwargs) for i in range(args.n_envs)], start_method="spawn")

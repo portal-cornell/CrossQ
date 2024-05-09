@@ -20,9 +20,10 @@ DEFAULT_CAMERA_CONFIG = {
     "distance": 3.5,
     "lookat": np.array((0.25, 0.0, 1.25)),
     "elevation": -10.0,
+    "azimuth": 180
 }
 
-class VLMRewardedHumanoidEnv(GymHumanoidEnv):
+class HumanoidEnvCustom(GymHumanoidEnv):
     def __init__(
         self,
         episode_length=240,
@@ -101,7 +102,9 @@ class VLMRewardedHumanoidEnv(GymHumanoidEnv):
         obs, reward, terminated, truncated, info = super().step(action)
 
         reward, info = self.reward_fn(self.data, model=self.model, 
-                                        xy_position_before=xy_position_before, dt=self.dt,
+                                        dt=self.dt,
+                                        timestep=self.model.opt.timestep,
+                                        xy_position_before=xy_position_before,
                                         ctrl_cost=self.control_cost(action),
                                         healthy_reward=self.healthy_reward,
                                         forward_reward_weight=self._forward_reward_weight)

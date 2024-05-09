@@ -22,8 +22,8 @@
 ######################################## CLIP
 python train.py \
     -algo crossq \
-    -env HumanoidSpawnedUp \
-    -reward_type remain_standing\
+    -env HumanoidSpawnedUpCustom \
+    -reward_type best_standing_up\
     -n_envs 8 \
     -seed 9 \
     -n_workers 2\

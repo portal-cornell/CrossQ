@@ -1,11 +1,11 @@
 import gymnasium
 
 gymnasium.register(
-    "HumanoidSpawnedUp",
-    "envs.humanoid.humanoid_spawned_up:VLMRewardedHumanoidEnv",
+    "HumanoidSpawnedUpCustom",
+    "envs.humanoid.humanoid_spawned_up:HumanoidEnvCustom",
 )
 
 gymnasium.register(
-    "HumanoidStandupCurriculum",
-    "envs.humanoid.humanoid_standup_curriculum:HumanoidStandupCurriculum",
+    "HumanoidStandupCustom",
+    "envs.humanoid.humanoid_standup_curriculum:HumanoidStandupCustom",
 )

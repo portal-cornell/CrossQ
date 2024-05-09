@@ -17,7 +17,7 @@ DEFAULT_CAMERA_CONFIG = {
 }
 
 
-class HumanoidStandupCurriculum(GymHumanoidStandupEnv):
+class HumanoidStandupCustom(GymHumanoidStandupEnv):
     def __init__(
         self, 
         episode_length=240, 
