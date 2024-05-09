@@ -10,22 +10,30 @@ from sbx.vlm_reward.reward_models.dino_models import load_dino_reward_model
 from sbx.vlm_reward.reward_models.clip_models import load_clip_reward_model
 
 def load_reward_model(
+                    rank,
+                    batch_size,
                     model_name, 
                     model_config_dict):
     assert any([model_base_name in model_name.lower() for model_base_name in ["vit", "dino"]])
 
     if "dino" in model_name.lower():
-        feature_extractor = Dino2FeatureExtractor(model_name=model_name)
-        human_seg_model = HumanSegmentationModel(model_config_dict["human_seg_model_path"])
-        reward_model = load_dino_reward_model(image_metric=model_config_dict["image_metric"],
-                                                feature_extractor=feature_extractor,
-                                                patch_masker=human_seq_model)
-    if "vit" in model_name.lower():
+        reward_model = load_dino_reward_model(rank=rank,
+                                                batch_size=batch_size,
+                                                model_name=model_name,
+                                                image_metric=model_config_dict["image_metric"],
+                                                human_seg_model_path=model_config_dict["human_seg_model_path"],
+                                                ref_image_path_list=model_config_dict["ref_image_path"])
+
+        logger.debug(f"Loaded DINO reward model. model_name={model_name}, ref_image={model_config_dict['ref_image_path']}")
+
+    if (not ("dino" in model_name.lower())) and ("vit" in model_name.lower()):
         reward_model = load_clip_reward_model(model_name=model_name,
                                                 target_prompts=model_config_dict["target_prompts"],
                                                 baseline_prompts=model_config_dict["baseline_prompts"],
                                                 alpha=model_config_dict["alpha"],
                                                 cache_dir=model_config_dict["cache_dir"])
+
+        logger.debug(f"Loaded CLIP reward model. model_name={model_name}, target_prompts={model_config_dict['target_prompts']}")
 
     return reward_model
 
@@ -93,20 +101,64 @@ def dist_worker_compute_reward(
     worker_frames_tensor=None,
 ) -> Optional[torch.Tensor]:
     logger.info(f"[Worker {rank}] Computing reward...")
+    
     if rank == 0:
         if frames is None:
             raise ValueError("Must pass render result on rank=0")
         if len(frames) != num_workers * batch_size:
             raise ValueError("Must pass render result with correct batch size")
         scatter_list = [t.cuda(rank) for t in torch.chunk(frames, num_workers, dim=0)]
+        logger.debug(f"[Worker {rank}] before chunking {frames.size()=}")
+        # total_size = frames.size()[0] if frames is not None else batch_size
+        # rank_0_chunk_size = int(0.2 * total_size)
+        # remaining_size = total_size - rank_0_chunk_size
+        # remaining_chunk_size = remaining_size // (num_workers - 1)
+
+        # chunk_list = [rank_0_chunk_size] + [remaining_chunk_size] * (num_workers - 1)
+        # if remaining_size % (num_workers - 1) != 0:
+        #     last_chunk_size = remaining_size - remaining_chunk_size * (num_workers - 2)
+        #     chunk_list[-1] = last_chunk_size
+        # logger.debug(f"[Worker {rank}] {chunk_list=}")
+
+        # scatter_list = [t.cuda(rank) for t in torch.split(frames, split_size_or_sections=chunk_list, dim=0)]
     else:
         scatter_list = []
 
+    start_event = torch.cuda.Event(enable_timing=True)
+    end_event = torch.cuda.Event(enable_timing=True)
+
+    # worker_frames_size = rank_0_chunk_size if rank == 0 else batch_size
+    logger.debug(f"[Worker {rank}] does worker_frames_tensor exist: {worker_frames_tensor.size() if worker_frames_tensor is not None else None}")
     worker_frames = worker_frames_tensor if worker_frames_tensor is not None else torch.zeros((batch_size, *render_dim), dtype=torch.uint8).cuda(rank)
+    logger.debug(f"[Worker {rank}] {worker_frames.size()=}, scatter_list={[x.size() for x in scatter_list]}")
     dist.scatter(worker_frames, scatter_list=scatter_list, src=0)
     with torch.no_grad():
+        start_event.record()
+        logger.debug(f"[Worker {rank}] {worker_frames.size()=} allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
         embeddings = reward_model.embed_module(worker_frames)
+        end_event.record()
+        if type(embeddings) == tuple:
+            logger.debug(f"[Worker {rank}] {embeddings[0].size()= } allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
+        else:
+            logger.debug(f"[Worker {rank}] {embeddings.size()= } allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
+        
+        ### timing
+        torch.cuda.synchronize()
+        execution_time = start_event.elapsed_time(end_event)
+        logger.debug(f"Worker #{rank} - Image Embedding time: {execution_time / 1000} seconds")
+        ####
+
+        start_event.record()
         rewards = reward_model(embeddings)
+        end_event.record()
+        logger.debug(f"[Worker {rank}] {rewards.size()=} allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
+
+
+        ### timing
+        torch.cuda.synchronize()
+        execution_time = start_event.elapsed_time(end_event)
+        logger.debug(f"Worker #{rank} - Reward Calculation time: {execution_time / 1000} seconds")
+        ####
 
     def zero_t():
         return torch.zeros_like(rewards)

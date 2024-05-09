@@ -7,7 +7,7 @@ from gymnasium.envs.mujoco import MujocoEnv
 from gymnasium.envs.mujoco.humanoidstandup_v4 import HumanoidStandupEnv as GymHumanoidStandupEnv
 from gymnasium.spaces import Box
 from numpy.typing import NDArray
-from envs.humanoid.reward_helpers_humanoid_standup import *
+from envs.humanoid.reward_helpers import *
 
 DEFAULT_CAMERA_CONFIG = {
     "trackbodyid": 1,

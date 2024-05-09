@@ -15,6 +15,8 @@ from torchvision.transforms import (
 
 from open_clip.constants import OPENAI_DATASET_MEAN, OPENAI_DATASET_STD
 
+from loguru import logger
+
 def load_clip_reward_model(
     model_name, target_prompts, baseline_prompts, alpha, cache_dir: Optional[str] = None
 ):

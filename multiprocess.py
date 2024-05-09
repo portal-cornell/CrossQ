@@ -1,15 +1,15 @@
 """This module wraps torch.multiprocessing.spawn to automatically pass stop events."""
 
 from torch import multiprocessing
+# from torch.multiprocessing import connection
 from torch.multiprocessing.spawn import ProcessContext, _prctl_pr_set_pdeathsig
-import tempfile
+# from torch.multiprocessing.spawn import _prctl_pr_set_pdeathsig, ProcessExitedException, ProcessRaisedException
 import signal
 import sys
 import warnings
-import os
-import pickle
 
-def _wrap(fn, i, args, error_file, stop_event):
+
+def _wrap(fn, i, args, error_queue, stop_event):
     # prctl(2) is a Linux specific system call.
     # On other systems the following function call has no effect.
     # This is set to ensure that non-daemonic child processes can
@@ -24,11 +24,8 @@ def _wrap(fn, i, args, error_file, stop_event):
         # Propagate exception to parent process, keeping original traceback
         import traceback
 
-        with open(error_file, "wb") as fh:
-            pickle.dump(traceback.format_exc(), fh)
-
+        error_queue.put(traceback.format_exc())
         sys.exit(1)
-
 
 # Note: [start_processes]
 # mp.start_processes handles both start_method='spawn' and 'fork'. It's supposed to be a
@@ -43,36 +40,61 @@ def start_processes(
 ):
     mp = multiprocessing.get_context(start_method)
     stop_event = mp.Event()
-    error_files = []
+    error_queues = []
     processes = []
     for i in range(nprocs):
-        # Each process is assigned a file to write tracebacks to.  We
-        # use the file being non-empty to indicate an exception
-        # occurred (vs an expected shutdown).  Note: this previously
-        # used a multiprocessing.Queue but that can be prone to
-        # deadlocks, so we went with a simpler solution for a one-shot
-        # message between processes.
-        tf = tempfile.NamedTemporaryFile(
-            prefix="pytorch-errorfile-", suffix=".pickle", delete=False
-        )
-        tf.close()
-        os.unlink(tf.name)
+        error_queue = mp.SimpleQueue()
         process = mp.Process(
             target=_wrap,
-            args=(fn, i, args, tf.name, stop_event),
+            args=(fn, i, args, error_queue, stop_event),
             daemon=daemon,
         )
         process.start()
-        error_files.append(tf.name)
+        error_queues.append(error_queue)
         processes.append(process)
 
-    context = ProcessContext(processes, error_files)
+    context = ProcessContext(processes, error_queues)
     if not join:
         return context
 
     # Loop on join until it returns True or raises an exception.
     while not context.join():
         pass
+# def start_processes(
+#     fn, args=(), nprocs=1, join=True, daemon=False, start_method="spawn"
+# ):
+#     mp = multiprocessing.get_context(start_method)
+#     stop_event = mp.Event()
+#     error_files = []
+#     processes = []
+#     for i in range(nprocs):
+#         # Each process is assigned a file to write tracebacks to.  We
+#         # use the file being non-empty to indicate an exception
+#         # occurred (vs an expected shutdown).  Note: this previously
+#         # used a multiprocessing.Queue but that can be prone to
+#         # deadlocks, so we went with a simpler solution for a one-shot
+#         # message between processes.
+#         tf = tempfile.NamedTemporaryFile(
+#             prefix="pytorch-errorfile-", suffix=".pickle", delete=False
+#         )
+#         tf.close()
+#         os.unlink(tf.name)
+#         process = mp.Process(
+#             target=_wrap,
+#             args=(fn, i, args, tf.name, stop_event),
+#             daemon=daemon,
+#         )
+#         process.start()
+#         error_files.append(tf.name)
+#         processes.append(process)
+
+#     context = ProcessContext(processes, error_files)
+#     if not join:
+#         return context
+
+#     # Loop on join until it returns True or raises an exception.
+#     while not context.join():
+#         pass
 
 def spawn(fn, args=(), nprocs=1, join=True, daemon=False, start_method="spawn"):
     r"""Spawns ``nprocs`` processes that run ``fn`` with ``args``.

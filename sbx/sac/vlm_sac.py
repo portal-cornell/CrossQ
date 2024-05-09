@@ -155,6 +155,10 @@ class VLM_SAC(OffPolicyAlgorithmJax):
                 (self.args.reward_batch_size // self.args.n_workers, self.args.render_dim[0], self.args.render_dim[1], 3),
                 dtype=torch.uint8,
             ).cuda(0)  # (Batch size per worker, w, h, 3)
+            # self.worker_frames_tensor = torch.zeros(
+            #     (int(self.args.reward_batch_size * 0.2), self.args.render_dim[0], self.args.render_dim[1], 3),
+            #     dtype=torch.uint8,
+            # ).cuda(0)  # (Batch size per worker, w, h, 3)
 
 
     """
@@ -165,11 +169,12 @@ class VLM_SAC(OffPolicyAlgorithmJax):
         with open(self.args.reward_config, "r") as fin:
             model_config_dict = yaml.safe_load(fin)
         
-        reward_model = load_reward_model(model_name=self.args.reward_model_name,
-                                         model_config_dict=model_config_dict).to(self.device)
+        reward_model = load_reward_model(rank=0, batch_size=self.args.reward_batch_size // self.args.n_workers,
+                                         model_name=self.args.reward_model_name,
+                                         model_config_dict=model_config_dict).eval().cuda(0)
         self.reward_model = reward_model
 
-        logger.info(f"Finished learning VLM reward model: {self.args.reward_model_name}")
+        logger.debug(f"Finished loading up VLM reward model: {self.args.reward_model_name}")
 
     def _setup_learn(
         self,

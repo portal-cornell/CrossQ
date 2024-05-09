@@ -24,6 +24,12 @@ def set_os_vars() -> None:
     # Get wandb file (e.g. rendered) gif more accessible
     os.environ["WANDB_DIR"] = WANDB_DIR
 
+def validate_args(args):
+    if vlm_for_reward(args):
+        assert args.reward_batch_size % args.n_workers == 0, f"({args.reward_batch_size=}) corresponds to the total size of the batch do be distributed among workers and therefore must be divisible by ({args.n_workers=})"
+
+        assert (args.n_envs * args.episode_length) % args.reward_batch_size == 0, f"({args.n_envs=}) * ({args.episode_length=}) must be divisible by ({args.reward_batch_size=}) so that all batches are of the same size."
+
 def get_model_args_dict(args):
     import jax
     

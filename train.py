@@ -67,8 +67,8 @@ def primary_worker(run_name, args, stop_event: Optional[multiprocessing.Event] =
         make_env_kwargs = dict(
             max_episode_steps = args.episode_length
         )
-        
     logger.info("Creating environment instances")
+        
     # TODO: Not sure if the thing below still works for vanilla RL
     # training_env = SubprocVecEnv([get_make_env(args.env, seed=args.seed+i, **make_env_kwargs) for i in range(args.n_envs)], start_method="spawn")
     make_env_fn = get_make_env(args.env, **make_env_kwargs)
@@ -83,7 +83,7 @@ def primary_worker(run_name, args, stop_event: Optional[multiprocessing.Event] =
 
     import optax
 
-    logger.info("Creating the learner")
+    logger.info("Creating the learner...")
     # Train a model from scatch
     sac_class = VLM_SAC if use_vlm_for_reward else SAC
     model = sac_class(
@@ -128,7 +128,8 @@ def primary_worker(run_name, args, stop_event: Optional[multiprocessing.Event] =
         existing_checkpoint_path = os.path.join(args.model_base_path, args.model_checkpoint)
         logger.info(f"Loading parameters from checkpoint: {existing_checkpoint_path}")
         model.set_parameters(existing_checkpoint_path)
-
+    logger.debug(f"Created the learned and initialized if needed: allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)}")
+    
     with wandb.init(
         project=args.wandb_project,
         name=run_name,
@@ -144,6 +145,8 @@ def primary_worker(run_name, args, stop_event: Optional[multiprocessing.Event] =
         checkpoint_dir = os.path.join("./train_logs", run_name, "checkpoint")
 
         # Create callback that evaluates agent
+        # TODO: These callback somehow triggers compute_rewards
+        #   since we are using the VideoCallback as evaluation, this is fine for now
         # eval_callback = EvalCallback(
         #     # TODO: this does not actually match the train env, so far the default value makes it ok
         #     # make_vec_env(args.env, n_envs=1, seed=args.seed, vec_env_cls=SubprocVecEnv),
@@ -177,10 +180,6 @@ def primary_worker(run_name, args, stop_event: Optional[multiprocessing.Event] =
             render_freq=args.video_save_freq // args.n_envs,
         )
 
-        # callback_list = CallbackList(
-        #     [eval_callback, q_bias_callback, wandb_callback, video_callback] if args.eval_qbias else 
-        #     [eval_callback, wandb_callback, video_callback]
-        # )
         callback_list = CallbackList(
             [wandb_callback, video_callback]
         )
@@ -194,13 +193,33 @@ def vlm_inference_worker(run_name:str, rank: int, args, stop_event: multiprocess
     train_log_dir = os.path.join("./train_logs", run_name)
     logger.add(os.path.join(train_log_dir, "logs.txt"), enqueue=True)
 
-    assert args.reward_batch_size % args.n_workers == 0
-    logger.info(f"[Worker {rank}] Loading CLIP model....")
+    logger.info(f"[Worker {rank}] Loading Reward model....")
 
     with open(args.reward_config, "r") as fin:
         model_config_dict = yaml.safe_load(fin)
 
-    reward_model = load_reward_model(args.reward_model_name, model_config_dict).eval().cuda(rank)
+    reward_model = load_reward_model(rank, 
+                                        batch_size=args.reward_batch_size // args.n_workers, 
+                                        model_name=args.reward_model_name, 
+                                        model_config_dict=model_config_dict).eval().cuda(rank)
+    logger.debug(f"Loaded the reward model at rank={rank}: allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
+    
+    # remaining_chunk_size = int(0.8 * args.reward_batch_size) // (args.n_workers - 1)
+    # worker_frames_tensor = torch.zeros(
+    #             (remaining_chunk_size, args.render_dim[0], args.render_dim[1], 3),
+    #             dtype=torch.uint8,
+    #         ).cuda(rank)
+    # while not stop_event.is_set():
+    #     logger.info(f"[Worker {rank}] Entering wait for compute_embeddings_dist...")
+    #     dist_worker_compute_reward(
+    #         rank,
+    #         reward_model=reward_model,
+    #         render_dim=(args.render_dim[0], args.render_dim[1], 3),
+    #         batch_size=remaining_chunk_size,
+    #         num_workers=args.n_workers,
+    #         worker_frames_tensor=worker_frames_tensor,
+    #     )
+
     worker_frames_tensor = torch.zeros(
                 (args.reward_batch_size // args.n_workers, args.render_dim[0], args.render_dim[1], 3),
                 dtype=torch.uint8,
@@ -259,7 +278,7 @@ if __name__ == "__main__":
     parser.add_argument("-n_workers",         type=int, required=False, default=1, help="Number of workers in the run")
 
     # VLM reward model
-    parser.add_argument("-reward_model_name", type=str, required=False, default="", help="Batch size sent to the VLM reward model")
+    parser.add_argument("-reward_model_name", type=str, required=False, default="", help="Name of the reward model")
     parser.add_argument("-reward_batch_size", type=int, required=False, help="Batch size sent to the VLM reward model")
     parser.add_argument("-reward_config", type=str, required=False, default="", help="Path to the reward config file")
 
@@ -299,7 +318,12 @@ if __name__ == "__main__":
     experiment_time, run_id = utils.get_run_hash()
     args = parser.parse_args()
 
-    run_name = f"{args.algo}_{args.env}_s={args.seed}_{experiment_time}_{run_id}"
+    utils.validate_args(args)
+
+    if utils.vlm_for_reward(args):
+        run_name = f"{args.algo}_{args.env}_rm={args.reward_model_name[:4]}_r={args.reward_type}_s={args.seed}_{experiment_time}_{run_id}"
+    else:
+        run_name = f"{args.algo}_{args.env}_r={args.reward_type}_s={args.seed}_{experiment_time}_{run_id}"
 
     # Create log dir where evaluation results will be saved
     eval_log_dir = os.path.join("./eval_logs", run_name, "eval")

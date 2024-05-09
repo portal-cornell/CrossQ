@@ -7,6 +7,7 @@ from stable_baselines3.common.utils import set_random_seed
 
 RENDER_DIM = {
     "HumanoidStandupCurriculum": (480, 480),
+    "HumanoidSpawnedUP": (480, 480),
 }
 
 
