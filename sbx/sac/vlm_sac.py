@@ -152,9 +152,11 @@ class VLM_SAC(OffPolicyAlgorithmJax):
             self._setup_reward_model()
             self.previous_num_timesteps = 0
             self.previous_num_episodes = 0
-           
+
+            # TODO: MAGIC NUMBER
+            worker_batch_size = int(0.8 * self.args.reward_batch_size) // (self.args.n_workers - 1)
             self.worker_frames_tensor = torch.zeros(
-                (self.args.reward_batch_size // self.args.n_workers, self.args.render_dim[0], self.args.render_dim[1], 3),
+                (worker_batch_size, self.args.render_dim[0], self.args.render_dim[1], 3),
                 dtype=torch.uint8,
             ).cuda(0)  # (Batch size per worker, w, h, 3)
             # self.worker_frames_tensor = torch.zeros(
@@ -171,7 +173,10 @@ class VLM_SAC(OffPolicyAlgorithmJax):
         with open(self.args.reward_config, "r") as fin:
             model_config_dict = yaml.safe_load(fin)
         
-        reward_model = load_reward_model(rank=0, batch_size=self.args.reward_batch_size // self.args.n_workers,
+        # This is the actual batch size for rank0 inference worker
+        #   because this batch_size is used to decide how many copies of the reference human image to use
+        rank0_worker_batch = int(0.2 * self.args.reward_batch_size)
+        reward_model = load_reward_model(rank=0, batch_size=rank0_worker_batch,
                                          model_name=self.args.reward_model_name,
                                          model_config_dict=model_config_dict).eval().cuda(0)
         self.reward_model = reward_model
@@ -225,7 +230,7 @@ class VLM_SAC(OffPolicyAlgorithmJax):
         rewards = compute_rewards(
             model=self.reward_model,
             frames=frames,
-            batch_size=self.args.reward_batch_size,
+            batch_size=self.args.reward_batch_size,  # This is the total batch size
             num_workers=self.args.n_workers,
             worker_frames_tensor=self.worker_frames_tensor,
         )

@@ -23,6 +23,7 @@ def set_os_vars() -> None:
     os.environ["EGL_PLATFORM"] = "device"
     # Get wandb file (e.g. rendered) gif more accessible
     os.environ["WANDB_DIR"] = WANDB_DIR
+    os.environ["LOGURU_LEVEL"] = "INFO"
 
 def validate_args(args):
     if vlm_for_reward(args):

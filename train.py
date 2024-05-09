@@ -201,30 +201,16 @@ def vlm_inference_worker(run_name:str, rank: int, args, stop_event: multiprocess
     with open(args.reward_config, "r") as fin:
         model_config_dict = yaml.safe_load(fin)
 
+    # TODO: MAGIC NUMBER
+    worker_batch_size = int(0.8 * args.reward_batch_size) // (args.n_workers - 1)
     reward_model = load_reward_model(rank, 
-                                        batch_size=args.reward_batch_size // args.n_workers, 
+                                        batch_size=worker_batch_size, 
                                         model_name=args.reward_model_name, 
                                         model_config_dict=model_config_dict).eval().cuda(rank)
     logger.debug(f"Loaded the reward model at rank={rank}: allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
-    
-    # remaining_chunk_size = int(0.8 * args.reward_batch_size) // (args.n_workers - 1)
-    # worker_frames_tensor = torch.zeros(
-    #             (remaining_chunk_size, args.render_dim[0], args.render_dim[1], 3),
-    #             dtype=torch.uint8,
-    #         ).cuda(rank)
-    # while not stop_event.is_set():
-    #     logger.info(f"[Worker {rank}] Entering wait for compute_embeddings_dist...")
-    #     dist_worker_compute_reward(
-    #         rank,
-    #         reward_model=reward_model,
-    #         render_dim=(args.render_dim[0], args.render_dim[1], 3),
-    #         batch_size=remaining_chunk_size,
-    #         num_workers=args.n_workers,
-    #         worker_frames_tensor=worker_frames_tensor,
-    #     )
 
     worker_frames_tensor = torch.zeros(
-                (args.reward_batch_size // args.n_workers, args.render_dim[0], args.render_dim[1], 3),
+                (worker_batch_size, args.render_dim[0], args.render_dim[1], 3),
                 dtype=torch.uint8,
             ).cuda(rank)
     while not stop_event.is_set():
@@ -233,7 +219,7 @@ def vlm_inference_worker(run_name:str, rank: int, args, stop_event: multiprocess
             rank,
             reward_model=reward_model,
             render_dim=(args.render_dim[0], args.render_dim[1], 3),
-            batch_size=args.reward_batch_size // args.n_workers,
+            total_batch_size=args.reward_batch_size,  # Because this is not rank = 0, this helper doesn't actually use this value
             num_workers=args.n_workers,
             worker_frames_tensor=worker_frames_tensor,
         )

@@ -6,12 +6,12 @@
 python train.py \
     -algo crossq \
     -env HumanoidSpawnedUpCustom \
-    -reward_type best_standing_up\
+    -reward_type simple_remain_standing\
     -n_envs 8 \
     -seed 9 \
     -n_workers 2\
     -reward_model_name 'dinov2_vitl14_reg'\
-    -reward_batch_size 16\
+    -reward_batch_size 480\
     -reward_config './configs/dino_reward_config.yml'\
     -wandb_mode 'online' \
     -total_timesteps=1000000 \

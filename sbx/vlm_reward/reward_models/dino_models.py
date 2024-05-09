@@ -46,7 +46,7 @@ class DINORewardModelWrapper:
 
             logger.debug(f"[{self._device}] transformed image. {transformed_image.size()=}, allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)}")
 
-            image_embeddings, image_masks = self.reward_model.extract_masked_features(batch=transformed_image)
+            image_embeddings, image_masks = self.reward_model.extract_masked_features(batch=transformed_image, use_patch_mask=False)
 
             logger.debug(f"[{self._device}] {image_embeddings.size()=}, {image_masks.size()=} allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)}")
 
@@ -64,13 +64,13 @@ class DINORewardModelWrapper:
 
     def initialize_ref_images(self):
         # TODO: For now, we just support loading one image
-        logger.debug("Embedding reference image")
+        logger.debug(f"[{self._device}] Embedding reference image")
         with torch.no_grad():
             self.ref_image_embeddings = self.reward_model.feature_extractor.load_and_prepare_images_parallel(self.ref_image_path_list)
-            self.ref_image_embeddings, self.ref_image_masks = self.reward_model.extract_masked_features(batch=self.ref_image_embeddings)
+            self.ref_image_embeddings, self.ref_image_masks = self.reward_model.extract_masked_features(batch=self.ref_image_embeddings, use_patch_mask=True)
             self.ref_image_embeddings = self.ref_image_embeddings.repeat(self.batch_size, 1, 1)
             self.ref_image_masks = self.ref_image_masks.repeat(self.batch_size, 1)
-            logger.debug(f"{self.ref_image_embeddings.size()=}, {self.ref_image_masks.size()=},allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)} ")
+            logger.debug(f"[{self._device}] {self.ref_image_embeddings.size()=}, {self.ref_image_masks.size()=},allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)} ")
 
     def eval(self):
         """A placeholder for the reward model wrapper. DINO should not needed to be trained
@@ -86,18 +86,18 @@ class DINORewardModelWrapper:
         self.reward_model = self.reward_model.to(device)
 
         self.reward_model.device = device
-        logger.debug(f"Change reward model to {device}: allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
+        # logger.debug(f"Change reward model to {device}: allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
         
         self.reward_model.feature_extractor.model = self.reward_model.feature_extractor.model.to(device)
         self.reward_model.feature_extractor.device = device
 
-        logger.debug(f"Change feature_extractor to {device}: allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
+        # logger.debug(f"Change feature_extractor to {device}: allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
 
         self.reward_model.patch_masker = self.reward_model.patch_masker.to(device)
         self.reward_model.patch_masker.model = self.reward_model.patch_masker.model.to(device)
         self.reward_model.patch_masker.device = device
 
-        logger.debug(f"Change patch_masker to {device}: allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
+        # logger.debug(f"Change patch_masker to {device}: allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
 
         self._device = device
 
