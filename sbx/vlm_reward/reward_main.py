@@ -48,6 +48,7 @@ def compute_rewards(
     assert frames.device == torch.device("cpu")
     assert batch_size % num_workers == 0
     n_samples = len(frames)
+    logger.debug(f"compute_rewards: {n_samples=}, {batch_size=}")
     rewards = torch.zeros(n_samples, device=torch.device("cpu"))
     model = model.eval()
     with torch.no_grad():
@@ -115,12 +116,17 @@ def dist_worker_compute_reward(
         # remaining_chunk_size = remaining_size // (num_workers - 1)
 
         # chunk_list = [rank_0_chunk_size] + [remaining_chunk_size] * (num_workers - 1)
-        # if remaining_size % (num_workers - 1) != 0:
-        #     last_chunk_size = remaining_size - remaining_chunk_size * (num_workers - 2)
-        #     chunk_list[-1] = last_chunk_size
+        # # TODO: Let's assume that the batch size is picked in a way that the remaining (num_workers - 1)
+        # #   chunks of data all have the same size
+        # # if remaining_size % (num_workers - 1) != 0:
+        # #     last_chunk_size = remaining_size - remaining_chunk_size * (num_workers - 2)
+        # #     chunk_list[-1] = last_chunk_size
         # logger.debug(f"[Worker {rank}] {chunk_list=}")
 
         # scatter_list = [t.cuda(rank) for t in torch.split(frames, split_size_or_sections=chunk_list, dim=0)]
+        
+        # scatter_list[0] = 
+        # TODO: pad the first tensor
     else:
         scatter_list = []
 
@@ -128,19 +134,19 @@ def dist_worker_compute_reward(
     end_event = torch.cuda.Event(enable_timing=True)
 
     # worker_frames_size = rank_0_chunk_size if rank == 0 else batch_size
-    logger.debug(f"[Worker {rank}] does worker_frames_tensor exist: {worker_frames_tensor.size() if worker_frames_tensor is not None else None}")
+    # logger.debug(f"[Worker {rank}] does worker_frames_tensor exist: {worker_frames_tensor.size() if worker_frames_tensor is not None else None}")
     worker_frames = worker_frames_tensor if worker_frames_tensor is not None else torch.zeros((batch_size, *render_dim), dtype=torch.uint8).cuda(rank)
     logger.debug(f"[Worker {rank}] {worker_frames.size()=}, scatter_list={[x.size() for x in scatter_list]}")
     dist.scatter(worker_frames, scatter_list=scatter_list, src=0)
     with torch.no_grad():
         start_event.record()
-        logger.debug(f"[Worker {rank}] {worker_frames.size()=} allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
+        # logger.debug(f"[Worker {rank}] {worker_frames.size()=} allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
         embeddings = reward_model.embed_module(worker_frames)
         end_event.record()
-        if type(embeddings) == tuple:
-            logger.debug(f"[Worker {rank}] {embeddings[0].size()= } allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
-        else:
-            logger.debug(f"[Worker {rank}] {embeddings.size()= } allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
+        # if type(embeddings) == tuple:
+        #     logger.debug(f"[Worker {rank}] {embeddings[0].size()= } allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
+        # else:
+        #     logger.debug(f"[Worker {rank}] {embeddings.size()= } allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
         
         ### timing
         torch.cuda.synchronize()
@@ -151,7 +157,7 @@ def dist_worker_compute_reward(
         start_event.record()
         rewards = reward_model(embeddings)
         end_event.record()
-        logger.debug(f"[Worker {rank}] {rewards.size()=} allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
+        # logger.debug(f"[Worker {rank}] {rewards.size()=} allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
 
 
         ### timing
@@ -167,4 +173,6 @@ def dist_worker_compute_reward(
     dist.gather(rewards, gather_list=recv_rewards, dst=0)
 
     if rank == 0:
+        consolidated_tensors = torch.cat(recv_rewards, dim=0).cuda(rank)
+        logger.debug(f"[Worker {rank}] {consolidated_tensors=}")
         return torch.cat(recv_rewards, dim=0).cuda(rank)

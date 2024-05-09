@@ -156,6 +156,27 @@ def reward_original(data, **kwargs):
     
     return rewards, info
 
+def reward_simple_remain_standing(data, **kwargs):
+    original_mujoco_reward, _ = reward_original(data, **kwargs)
+
+    ctrl_cost = kwargs.get("ctrl_cost", None)
+    ctrl_cost_w = 1
+
+    upward_cost = vert_dist_btw_torso_and_standing_height(data)
+    upward_cost_w = 1
+
+    rewards = - upward_cost - ctrl_cost
+
+    terms_to_plot = dict(
+            uph_c= - upward_cost,
+            ctrl_c= - ctrl_cost,
+            tor=str([f"{data.qpos.flat[:3][i]:.2f}" for i in range(3)]),
+            com=str([f"{data.xipos[1][i]:.2f}" for i in range(3)]),
+            r= f"{rewards:.2f}",
+            og_r= f"{original_mujoco_reward:.2f}",
+    )
+    
+    return rewards, terms_to_plot
 
 def reward_remain_standing(data, **kwargs):
     original_mujoco_reward, _ = reward_original(data, **kwargs)
@@ -273,6 +294,7 @@ def best_standing_from_lying_down(data, **kwargs):
 
 REWARD_FN_MAPPING = dict(
         original = reward_original,
+        simple_remain_standing = reward_simple_remain_standing,
         remain_standing = reward_remain_standing,
         best_standing_up = best_standing_from_lying_down,
     )
