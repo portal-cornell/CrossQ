@@ -189,7 +189,14 @@ def primary_worker(run_name, args, stop_event: Optional[multiprocessing.Event] =
 
         model.learn(total_timesteps=args.total_timesteps, progress_bar=True, callback=callback_list)
 
+        if stop_event is not None:
+            stop_event.set()
+
+        logger.info("Saving final model")
         model.save(str(os.path.join(checkpoint_dir, "final_model")))
+
+        logger.info("Done.")
+        wandb_run.finish()
 
 
 def vlm_inference_worker(run_name:str, rank: int, args, stop_event: multiprocessing.Event):
@@ -201,10 +208,12 @@ def vlm_inference_worker(run_name:str, rank: int, args, stop_event: multiprocess
     with open(args.reward_config, "r") as fin:
         model_config_dict = yaml.safe_load(fin)
 
-    # TODO: MAGIC NUMBER
-    worker_batch_size = int(0.8 * args.reward_batch_size) // (args.n_workers - 1)
+    if args.rank0_batch_size_pct < 1.0:
+        worker_batch_size = int((1 - args.rank0_batch_size_pct) * args.reward_batch_size) // (args.n_workers - 1)
+    else:
+        worker_batch_size = args.reward_batch_size // args.n_workers
     reward_model = load_reward_model(rank, 
-                                        batch_size=worker_batch_size, 
+                                        worker_actual_batch_size=worker_batch_size,  # Note that this is different size compared to rank 0's reward model when rank0_batch_size_pct < 1.0
                                         model_name=args.reward_model_name, 
                                         model_config_dict=model_config_dict).eval().cuda(rank)
     logger.debug(f"Loaded the reward model at rank={rank}: allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
@@ -217,6 +226,7 @@ def vlm_inference_worker(run_name:str, rank: int, args, stop_event: multiprocess
         logger.info(f"[Worker {rank}] Entering wait for compute_embeddings_dist...")
         dist_worker_compute_reward(
             rank,
+            rank0_batch_size_pct=args.rank0_batch_size_pct,
             reward_model=reward_model,
             render_dim=(args.render_dim[0], args.render_dim[1], 3),
             total_batch_size=args.reward_batch_size,  # Because this is not rank = 0, this helper doesn't actually use this value
@@ -264,7 +274,8 @@ if __name__ == "__main__":
     parser.add_argument("-n_envs",     type=int, required=False, default=1, help="Set up multiple env (one per cpu)")
 
     # Multiprocessing
-    parser.add_argument("-n_workers",         type=int, required=False, default=1, help="Number of workers in the run")
+    parser.add_argument("-n_workers",         type=int, required=False, default=1, help="Number of workers (GPUs) in the run")
+    parser.add_argument("-rank0_batch_size_pct", type=float, required=False, default=1.0, help="Determine how many percentage of the batch the main worker (rank = 0) need to process when doing reward calculation")
 
     # VLM reward model
     parser.add_argument("-reward_model_name", type=str, required=False, default="", help="Name of the reward model")

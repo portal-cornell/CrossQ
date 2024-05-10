@@ -8,7 +8,7 @@ import torch
 def load_dino_reward_model(
     rank, batch_size, model_name, image_metric, human_seg_model_path, ref_image_path_list
 ):  
-    feature_extractor = Dino2FeatureExtractor(model_name=model_name)
+    feature_extractor = Dino2FeatureExtractor(model_name=model_name, edge_size=448)
     logger.debug("Initialized feature extractor")
 
     human_seg_model = HumanSegmentationModel(rank, human_seg_model_path)
@@ -64,7 +64,7 @@ class DINORewardModelWrapper:
 
     def initialize_ref_images(self):
         # TODO: For now, we just support loading one image
-        logger.debug(f"[{self._device}] Embedding reference image")
+        logger.debug(f"[{self._device}] Embedding human reference image")
         with torch.no_grad():
             self.ref_image_embeddings = self.reward_model.feature_extractor.load_and_prepare_images_parallel(self.ref_image_path_list)
             self.ref_image_embeddings, self.ref_image_masks = self.reward_model.extract_masked_features(batch=self.ref_image_embeddings, use_patch_mask=True)
@@ -78,6 +78,7 @@ class DINORewardModelWrapper:
         return self
 
     def to(self, device):
+        # TODO (yuki): This is not elegant all
         if type(device) == str:
             rank = int(str(device)[-1])
         else:

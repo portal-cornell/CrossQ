@@ -23,13 +23,22 @@ def set_os_vars() -> None:
     os.environ["EGL_PLATFORM"] = "device"
     # Get wandb file (e.g. rendered) gif more accessible
     os.environ["WANDB_DIR"] = WANDB_DIR
-    os.environ["LOGURU_LEVEL"] = "INFO"
+    # os.environ["LOGURU_LEVEL"] = "INFO"  # Uncomment this if you don't want logger to print logger.debug stuff
 
 def validate_args(args):
     if vlm_for_reward(args):
         assert args.reward_batch_size % args.n_workers == 0, f"({args.reward_batch_size=}) corresponds to the total size of the batch do be distributed among workers and therefore must be divisible by ({args.n_workers=})"
 
         assert (args.n_envs * args.episode_length) % args.reward_batch_size == 0, f"({args.n_envs=}) * ({args.episode_length=}) must be divisible by ({args.reward_batch_size=}) so that all batches are of the same size."
+
+        if args.n_workers == 1:
+            assert args.rank0_batch_size_pct == 1.0, f"When there's only one worker, rank0 has to handle the entire batch so {args.rank0_batch_size_pct}"
+        else:
+            assert args.rank0_batch_size_pct < 1.0, f"When there are only one worker, rank0 should not have the entire batch so {args.rank0_batch_size_pct} can't be 1."
+
+        if args.rank0_batch_size_pct < 1.0:
+            assert float(((1 - args.rank0_batch_size_pct) * args.reward_batch_size)).is_integer(), f"({args.reward_batch_size=}) needs to be an integer when multiplying by {args.rank0_batch_size_pct=}"
+            assert int((1 - args.rank0_batch_size_pct) * args.reward_batch_size) % (args.n_workers - 1) == 0, f"({args.reward_batch_size=}) corresponds to the total size of the batch do be distributed among workers and therefore must be divisible by ({args.n_workers=})"
 
 def get_model_args_dict(args):
     import jax

@@ -57,5 +57,3 @@ wandb/
 /train_logs
 /inference_logs
 
-# Ignore training/inference script
-*.sh

@@ -12,14 +12,14 @@ from sbx.vlm_reward.reward_models.clip_models import load_clip_reward_model
 
 def load_reward_model(
                     rank,
-                    batch_size,
+                    worker_actual_batch_size,
                     model_name, 
                     model_config_dict):
     assert any([model_base_name in model_name.lower() for model_base_name in ["vit", "dino"]])
 
     if "dino" in model_name.lower():
         reward_model = load_dino_reward_model(rank=rank,
-                                                batch_size=batch_size,
+                                                batch_size=worker_actual_batch_size,
                                                 model_name=model_name,
                                                 image_metric=model_config_dict["image_metric"],
                                                 human_seg_model_path=model_config_dict["human_seg_model_path"],
@@ -42,6 +42,7 @@ def load_reward_model(
 def compute_rewards(
     model,
     frames: torch.Tensor,
+    rank0_batch_size_pct: float,
     batch_size: int, # Used to determine how the frames need to get splited up
     num_workers: int,
     worker_frames_tensor=None,
@@ -53,33 +54,47 @@ def compute_rewards(
     rewards = torch.zeros(n_samples, device=torch.device("cpu"))
     model = model.eval()
 
-    # TODO: MAGIC NUMBER
-    rank_0_chunk_size = int(0.2 * batch_size)
-    remaining_size = batch_size - rank_0_chunk_size
-    remaining_chunk_size = remaining_size // (num_workers - 1)
-    rank_0_pad_size = remaining_chunk_size - rank_0_chunk_size
+    if rank0_batch_size_pct < 1.0:
+        rank_0_chunk_size = int(rank0_batch_size_pct * batch_size)
+        remaining_size = batch_size - rank_0_chunk_size
+        remaining_chunk_size = remaining_size // (num_workers - 1)
+        rank_0_pad_size = remaining_chunk_size - rank_0_chunk_size
+        
+        total_batch_size = batch_size
+    else:
+        total_batch_size = batch_size // num_workers
 
     with torch.no_grad():
         for i in range(0, n_samples, batch_size):
             frames_batch = frames[i : i + batch_size]
             rewards_batch = dist_worker_compute_reward(
                 rank=0,
+                rank0_batch_size_pct=rank0_batch_size_pct,
                 reward_model=model,
                 render_dim=frames_batch.shape[1:],
-                total_batch_size=batch_size,
+                total_batch_size=total_batch_size,
                 num_workers=num_workers,
                 frames=frames_batch,
                 worker_frames_tensor=worker_frames_tensor,
             )
-            rewards_batch = rewards_batch.cpu()[rank_0_pad_size:]
+            rewards_batch = rewards_batch.cpu()
+            
+            logger.debug(f"{rewards_batch.size()=}, {rewards_batch=}")
 
+            if rank0_batch_size_pct < 1.0:
+                # Remove the padding
+                rewards_batch = rewards_batch[rank_0_pad_size:]
+                logger.debug(f"Removed padding {rewards_batch.size()=}, {rewards_batch=}")
+                
             rewards[i : i + batch_size] = rewards_batch
+
     return rewards
 
 
 @overload
 def dist_worker_compute_reward(
     rank: int,
+    rank0_batch_size_pct: float,
     reward_model,
     render_dim: Tuple[int, int, int],
     total_batch_size: int,
@@ -92,6 +107,7 @@ def dist_worker_compute_reward(
 @overload
 def dist_worker_compute_reward(
     rank: int,
+    rank0_batch_size_pct: float,
     reward_model,
     render_dim: Tuple[int, int, int],
     total_batch_size: int,
@@ -103,6 +119,7 @@ def dist_worker_compute_reward(
 
 def dist_worker_compute_reward(
     rank: int,
+    rank0_batch_size_pct: float,
     reward_model,
     render_dim: Tuple[int, int, int],
     total_batch_size: int,
@@ -115,31 +132,23 @@ def dist_worker_compute_reward(
     if rank == 0:
         if frames is None:
             raise ValueError("Must pass render result on rank=0")
-        # if len(frames) != num_workers * batch_size:
-        #     raise ValueError("Must pass render result with correct batch size")
 
-        # scatter_list = [t.cuda(rank) for t in torch.chunk(frames, num_workers, dim=0)]
-        # logger.debug(f"[Worker {rank}] before chunking {frames.size()=}")
+        if rank0_batch_size_pct < 1.0:
+            rank_0_chunk_size = int(0.2 * total_batch_size)
+            remaining_size = total_batch_size - rank_0_chunk_size
+            remaining_chunk_size = remaining_size // (num_workers - 1)
 
-        # TODO: MAGIC NUMBER
-        total_size = frames.size()[0] if frames is not None else total_batch_size
-        rank_0_chunk_size = int(0.2 * total_size)
-        remaining_size = total_size - rank_0_chunk_size
-        remaining_chunk_size = remaining_size // (num_workers - 1)
+            chunk_list = [rank_0_chunk_size] + [remaining_chunk_size] * (num_workers - 1)
 
-        chunk_list = [rank_0_chunk_size] + [remaining_chunk_size] * (num_workers - 1)
-        # TODO: Let's assume that the batch size is picked in a way that the remaining (num_workers - 1)
-        #   chunks of data all have the same size
-        # if remaining_size % (num_workers - 1) != 0:
-        #     last_chunk_size = remaining_size - remaining_chunk_size * (num_workers - 2)
-        #     chunk_list[-1] = last_chunk_size
-        # logger.debug(f"[Worker {rank}] {chunk_list=}")
-
-        scatter_list = [t.cuda(rank) for t in torch.split(frames, split_size_or_sections=chunk_list, dim=0)]
-        
-        rank_0_pad_size = remaining_chunk_size - rank_0_chunk_size
-        scatter_list[0] = F.pad(scatter_list[0], (0, 0, 0, 0, 0, 0, rank_0_pad_size, 0),
-                                "constant", 0)
+            scatter_list = [t.cuda(rank) for t in torch.split(frames, split_size_or_sections=chunk_list, dim=0)]
+            
+            rank_0_pad_size = remaining_chunk_size - rank_0_chunk_size
+            # Pad the left of the batch
+            scatter_list[0] = F.pad(scatter_list[0], (0, 0, 0, 0, 0, 0, rank_0_pad_size, 0),
+                                    "constant", 0)
+        else:
+            # Split evenly
+            scatter_list = [t.cuda(rank) for t in torch.chunk(frames, num_workers, dim=0)]
     else:
         scatter_list = []
 
@@ -148,11 +157,14 @@ def dist_worker_compute_reward(
 
     # worker_frames_size = rank_0_chunk_size if rank == 0 else batch_size
     # logger.debug(f"[Worker {rank}] does worker_frames_tensor exist: {worker_frames_tensor.size() if worker_frames_tensor is not None else None}")
+    if rank0_batch_size_pct == 1.0:
+        remaining_chunk_size = total_batch_size 
+
     worker_frames = worker_frames_tensor if worker_frames_tensor is not None else torch.zeros((remaining_chunk_size, *render_dim), dtype=torch.uint8).cuda(rank)
     logger.debug(f"[Worker {rank}] {worker_frames.size()=}, scatter_list={[x.size() for x in scatter_list]}")
     dist.scatter(worker_frames, scatter_list=scatter_list, src=0)
     with torch.no_grad():
-        if rank == 0:
+        if rank == 0 and rank0_batch_size_pct < 1.0:
             worker_frames_to_compute = worker_frames[rank_0_pad_size:]
         else:
             worker_frames_to_compute = worker_frames
@@ -177,7 +189,7 @@ def dist_worker_compute_reward(
         end_event.record()
         # logger.debug(f"[Worker {rank}] {rewards.size()=} allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
 
-        if rank == 0:
+        if rank == 0 and rank0_batch_size_pct < 1.0:
             rewards = F.pad(rewards, (rank_0_pad_size, 0))
         ### timing
         torch.cuda.synchronize()

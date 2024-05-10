@@ -153,18 +153,17 @@ class VLM_SAC(OffPolicyAlgorithmJax):
             self.previous_num_timesteps = 0
             self.previous_num_episodes = 0
 
-            # TODO: MAGIC NUMBER
-            worker_batch_size = int(0.8 * self.args.reward_batch_size) // (self.args.n_workers - 1)
+            if self.args.rank0_batch_size_pct < 1.0:
+                # Uneven workload split between workers
+                worker_batch_size = int((1 - self.args.rank0_batch_size_pct) * self.args.reward_batch_size) // (self.args.n_workers - 1)
+            else:
+                worker_batch_size = self.args.reward_batch_size // self.args.n_workers
+            
             self.worker_frames_tensor = torch.zeros(
-                (worker_batch_size, self.args.render_dim[0], self.args.render_dim[1], 3),
-                dtype=torch.uint8,
-            ).cuda(0)  # (Batch size per worker, w, h, 3)
-            # self.worker_frames_tensor = torch.zeros(
-            #     (int(self.args.reward_batch_size * 0.2), self.args.render_dim[0], self.args.render_dim[1], 3),
-            #     dtype=torch.uint8,
-            # ).cuda(0)  # (Batch size per worker, w, h, 3)
-
-
+                    (worker_batch_size, self.args.render_dim[0], self.args.render_dim[1], 3),
+                    dtype=torch.uint8,
+                ).cuda(0)  # (Batch size per worker, w, h, 3)
+                
     """
     Added for VLM reward
     """
@@ -175,8 +174,12 @@ class VLM_SAC(OffPolicyAlgorithmJax):
         
         # This is the actual batch size for rank0 inference worker
         #   because this batch_size is used to decide how many copies of the reference human image to use
-        rank0_worker_batch = int(0.2 * self.args.reward_batch_size)
-        reward_model = load_reward_model(rank=0, batch_size=rank0_worker_batch,
+        if self.args.rank0_batch_size_pct < 1.0:
+            rank0_worker_batch = int(self.args.rank0_batch_size_pct * self.args.reward_batch_size)
+        else:
+            rank0_worker_batch = self.args.reward_batch_size // self.args.n_workers
+
+        reward_model = load_reward_model(rank=0, worker_actual_batch_size=rank0_worker_batch,
                                          model_name=self.args.reward_model_name,
                                          model_config_dict=model_config_dict).eval().cuda(0)
         self.reward_model = reward_model
@@ -230,6 +233,7 @@ class VLM_SAC(OffPolicyAlgorithmJax):
         rewards = compute_rewards(
             model=self.reward_model,
             frames=frames,
+            rank0_batch_size_pct=self.args.rank0_batch_size_pct,
             batch_size=self.args.reward_batch_size,  # This is the total batch size
             num_workers=self.args.n_workers,
             worker_frames_tensor=self.worker_frames_tensor,
@@ -239,6 +243,7 @@ class VLM_SAC(OffPolicyAlgorithmJax):
             "(n_steps n_envs) ... -> n_steps n_envs ...",
             n_envs=self.args.n_envs,
         ).numpy()
+
         self.replay_buffer.clear_render_arrays()
 
         if replay_buffer_pos - env_episode_timesteps >= 0:
