@@ -51,7 +51,7 @@ MUJOCO_LOG.TXT
 
 /plotting/plots/*.png
 wandb/
-*.png
+.png
 *.pdf
 /checkpoints
 /train_logs
