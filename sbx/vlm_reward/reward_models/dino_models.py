@@ -60,6 +60,8 @@ class DINORewardModelWrapper:
                                                                     target_features=self.ref_image_embeddings,
                                                                     target_masks=self.ref_image_masks)).to(self._device)
             logger.debug(f"__call__: {distance.size()=}")
+            
+            
             return - distance  # Reward is the negative of the distance
 
     def initialize_ref_images(self):

@@ -122,6 +122,9 @@ def primary_worker(run_name, args, stop_event: Optional[multiprocessing.Event] =
         stats_window_size=1,  # don't smooth the episode return stats over time
         tensorboard_log=os.path.join("./train_logs", run_name),
     )
+
+    model.use_distributed = args.distributed
+
     # TODO: Not sure if .load() is better than .set_parameters()
     if args.model_base_path:
         existing_checkpoint_path = os.path.join(args.model_base_path, args.model_checkpoint)
@@ -185,7 +188,7 @@ def primary_worker(run_name, args, stop_event: Optional[multiprocessing.Event] =
 
         video_callback = VideoRecorderCallback(
             eval_env=eval_env,
-            render_freq=args.video_save_freq // args.n_envs,
+            render_freq=args.video_save_freq // args.n_envs, # increase video save freq 
         )
 
 

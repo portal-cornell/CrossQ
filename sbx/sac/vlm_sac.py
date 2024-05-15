@@ -31,6 +31,7 @@ from sbx.common.type_aliases import ReplayBufferSamplesNp, RLTrainState, ActorTr
 from sbx.sac.policies import SACPolicy
 
 from sbx.vlm_reward.reward_main import compute_rewards, load_reward_model
+from sbx.vlm_reward.reward_transforms import half_gaussian_filter_1d
 from sbx.vlm_reward.vlm_buffer import VLMReplayBuffer
 
 
@@ -231,11 +232,21 @@ class VLM_SAC(OffPolicyAlgorithmJax):
         assert self.args.episode_length == env_episode_timesteps // env_episodes
 
         frames = torch.from_numpy(np.array(self.replay_buffer.render_arrays))
+
+        DEBUG_REWS = False
+        if DEBUG_REWS and False: # don't do this right now because it's really really slow
+            logger.info(f"Frames shaped {frames.shape} type {frames.dtype}")
+            frames_to_save = frames[:100, 0, ...].cpu()
+            for i, frame in enumerate(frames_to_save):
+                save_image(frame.to(torch.float32).permute(2, 0 ,1) / 255.0, f'debugging/testing_before/img_{i}.png')
+                torch.save(frame, f'debugging/testing_before/img_{i}.pt')
+            logger.info(f"Images saved")
+
+
         frames = rearrange(frames, "n_steps n_envs ... -> (n_steps n_envs) ...")
     
         assert frames.shape[1:] == (self.args.render_dim[0], self.args.render_dim[1], 3)
 
-        logger.info(f"Frames shaped {frames.shape} type {frames.dtype}")
 
         # NOTE: distributed will be off if dist is False
         rewards = compute_rewards(
@@ -245,14 +256,37 @@ class VLM_SAC(OffPolicyAlgorithmJax):
             batch_size=self.args.reward_batch_size,  # This is the total batch size
             num_workers=self.args.n_workers,
             worker_frames_tensor=self.worker_frames_tensor,
-            dist=False
+            dist=self.use_distributed
         )
+
         rewards = rearrange(
             rewards,
-            "(n_steps n_envs) ... -> n_steps n_envs ...",
+            "(n_steps n_envs) ... -> (n_envs n_steps) ...",
             n_envs=self.args.n_envs,
         )
-        logger.debug(f"Rewards shaped {rewards.shape} type {type(rewards)}")
+
+        rewards = half_gaussian_filter_1d(rewards, sigma=20)
+
+        rewards = rearrange(
+            rewards,
+            "(n_envs n_steps) ... -> n_steps n_envs ...",
+            n_envs=self.args.n_envs,
+        )
+
+        if DEBUG_REWS:
+            from sbx.vlm_reward.reward_models.language_irl.utils import rewards_matrix_heatmap
+            logger.debug(f"Rewards shaped {rewards.shape} type {type(rewards)}")
+
+            rews_to_save = rewards[:100, 0]
+
+            torch.save(rews_to_save, 'debugging/testing_after/rewards.pt')
+            rewards_matrix_heatmap(np.array(rews_to_save[None]), 'debugging/testing_after/heatmap_unsmooth.png')
+
+        ### TODO:REMOVE (this kills training)
+        def bruh():
+            return 5 / 0 
+        bruh()
+
 
         rewards = rewards.numpy()
 

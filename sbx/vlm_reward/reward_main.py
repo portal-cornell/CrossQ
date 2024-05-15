@@ -61,19 +61,11 @@ def compute_rewards(
 
 
     if not dist:
-        # frames_to_save = frames[:100].cpu()
-        # for i, frame in enumerate(frames_to_save):
-        #     save_image(frame.to(torch.float32).permute(2, 0 ,1) / 255.0, f'debugging/testing_before/img_{i}.png')
-        #     torch.save(frame, f'debugging/testing_before/img_{i}.pt')
-        # logger.info(f"Images saved")
+
         for i in range(0, n_samples, batch_size):
             frames_batch = frames[i : i + batch_size]
             rewards_batch = compute_reward_nodist(frames_batch, model)
             rewards[i : i + batch_size] = rewards_batch
-
-        # for i, frame in enumerate(frames[:100]):
-        #     save_image(frame.to(torch.float32).permute(2, 0 ,1) / 255.0, f'debugging/testing_after/img_{i}.png')
-        # torch.save(rewards[:100], 'debugging/testing_after/rewards.npy')
 
         return rewards
 
