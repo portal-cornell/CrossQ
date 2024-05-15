@@ -53,7 +53,6 @@ def primary_worker(run_name, args, stop_event: Optional[multiprocessing.Event] =
     """
     train_log_dir = os.path.join("./train_logs", run_name)
     logger.add(os.path.join(train_log_dir, "logs.txt"), enqueue=True)
-
     args, args_dict = utils.get_model_args_dict(args)
 
     use_vlm_for_reward = utils.vlm_for_reward(args)
@@ -69,9 +68,7 @@ def primary_worker(run_name, args, stop_event: Optional[multiprocessing.Event] =
 
     if "custom" in args.env.lower():
         make_env_kwargs["reward_type"] = args.reward_type
-
     logger.info(f"Creating environment={args.env} instances with {make_env_kwargs=}")
-        
     # TODO: Not sure if the thing below still works for vanilla RL
     # training_env = SubprocVecEnv([get_make_env(args.env, seed=args.seed+i, **make_env_kwargs) for i in range(args.n_envs)], start_method="spawn")
     make_env_fn = get_make_env(args.env, **make_env_kwargs)
@@ -125,7 +122,6 @@ def primary_worker(run_name, args, stop_event: Optional[multiprocessing.Event] =
         stats_window_size=1,  # don't smooth the episode return stats over time
         tensorboard_log=os.path.join("./train_logs", run_name),
     )
-
     # TODO: Not sure if .load() is better than .set_parameters()
     if args.model_base_path:
         existing_checkpoint_path = os.path.join(args.model_base_path, args.model_checkpoint)
@@ -133,6 +129,7 @@ def primary_worker(run_name, args, stop_event: Optional[multiprocessing.Event] =
         model.set_parameters(existing_checkpoint_path)
     logger.debug(f"Created the learned and initialized if needed: allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)}")
     
+
     with wandb.init(
         project=args.wandb_project,
         name=run_name,
@@ -177,17 +174,26 @@ def primary_worker(run_name, args, stop_event: Optional[multiprocessing.Event] =
             verbose=2,
         )
 
+        eval_env = make_vec_env(
+            make_env_fn,
+            n_envs=args.n_envs,
+            seed=args.seed,
+            vec_env_cls=SubprocVecEnv,
+            use_gpu_ids=list(range(args.n_workers)),
+            vec_env_kwargs=dict(render_dim=(args.render_dim[0], args.render_dim[1], 3)),
+        )
+
         video_callback = VideoRecorderCallback(
-            SubprocVecEnv([make_env_fn], render_dim=(args.render_dim[0], args.render_dim[1], 3)),
-            # eval_env=get_make_env(args.env, seed=args.seed, **make_env_kwargs)(),
+            eval_env=eval_env,
             render_freq=args.video_save_freq // args.n_envs,
         )
+
 
         callback_list = CallbackList(
             [wandb_callback, video_callback]
         )
 
-        model.learn(total_timesteps=args.total_timesteps, progress_bar=True, callback=callback_list)
+        model.learn(total_timesteps=args.total_timesteps, progress_bar=False, callback=callback_list)
 
         if stop_event is not None:
             stop_event.set()
@@ -313,6 +319,7 @@ if __name__ == "__main__":
     parser.add_argument("-utd",               type=int,   required=False, default=1, help="number of critic updates per env step (update to data ratio)")
     parser.add_argument("-bnstats_live_net",  type=int,   required=False, default=0,choices=[0,1], help="use bn running statistics from live network within the target network")
 
+    parser.add_argument('--distributed', default=True, action=argparse.BooleanOptionalAction)
     # TODO: do some args validation
 
     experiment_time, run_id = utils.get_run_hash()
@@ -360,5 +367,7 @@ if __name__ == "__main__":
         else:
             logger.info("Running RL for ground truth.")
             primary_worker(run_name, args)
-
-    _train()
+    if args.distributed:
+        _train()
+    else:
+        primary_worker(run_name, args)

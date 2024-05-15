@@ -6,7 +6,7 @@
 # and must be 
 #       a divisor of n_envs * episode_length 
 #       so that all batches can be of the same size
-######################################## Ours (DINO-based)
+####################################### Ours (DINO-based)
 python train.py \
     -algo crossq \
     -env HumanoidSpawnedUpCustom \
@@ -41,7 +41,8 @@ python train.py \
 #     -eval_freq=100000 \
 #     -model_save_freq=100000 \
 #     -video_save_freq=10000 \
-#     -episode_length=240 \
+#     -episode_length=256 \
+#     --no-distributed
 ######################################## CLIP
 # python train.py \
 #     -algo crossq \

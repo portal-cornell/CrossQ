@@ -1,11 +1,13 @@
 from functools import partial
 from typing import Any, ClassVar, Dict, Optional, Tuple, Type, Union
 
+import os
 import yaml
 from loguru import logger
 from collections import deque
 
 import torch
+from torchvision.utils import save_image
 from einops import rearrange
 
 import flax
@@ -30,6 +32,8 @@ from sbx.sac.policies import SACPolicy
 
 from sbx.vlm_reward.reward_main import compute_rewards, load_reward_model
 from sbx.vlm_reward.vlm_buffer import VLMReplayBuffer
+
+
 
 class EntropyCoef(nn.Module):
     ent_coef_init: float = 1.0
@@ -230,6 +234,10 @@ class VLM_SAC(OffPolicyAlgorithmJax):
         frames = rearrange(frames, "n_steps n_envs ... -> (n_steps n_envs) ...")
     
         assert frames.shape[1:] == (self.args.render_dim[0], self.args.render_dim[1], 3)
+
+        logger.info(f"Frames shaped {frames.shape} type {frames.dtype}")
+
+        # NOTE: distributed will be off if dist is False
         rewards = compute_rewards(
             model=self.reward_model,
             frames=frames,
@@ -237,12 +245,18 @@ class VLM_SAC(OffPolicyAlgorithmJax):
             batch_size=self.args.reward_batch_size,  # This is the total batch size
             num_workers=self.args.n_workers,
             worker_frames_tensor=self.worker_frames_tensor,
+            dist=False
         )
         rewards = rearrange(
             rewards,
             "(n_steps n_envs) ... -> n_steps n_envs ...",
             n_envs=self.args.n_envs,
-        ).numpy()
+        )
+        logger.debug(f"Rewards shaped {rewards.shape} type {type(rewards)}")
+
+        rewards = rewards.numpy()
+
+
 
         self.replay_buffer.clear_render_arrays()
 

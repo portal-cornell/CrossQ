@@ -1,1 +1,1 @@
-WANDB_DIR = "/share/portal/hw575/CrossQ/"
+WANDB_DIR = "/share/portal/wph52/CrossQ/"

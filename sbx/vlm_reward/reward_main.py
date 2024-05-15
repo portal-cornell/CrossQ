@@ -3,12 +3,15 @@ from typing import List, Optional, Tuple, overload
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
+from torchvision.utils import save_image
 
 from loguru import logger
 
 # TODO: finish all the imports needed here
 from sbx.vlm_reward.reward_models.dino_models import load_dino_reward_model
 from sbx.vlm_reward.reward_models.clip_models import load_clip_reward_model
+
+
 
 def load_reward_model(
                     rank,
@@ -46,13 +49,33 @@ def compute_rewards(
     batch_size: int, # Used to determine how the frames need to get splited up
     num_workers: int,
     worker_frames_tensor=None,
+    dist=True
 ) -> torch.Tensor:
     assert frames.device == torch.device("cpu")
     assert batch_size % num_workers == 0
+
     n_samples = len(frames)
     logger.debug(f"compute_rewards: {n_samples=}, {batch_size=}")
     rewards = torch.zeros(n_samples, device=torch.device("cpu"))
     model = model.eval()
+
+
+    if not dist:
+        # frames_to_save = frames[:100].cpu()
+        # for i, frame in enumerate(frames_to_save):
+        #     save_image(frame.to(torch.float32).permute(2, 0 ,1) / 255.0, f'debugging/testing_before/img_{i}.png')
+        #     torch.save(frame, f'debugging/testing_before/img_{i}.pt')
+        # logger.info(f"Images saved")
+        for i in range(0, n_samples, batch_size):
+            frames_batch = frames[i : i + batch_size]
+            rewards_batch = compute_reward_nodist(frames_batch, model)
+            rewards[i : i + batch_size] = rewards_batch
+
+        # for i, frame in enumerate(frames[:100]):
+        #     save_image(frame.to(torch.float32).permute(2, 0 ,1) / 255.0, f'debugging/testing_after/img_{i}.png')
+        # torch.save(rewards[:100], 'debugging/testing_after/rewards.npy')
+
+        return rewards
 
     if rank0_batch_size_pct < 1.0:
         rank_0_chunk_size = int(rank0_batch_size_pct * batch_size)
@@ -67,6 +90,7 @@ def compute_rewards(
     with torch.no_grad():
         for i in range(0, n_samples, batch_size):
             frames_batch = frames[i : i + batch_size]
+            print(f'--------shape: {frames_batch.shape}-----------')
             rewards_batch = dist_worker_compute_reward(
                 rank=0,
                 rank0_batch_size_pct=rank0_batch_size_pct,
@@ -88,6 +112,7 @@ def compute_rewards(
                 
             rewards[i : i + batch_size] = rewards_batch
 
+    
     return rewards
 
 
@@ -127,8 +152,7 @@ def dist_worker_compute_reward(
     frames=None,
     worker_frames_tensor=None,
 ) -> Optional[torch.Tensor]:
-    logger.info(f"[Worker {rank}] Computing reward...")
-    
+    logger.info(f"[Worker {rank} Computing reward...")
     if rank == 0:
         if frames is None:
             raise ValueError("Must pass render result on rank=0")
@@ -140,6 +164,7 @@ def dist_worker_compute_reward(
 
             chunk_list = [rank_0_chunk_size] + [remaining_chunk_size] * (num_workers - 1)
 
+            ## only scatter if rank 0 (otherwise, tensors have already been scattered)
             scatter_list = [t.cuda(rank) for t in torch.split(frames, split_size_or_sections=chunk_list, dim=0)]
             
             rank_0_pad_size = remaining_chunk_size - rank_0_chunk_size
@@ -206,3 +231,29 @@ def dist_worker_compute_reward(
     if rank == 0:
         consolidated_tensors = torch.cat(recv_rewards, dim=0).cuda(rank)
         return torch.cat(recv_rewards, dim=0).cuda(rank)
+
+
+def compute_reward_nodist(frames, reward_model):
+
+    start_event = torch.cuda.Event(enable_timing=True)
+    end_event = torch.cuda.Event(enable_timing=True)
+
+    with torch.no_grad():
+        start_event.record()
+        embeddings = reward_model.embed_module(frames)
+        end_event.record()
+        
+        ### timing
+        torch.cuda.synchronize()
+        execution_time = start_event.elapsed_time(end_event)
+        logger.info(f"Worker - Image Embedding time: {execution_time / 1000} seconds")
+        ####
+
+        start_event.record()
+        rewards = reward_model(embeddings)
+        end_event.record()
+        torch.cuda.synchronize()
+        execution_time = start_event.elapsed_time(end_event)
+        logger.info(f"Worker - Reward Calculation time: {execution_time / 1000} seconds")
+
+    return rewards

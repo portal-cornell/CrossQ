@@ -100,7 +100,6 @@ def make_vec_env(
             "over GPUs, since this will load the EGL context and set the"
             "same device to all the subprocesses."
         )
-
     vec_env = vec_env_cls(make_env_fns, **vec_env_kwargs)
     # Prepare the seeds for the first reset
     vec_env.seed(seed)
