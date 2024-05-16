@@ -265,7 +265,8 @@ class VLM_SAC(OffPolicyAlgorithmJax):
             n_envs=self.args.n_envs,
         )
 
-        rewards = half_gaussian_filter_1d(rewards, sigma=20)
+        # Filter the rewards
+        rewards = half_gaussian_filter_1d(rewards, sigma=20) 
 
         rewards = rearrange(
             rewards,
@@ -281,16 +282,6 @@ class VLM_SAC(OffPolicyAlgorithmJax):
 
             torch.save(rews_to_save, 'debugging/testing_after/rewards.pt')
             rewards_matrix_heatmap(np.array(rews_to_save[None]), 'debugging/testing_after/heatmap_unsmooth.png')
-
-        ### TODO:REMOVE (this kills training)
-        def bruh():
-            return 5 / 0 
-        bruh()
-
-
-        rewards = rewards.numpy()
-
-
 
         self.replay_buffer.clear_render_arrays()
 

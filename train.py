@@ -177,20 +177,20 @@ def primary_worker(run_name, args, stop_event: Optional[multiprocessing.Event] =
             verbose=2,
         )
 
-        eval_env = make_vec_env(
-            make_env_fn,
-            n_envs=args.n_envs,
-            seed=args.seed,
-            vec_env_cls=SubprocVecEnv,
-            use_gpu_ids=list(range(args.n_workers)),
-            vec_env_kwargs=dict(render_dim=(args.render_dim[0], args.render_dim[1], 3)),
-        )
-
+        # eval_env = make_vec_env(
+        #     make_env_fn,
+        #     n_envs=args.n_envs,
+        #     seed=args.seed,
+        #     vec_env_cls=SubprocVecEnv,
+        #     use_gpu_ids=list(range(args.n_workers)),
+        #     vec_env_kwargs=dict(render_dim=(args.render_dim[0], args.render_dim[1], 3)),
+        # )
+        
         video_callback = VideoRecorderCallback(
-            eval_env=eval_env,
-            render_freq=args.video_save_freq // args.n_envs, # increase video save freq 
+            SubprocVecEnv([make_env_fn], render_dim=(args.render_dim[0], args.render_dim[1], 3)),
+            # eval_env=get_make_env(args.env, seed=args.seed, **make_env_kwargs)(),
+            render_freq=args.video_save_freq // args.n_envs,
         )
-
 
         callback_list = CallbackList(
             [wandb_callback, video_callback]

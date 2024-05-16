@@ -19,11 +19,31 @@ python train.py \
     -reward_batch_size 240\
     -reward_config './configs/dino_reward_config.yml'\
     -wandb_mode 'online' \
-    -total_timesteps=1000000 \
+    -total_timesteps=3000000 \
     -eval_freq=100000 \
     -model_save_freq=100000 \
     -video_save_freq=10000 \
-    -episode_length=240 \
+    -episode_length=120 \
+
+
+######## Public G2 A6000s (must decrease batch size for some reason)
+# python train.py \
+#     -algo crossq \
+#     -env HumanoidSpawnedUpCustom \
+#     -reward_type simple_remain_standing\
+#     -n_envs 8 \
+#     -seed 9 \
+#     -n_workers 2\
+#     -rank0_batch_size_pct 0.2\
+#     -reward_model_name 'dinov2_vitl14_reg'\
+#     -reward_batch_size 60\
+#     -reward_config './configs/dino_reward_config.yml'\
+#     -wandb_mode 'online' \
+#     -total_timesteps=4000000 \
+#     -eval_freq=100000 \
+#     -model_save_freq=100000 \
+#     -video_save_freq=10000 \
+#     -episode_length=240 \
 # ----------- Using 1 GPU (8 CPU)
 # python train.py \
 #     -algo crossq \
