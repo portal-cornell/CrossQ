@@ -1,6 +1,6 @@
 from scipy.ndimage._filters import correlate1d, _gaussian_kernel1d
 
-def half_gaussian_filter_1d(x, sigma, axis=-1, order=0, output=None,
+def half_gaussian_filter_1d(x, sigma, smooth_last_N=False, axis=-1, order=0, output=None,
                       mode="reflect", cval=0.0, truncate=4.0, *, radius=None):
     """
     filters x using the half normal distribution, defined by sigma.
@@ -15,7 +15,14 @@ def half_gaussian_filter_1d(x, sigma, axis=-1, order=0, output=None,
     weights = _gaussian_kernel1d(sigma, order, lw)[::-1]
     weights[:(len(weights) - 1) // 2] = 0
     weights /= sum(weights)
-    return correlate1d(x, weights, axis, output, mode, cval, 0)
+
+    filtered = correlate1d(x, weights, axis, output, mode, cval, 0)
+
+    if not smooth_last_N:
+        filtered[..., -lw:] = x[..., -lw:]
+        
+    return filtered 
+
 
 if __name__=="__main__":
     x = torch.load('debugging/testing_after/rewards.pt')

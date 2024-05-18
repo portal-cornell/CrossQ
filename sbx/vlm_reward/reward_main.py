@@ -21,14 +21,20 @@ def load_reward_model(
     assert any([model_base_name in model_name.lower() for model_base_name in ["vit", "dino"]])
 
     if "dino" in model_name.lower():
+        if "neg_image_path" in model_config_dict:
+            neg_image_path_list=model_config_dict["neg_image_path"]
+        else:
+            neg_image_path_list = []
+
         reward_model = load_dino_reward_model(rank=rank,
                                                 batch_size=worker_actual_batch_size,
                                                 model_name=model_name,
                                                 image_metric=model_config_dict["image_metric"],
                                                 human_seg_model_path=model_config_dict["human_seg_model_path"],
-                                                ref_image_path_list=model_config_dict["ref_image_path"])
+                                                pos_image_path_list=model_config_dict["pos_image_path"],
+                                                neg_image_path_list=neg_image_path_list)
 
-        logger.debug(f"Loaded DINO reward model. model_name={model_name}, ref_image={model_config_dict['ref_image_path']}")
+        logger.debug(f"Loaded DINO reward model. model_name={model_name}, pos_image={model_config_dict['pos_image_path']}, neg_image={neg_image_path_list}")
 
     if (not ("dino" in model_name.lower())) and ("vit" in model_name.lower()):
         reward_model = load_clip_reward_model(model_name=model_name,

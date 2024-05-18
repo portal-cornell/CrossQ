@@ -266,7 +266,11 @@ class VLM_SAC(OffPolicyAlgorithmJax):
         )
 
         # Filter the rewards
-        rewards = half_gaussian_filter_1d(rewards, sigma=20) 
+        rewards = half_gaussian_filter_1d(rewards, sigma=4, smooth_last_N=True) 
+
+        # scale and bias the rewards to around [0, 500] (GT reward range)
+        # TODO: magic numbers
+        rewards = 500*(rewards + 33.5) 
 
         rewards = rearrange(
             rewards,

@@ -1,4 +1,7 @@
 image_metric: 'wasserstein'
 human_seg_model_path: '/share/portal/hw575/language_irl/pretrained_checkpoints/SGHM-ResNet50.pth'
-ref_image_path: 
-  - /share/portal/wph52/CrossQ/sbx/vlm_reward/reward_models/language_irl/preference_data/humans_selected_images/standing_up/anne_standing_front_final-0.png
+pos_image_path: 
+  - sbx/vlm_reward/reward_models/language_irl/preference_data/humans_selected_images/standing_up/anne_standing_front_final-0.png
+neg_image_path:
+  - debugging/images/lean_sideways.jpg
+  - sbx/vlm_reward/reward_models/language_irl/preference_data/humans_selected_images/kneeling/anne_kneeling_front_final.png
