@@ -5,3 +5,6 @@ pos_image_path:
 neg_image_path:
   - debugging/images/lean_sideways.jpg
   - sbx/vlm_reward/reward_models/language_irl/preference_data/humans_selected_images/kneeling/anne_kneeling_front_final.png
+
+
+#### Note: neg_image_path can be removed (if it isn't there, will only use positive images)

@@ -70,7 +70,6 @@ class DINORewardModelWrapper:
         if self.pos_idx_split < len(self.ref_image_embeddings):
             total_distance = sum(all_ds[:self.pos_idx_split]) / len(all_ds[:self.pos_idx_split]) - (sum(all_ds[self.pos_idx_split:]) / len(all_ds[self.pos_idx_split:]))
             
-            
         else:
             total_distance = sum(all_ds[:self.pos_idx_split]) / len(all_ds[:self.pos_idx_split])
             total_distance = total_distance - 33.5 # TODO: MAGIC NUMBER offset to near 0 (tend to be around 33.4)
