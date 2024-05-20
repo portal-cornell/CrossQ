@@ -19,8 +19,9 @@ def load_frames_to_torch(gif_path):
     frames = [gif_obj.seek(frame_index) or gif_obj.convert("RGB") for frame_index in range(gif_obj.n_frames)]
     torch_frames = torch.stack([pil_to_tensor(frame) for frame in frames])
 
-    if 'step_' in gif_path: # step_291, step_531, etc. all have the last frame standing, which will mess with smoothing
-        torch_frames = torch_frames[:-1]
+    #if 'step_' in gif_path: 
+    # many of the gifs have the last frame standing, which will mess with smoothing
+    torch_frames = torch_frames[:-1]
     return  torch_frames# chop off last one 
 
 def heatmap_from_gifs(gif_paths, reward_config, reward_model_name, batch_size):
@@ -70,9 +71,11 @@ def heatmap_from_gifs(gif_paths, reward_config, reward_model_name, batch_size):
 if __name__=="__main__":
 #    gif_paths = ['sbx/vlm_reward/reward_models/language_irl/kneeling_gifs_ranked/kneeling_5.gif']
 
-    gif_paths =  ['debugging/gifs/step_291.gif', 'debugging/gifs/step_531.gif', 'debugging/gifs/step_781.gif']
- 
+    gif_paths =  ['debugging/gifs/standing_gifs/step_291.gif', 'debugging/gifs/standing_gifs/step_531.gif', 'debugging/gifs/standing_gifs/step_781.gif']
+    # gif_paths =  ['debugging/gifs/kneeling_gifs/kneeling_almost.gif',
+    #             'debugging/gifs/kneeling_gifs/leaning_forward.gif',
+    #             'debugging/gifs/kneeling_gifs/one_leg.gif']
     reward_config = 'configs/dino_reward_config.yml'
     reward_model_name = 'dinov2_vitl14_reg'
-    batch_size=120
+    batch_size=60
     heatmap_from_gifs(gif_paths, reward_config, reward_model_name, batch_size)

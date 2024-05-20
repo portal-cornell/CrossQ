@@ -26,13 +26,24 @@ def load_reward_model(
         else:
             neg_image_path_list = []
 
+        if "baseline_image_path" in model_config_dict:
+            baseline_image_path = model_config_dict["baseline_image_path"]
+            baseline_mask_thresh = model_config_dict["baseline_mask_thresh"]
+        else:
+            baseline_image_path = None
+            baseline_mask_thresh = None
+
         reward_model = load_dino_reward_model(rank=rank,
                                                 batch_size=worker_actual_batch_size,
                                                 model_name=model_name,
                                                 image_metric=model_config_dict["image_metric"],
                                                 human_seg_model_path=model_config_dict["human_seg_model_path"],
                                                 pos_image_path_list=model_config_dict["pos_image_path"],
-                                                neg_image_path_list=neg_image_path_list)
+                                                neg_image_path_list=neg_image_path_list,
+                                                source_mask_thresh=model_config_dict["source_mask_thresh"],
+                                                target_mask_thresh=model_config_dict["target_mask_thresh"],
+                                                baseline_image_path=baseline_image_path,
+                                                baseline_mask_thresh=baseline_mask_thresh)
 
         logger.debug(f"Loaded DINO reward model. model_name={model_name}, pos_image={model_config_dict['pos_image_path']}, neg_image={neg_image_path_list}")
 
@@ -55,7 +66,7 @@ def compute_rewards(
     batch_size: int, # Used to determine how the frames need to get splited up
     num_workers: int,
     worker_frames_tensor=None,
-    dist=True
+    dist=True,
 ) -> torch.Tensor:
     assert frames.device == torch.device("cpu")
     assert batch_size % num_workers == 0
@@ -194,7 +205,7 @@ def dist_worker_compute_reward(
 
         start_event.record()
         # logger.debug(f"[Worker {rank}] {worker_frames_to_compute.size()=} allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
-        embeddings = reward_model.embed_module(worker_frames_to_compute)
+        embeddings = reward_model.embed_module(worker_frames_to_compute, reward_model.source_mask_thresh)
         end_event.record()
         # if type(embeddings) == tuple:
         #     logger.debug(f"[Worker {rank}] {embeddings[0].size()= } allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
@@ -238,7 +249,7 @@ def compute_reward_nodist(frames, reward_model):
 
     with torch.no_grad():
         start_event.record()
-        embeddings = reward_model.embed_module(frames)
+        embeddings = reward_model.embed_module(frames, reward_model.source_mask_thresh)
         end_event.record()
         
         ### timing

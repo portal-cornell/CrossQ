@@ -168,7 +168,8 @@ class VLM_SAC(OffPolicyAlgorithmJax):
                     (worker_batch_size, self.args.render_dim[0], self.args.render_dim[1], 3),
                     dtype=torch.uint8,
                 ).cuda(0)  # (Batch size per worker, w, h, 3)
-                
+        
+
     """
     Added for VLM reward
     """
@@ -270,7 +271,7 @@ class VLM_SAC(OffPolicyAlgorithmJax):
 
         # scale and bias the rewards to around [0, 500] (GT reward range)
         # TODO: magic numbers
-        rewards = 500*(rewards + 33.5) 
+        rewards = 500*(rewards + 70) 
 
         rewards = rearrange(
             rewards,

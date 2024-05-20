@@ -6,7 +6,10 @@ from loguru import logger
 import torch
 
 def load_dino_reward_model(
-    rank, batch_size, model_name, image_metric, human_seg_model_path, pos_image_path_list, neg_image_path_list
+    rank, batch_size, model_name, image_metric, 
+    human_seg_model_path, pos_image_path_list, 
+    neg_image_path_list,source_mask_thresh, target_mask_thresh,
+    baseline_image_path, baseline_mask_thresh
 ):  
     feature_extractor = Dino2FeatureExtractor(model_name=model_name, edge_size=448)
     logger.debug("Initialized feature extractor")
@@ -21,9 +24,14 @@ def load_dino_reward_model(
                                                                 feature_extractor=feature_extractor,
                                                                 patch_masker=human_seg_model),
                             pos_image_path_list = pos_image_path_list, 
-                            neg_image_path_list=neg_image_path_list
+                            neg_image_path_list=neg_image_path_list,
+                            source_mask_thresh = source_mask_thresh,
+                            target_mask_thresh=target_mask_thresh,
+                            baseline_image_path=baseline_image_path,
+                            baseline_mask_thresh=baseline_mask_thresh
     ).to(f"cuda:{rank}")
-    dino_wrapper.initialize_ref_images()
+    dino_wrapper.initialize_target_images()
+    dino_wrapper.initialize_baseline_images()
    
     logger.debug(f"Initialized dino wrapper: allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)}")
 
@@ -31,16 +39,27 @@ def load_dino_reward_model(
 
 
 class DINORewardModelWrapper:
-    def __init__(self, rank, batch_size, dino_metric_model, pos_image_path_list, neg_image_path_list):
+    def __init__(self, rank, batch_size, dino_metric_model, 
+            pos_image_path_list, neg_image_path_list,
+            source_mask_thresh, target_mask_thresh, baseline_mask_thresh=.5,baseline_image_path=None):
         self.reward_model = dino_metric_model
         self._device = f"cuda:{rank}"
         self.batch_size = batch_size
         self.pos_image_path_list = pos_image_path_list
         self.neg_image_path_list = neg_image_path_list
-        
-    def embed_module(self, image_batch):
-        logger.debug(f"[{self._device}] embed_module. {image_batch.device} {image_batch.size()=}, allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)}")
+        self.source_mask_thresh = source_mask_thresh
+        self.target_mask_thresh = target_mask_thresh
 
+        self.baseline_mask_thresh = baseline_mask_thresh
+        self.baseline_image_path = baseline_image_path
+        self.gb = baseline_image_path is not None
+        
+    def embed_module(self, image_batch, mask_thresh):
+        """
+        mask_thresh is used for human masking, and applied to the image batch
+        """
+
+        logger.debug(f"[{self._device}] embed_module. {image_batch.device} {image_batch.size()=}, allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)}")
         with torch.no_grad():
             if image_batch.shape[1] != 3:
                 image_batch = image_batch.permute(0, 3, 1, 2)
@@ -48,7 +67,7 @@ class DINORewardModelWrapper:
 
             logger.debug(f"[{self._device}] transformed image. {transformed_image.size()=}, allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)}")
 
-            image_embeddings, image_masks = self.reward_model.extract_masked_features(batch=transformed_image, use_patch_mask=False)
+            image_embeddings, image_masks = self.reward_model.extract_masked_features(batch=transformed_image, use_patch_mask=False, mask_thresh=mask_thresh)
 
             logger.debug(f"[{self._device}] {image_embeddings.size()=}, {image_masks.size()=} allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)}")
 
@@ -57,46 +76,56 @@ class DINORewardModelWrapper:
     def __call__(self, embedding_tuple):
         all_ds = []
         with torch.no_grad():
-            for i, (target, target_mask) in enumerate(zip(self.ref_image_embeddings, self.ref_image_masks)):
+            for i, (target, target_mask) in enumerate(zip(self.target_image_embeddings, self.target_image_masks)):
                 source, source_mask = embedding_tuple
+                
                 distance = torch.Tensor(self.reward_model.compute_distance_parallel(source_features=source,
                                                                         source_masks=source_mask,
                                                                         target_features=target,
-                                                                        target_masks=target_mask)).to(self._device)
+                                                                        target_masks=target_mask,
+                                                                        gb=self.gb)).to(self._device)
                 
                 all_ds.append(distance)
 
                 logger.debug(f"__call__: {distance.size()=}")
-        if self.pos_idx_split < len(self.ref_image_embeddings):
+        if self.pos_idx_split < len(self.target_image_embeddings):
             total_distance = sum(all_ds[:self.pos_idx_split]) / len(all_ds[:self.pos_idx_split]) - (sum(all_ds[self.pos_idx_split:]) / len(all_ds[self.pos_idx_split:]))
             
         else:
             total_distance = sum(all_ds[:self.pos_idx_split]) / len(all_ds[:self.pos_idx_split])
-            total_distance = total_distance - 33.5 # TODO: MAGIC NUMBER offset to near 0 (tend to be around 33.4)
+            #total_distance = total_distance - 33.5 # TODO: MAGIC NUMBER offset to near 0 (tend to be around 33.4)
 
-
-
-        total_distance = 500*total_distance # TODO: magic number scales to rewards for RL
+        #total_distance = 500*total_distance # TODO: magic number scales to rewards for RL
         return - total_distance  # Reward is the negative of the distance
 
-    def initialize_ref_images(self):
+    def initialize_target_images(self):
+        """
+        self.target_mask_thresh is the threshold to apply to target images
+        """
         # TODO: For now, we just support loading one image
-        logger.debug(f"[{self._device}] Embedding human reference image")
+        logger.debug(f"[{self._device}] Embedding human target image")
 
-        ref_image_path_list = self.pos_image_path_list + self.neg_image_path_list
+        target_image_path_list = self.pos_image_path_list + self.neg_image_path_list
 
-        n_images = len(ref_image_path_list)
         with torch.no_grad():
-            ref_image_embeddings = self.reward_model.feature_extractor.load_and_prepare_images_parallel(ref_image_path_list)
-            ref_image_embeddings, ref_image_masks = self.reward_model.extract_masked_features(batch=ref_image_embeddings, use_patch_mask=True)
+            target_image_embeddings = self.reward_model.feature_extractor.load_and_prepare_images_parallel(target_image_path_list)
+            target_image_embeddings, target_image_masks = self.reward_model.extract_masked_features(batch=target_image_embeddings, use_patch_mask=True, mask_thresh=self.target_mask_thresh)
 
-            self.ref_image_embeddings = ref_image_embeddings.repeat(self.batch_size, 1, 1, 1).permute(1,0,2,3)
-            self.ref_image_masks = ref_image_masks.repeat(self.batch_size, 1, 1).permute(1,0,2)
+            self.target_image_embeddings = target_image_embeddings.repeat(self.batch_size, 1, 1, 1).permute(1,0,2,3)
+            self.target_image_masks = target_image_masks.repeat(self.batch_size, 1, 1).permute(1,0,2)
+            logger.debug(f"[{self._device}] {self.target_image_embeddings.size()=}, {self.target_image_masks.size()=},allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)} ")
             
-            logger.debug(f"[{self._device}] {self.ref_image_embeddings.size()=}, {self.ref_image_masks.size()=},allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)} ")
-            
-        self.pos_idx_split = len(self.pos_image_path_list) # index at which self.ref_image_embeddings and masks become negative examples
+        self.pos_idx_split = len(self.pos_image_path_list) # index at which self.target_image_embeddings and masks become negative examples
         
+
+    def initialize_baseline_images(self):
+        if self.baseline_image_path is not None:
+            with torch.no_grad():
+                baseline_embedding = self.reward_model.feature_extractor.load_and_prepare_images_parallel([self.baseline_image_path])
+                baseline_embedding, baseline_mask = self.reward_model.extract_masked_features(batch=baseline_embedding, use_patch_mask=True, mask_thresh=self.baseline_mask_thresh)
+
+                self.reward_model.set_baseline_projection(self.target_image_embeddings[0,0,...].cpu(), self.target_image_masks[0,0,...].cpu(), baseline_embedding.cpu(), baseline_mask.cpu())
+                
 
     def eval(self):
         """A placeholder for the reward model wrapper. DINO should not needed to be trained
