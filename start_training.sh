@@ -15,13 +15,13 @@ python train.py \
     -seed 9 \
     -n_workers 2\
     -rank0_batch_size_pct 0.2\
-    -reward_model_name 'dinov2_vitg14_reg'\
+    -reward_model_name 'dinov2_vitl14_reg'\
     -reward_batch_size 60\
     -reward_config './configs/dino_kneeling_config.yml'\
     -wandb_mode 'online' \
-    -total_timesteps=3000000 \
+    -total_timesteps=500000 \
     -eval_freq=100000 \
-    -model_save_freq=100000 \
+    -model_save_freq=50000 \
     -video_save_freq=10000 \
     -episode_length=120 \
 
