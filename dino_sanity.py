@@ -75,7 +75,9 @@ if __name__=="__main__":
     #             'debugging/gifs/kneeling_gifs/leaning_forward.gif',
     #             'debugging/gifs/kneeling_gifs/one_leg.gif',
     #            ]
-    gif_paths =  ['debugging/gifs/standing_gifs/step_291.gif', 'debugging/gifs/standing_gifs/step_531.gif', 'debugging/gifs/standing_gifs/step_781.gif'] #'debugging/gifs/standing_gifs/crossq_stand.gif']
+    # gif_paths =  ['debugging/gifs/standing_gifs/step_291.gif', 'debugging/gifs/standing_gifs/step_531.gif', 'debugging/gifs/standing_gifs/step_781.gif'] 
+    
+    gif_paths = ['debugging/gifs/standing_gifs/crossq_stand.gif']
     
     reward_config = 'configs/dino_reward_config.yml'
     reward_model_name = 'dinov2_vitg14_reg'

@@ -271,7 +271,7 @@ class VLM_SAC(OffPolicyAlgorithmJax):
 
         # scale and bias the rewards to around [0, 500] (GT reward range)
         # TODO: magic numbers
-        rewards = 50*(rewards)
+        # rewards = 50*(rewards)
 
         rewards = rearrange(
             rewards,

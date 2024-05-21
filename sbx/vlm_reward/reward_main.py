@@ -167,7 +167,8 @@ def dist_worker_compute_reward(
             raise ValueError("Must pass render result on rank=0")
 
         if rank0_batch_size_pct < 1.0:
-            rank_0_chunk_size = int(0.2 * total_batch_size)
+            rank_0_chunk_size = int(rank0_batch_size_pct * total_batch_size)
+
             remaining_size = total_batch_size - rank_0_chunk_size
             remaining_chunk_size = remaining_size // (num_workers - 1)
 

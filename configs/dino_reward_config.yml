@@ -1,12 +1,11 @@
 image_metric: 'wasserstein'
 human_seg_model_path: '/share/portal/hw575/language_irl/pretrained_checkpoints/SGHM-ResNet50.pth'
-source_mask_thresh: .001
+source_mask_thresh: 0
 target_mask_thresh: .5
 pos_image_path: 
   - sbx/vlm_reward/reward_models/language_irl/preference_data/humans_selected_images/standing_up/anne_standing_front_final-0.png
 neg_image_path:
   - sbx/vlm_reward/reward_models/language_irl/preference_data/humans_selected_images/kneeling/anne_kneeling_front_final.png
-# baseline_image_path: sbx/vlm_reward/reward_models/language_irl/preference_data/mujoco_selected_images/standing_up/success/kneeling_p=5_1_frame_0001.jpeg
-# baseline_mask_thresh: .001
+  - debugging/images/lean_sideways.jpg
 
 #### Note: neg_image_path can be removed (if it isn't there, will only use positive images)

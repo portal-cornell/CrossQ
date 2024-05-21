@@ -17,7 +17,7 @@ python train.py \
     -rank0_batch_size_pct 0.2\
     -reward_model_name 'dinov2_vitg14_reg'\
     -reward_batch_size 60\
-    -reward_config './configs/dino_splits_config.yml'\
+    -reward_config './configs/dino_kneeling_config.yml'\
     -wandb_mode 'online' \
     -total_timesteps=3000000 \
     -eval_freq=100000 \
