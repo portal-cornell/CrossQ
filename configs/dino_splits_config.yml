@@ -2,6 +2,8 @@ image_metric: 'wasserstein'
 human_seg_model_path: '/share/portal/hw575/language_irl/pretrained_checkpoints/SGHM-ResNet50.pth'
 pos_image_path: 
     - sbx/vlm_reward/reward_models/language_irl/preference_data/humans_selected_images/splits/split_side_final_yuki.png
+    - sbx/vlm_reward/reward_models/language_irl/preference_data/humans_selected_images/splits/internet_split_final.png
+
 
 source_mask_thresh: 0 # doesn't actually do anything rn
 target_mask_thresh: .5

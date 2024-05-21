@@ -24,7 +24,7 @@ def load_frames_to_torch(gif_path):
     torch_frames = torch_frames[:-1]
     return  torch_frames# chop off last one 
 
-def heatmap_from_gifs(gif_paths, reward_config, reward_model_name, batch_size):
+def heatmap_from_gifs(gif_paths, reward_config, reward_model_name, batch_size, sigma):
     """
     requires: all gifs must be the same length (have same # of frames)
     """
@@ -60,7 +60,7 @@ def heatmap_from_gifs(gif_paths, reward_config, reward_model_name, batch_size):
         n_gifs=n_gifs,
     )  
 
-    smoothed_rewards = half_gaussian_filter_1d(rewards, sigma=4, smooth_last_N=True) 
+    smoothed_rewards = half_gaussian_filter_1d(rewards, sigma=sigma, smooth_last_N=True) 
 
     save_base = os.path.join('debugging', 'gifs')
 
@@ -71,11 +71,14 @@ def heatmap_from_gifs(gif_paths, reward_config, reward_model_name, batch_size):
 if __name__=="__main__":
 #    gif_paths = ['sbx/vlm_reward/reward_models/language_irl/kneeling_gifs_ranked/kneeling_5.gif']
 
-    gif_paths =  ['debugging/gifs/standing_gifs/step_291.gif', 'debugging/gifs/standing_gifs/step_531.gif', 'debugging/gifs/standing_gifs/step_781.gif']
     # gif_paths =  ['debugging/gifs/kneeling_gifs/kneeling_almost.gif',
     #             'debugging/gifs/kneeling_gifs/leaning_forward.gif',
-    #             'debugging/gifs/kneeling_gifs/one_leg.gif']
+    #             'debugging/gifs/kneeling_gifs/one_leg.gif',
+    #            ]
+    gif_paths =  ['debugging/gifs/standing_gifs/step_291.gif', 'debugging/gifs/standing_gifs/step_531.gif', 'debugging/gifs/standing_gifs/step_781.gif'] #'debugging/gifs/standing_gifs/crossq_stand.gif']
+    
     reward_config = 'configs/dino_reward_config.yml'
-    reward_model_name = 'dinov2_vitl14_reg'
-    batch_size=60
-    heatmap_from_gifs(gif_paths, reward_config, reward_model_name, batch_size)
+    reward_model_name = 'dinov2_vitg14_reg'
+    batch_size=32
+    sigma = 4
+    heatmap_from_gifs(gif_paths, reward_config, reward_model_name, batch_size, sigma)

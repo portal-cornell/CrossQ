@@ -5,7 +5,6 @@ target_mask_thresh: .5
 pos_image_path: 
   - sbx/vlm_reward/reward_models/language_irl/preference_data/humans_selected_images/standing_up/anne_standing_front_final-0.png
 neg_image_path:
-#   - debugging/images/lean_sideways.jpg
   - sbx/vlm_reward/reward_models/language_irl/preference_data/humans_selected_images/kneeling/anne_kneeling_front_final.png
 # baseline_image_path: sbx/vlm_reward/reward_models/language_irl/preference_data/mujoco_selected_images/standing_up/success/kneeling_p=5_1_frame_0001.jpeg
 # baseline_mask_thresh: .001

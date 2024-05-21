@@ -67,7 +67,7 @@ class DINORewardModelWrapper:
 
             logger.debug(f"[{self._device}] transformed image. {transformed_image.size()=}, allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)}")
 
-            image_embeddings, image_masks = self.reward_model.extract_masked_features(batch=transformed_image, use_patch_mask=False, mask_thresh=mask_thresh)
+            image_embeddings, image_masks = self.reward_model.extract_masked_features(batch=transformed_image, use_patch_mask=mask_thresh!=0, mask_thresh=mask_thresh)
 
             logger.debug(f"[{self._device}] {image_embeddings.size()=}, {image_masks.size()=} allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)}")
 
@@ -88,11 +88,14 @@ class DINORewardModelWrapper:
                 all_ds.append(distance)
 
                 logger.debug(f"__call__: {distance.size()=}")
+
+        all_ds = torch.stack(all_ds)
+
         if self.pos_idx_split < len(self.target_image_embeddings):
-            total_distance = sum(all_ds[:self.pos_idx_split]) / len(all_ds[:self.pos_idx_split]) - (sum(all_ds[self.pos_idx_split:]) / len(all_ds[self.pos_idx_split:]))
+            total_distance = torch.sum(all_ds[:self.pos_idx_split], axis=0) / len(all_ds[:self.pos_idx_split]) - (torch.sum(all_ds[self.pos_idx_split:], axis=0) / len(all_ds[self.pos_idx_split:]))
             
         else:
-            total_distance = sum(all_ds[:self.pos_idx_split]) / len(all_ds[:self.pos_idx_split])
+            total_distance = torch.sum(all_ds[:self.pos_idx_split], axis=0) / len(all_ds[:self.pos_idx_split])
             #total_distance = total_distance - 33.5 # TODO: MAGIC NUMBER offset to near 0 (tend to be around 33.4)
 
         #total_distance = 500*total_distance # TODO: magic number scales to rewards for RL
@@ -163,3 +166,54 @@ class DINORewardModelWrapper:
         device = f"cuda:{rank}"
 
         return self.to(device)
+
+class DINOFullFeatureWrapper:
+    def initialize_target_images(self):
+        """
+        self.target_mask_thresh is the threshold to apply to target images
+        """
+        # TODO: For now, we just support loading one image
+        logger.debug(f"[{self._device}] Embedding human target image")
+
+        target_image_path_list = self.pos_image_path_list + self.neg_image_path_list
+
+        with torch.no_grad():
+            target_image_embeddings = self.reward_model.feature_extractor.load_and_prepare_images_parallel(target_image_path_list)
+            target_image_embeddings, target_image_masks = self.reward_model.extract_features_final(target_image_embeddings)
+
+            self.target_image_embeddings = target_image_embeddings.repeat(self.batch_size, 1, 1, 1).permute(1,0,2,3)
+            
+        self.pos_idx_split = len(self.pos_image_path_list) # index at which self.target_image_embeddings and masks become negative examples
+
+    def embed_module(self, image_batch):
+
+
+        with torch.no_grad():
+            if image_batch.shape[1] != 3:
+                image_batch = image_batch.permute(0, 3, 1, 2)
+            transformed_image = self.reward_model.feature_extractor.transform(image_batch)
+
+            image_embeddings = self.reward_model.extract_features_final(transformed_image)
+
+            return image_embeddings
+
+    def __call__(self, source):
+        all_ds = []
+        with torch.no_grad():
+            for i, target in enumerate(self.target_image_embeddings):
+
+                distance = torch.linalg.vector_norm(target - source, dim=1)
+                
+                
+                all_ds.append(distance)
+
+                logger.debug(f"__call__: {distance.size()=}")
+        if self.pos_idx_split < len(self.target_image_embeddings):
+            total_distance = sum(all_ds[:self.pos_idx_split]) / len(all_ds[:self.pos_idx_split]) - (sum(all_ds[self.pos_idx_split:]) / len(all_ds[self.pos_idx_split:]))
+            
+        else:
+            total_distance = sum(all_ds[:self.pos_idx_split]) / len(all_ds[:self.pos_idx_split])
+            #total_distance = total_distance - 33.5 # TODO: MAGIC NUMBER offset to near 0 (tend to be around 33.4)
+
+        #total_distance = 500*total_distance # TODO: magic number scales to rewards for RL
+        return - total_distance  # Reward is the negative of the distance

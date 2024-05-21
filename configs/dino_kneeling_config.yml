@@ -1,13 +1,13 @@
 image_metric: 'wasserstein'
 human_seg_model_path: '/share/portal/hw575/language_irl/pretrained_checkpoints/SGHM-ResNet50.pth'
 pos_image_path: 
+  - debugging/images/man_kneeling.jpeg 
   #- debugging/images/one_leg_yoga.png
   #- debugging/images/lying_down.png
-  - debugging/images/man_kneeling.jpeg
-  #- sbx/vlm_reward/reward_models/language_irl/preference_data/humans_selected_images/kneeling/anne_kneeling_front_final.png
-#neg_image_path:
-  #- debugging/images/lying_down.png
- # - 
+  # - debugging/images/mujoco_standing.png
+ # - sbx/vlm_reward/reward_models/language_irl/preference_data/humans_selected_images/kneeling/anne_kneeling_front_final.png
+# neg_image_path:
+#   - debugging/images/lying_down.png 
   #- sbx/vlm_reward/reward_models/language_irl/preference_data/humans_selected_images/standing_up/anne_standing_front_final-0.png
 
 source_mask_thresh: 0 # doesn't actually do anything rn
