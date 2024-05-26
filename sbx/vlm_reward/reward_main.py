@@ -166,6 +166,7 @@ def dist_worker_compute_reward(
         if frames is None:
             raise ValueError("Must pass render result on rank=0")
 
+
         if rank0_batch_size_pct < 1.0:
             rank_0_chunk_size = int(rank0_batch_size_pct * total_batch_size)
 
@@ -197,7 +198,7 @@ def dist_worker_compute_reward(
 
     worker_frames = worker_frames_tensor if worker_frames_tensor is not None else torch.zeros((remaining_chunk_size, *render_dim), dtype=torch.uint8).cuda(rank)
     logger.debug(f"[Worker {rank}] {worker_frames.size()=}, scatter_list={[x.size() for x in scatter_list]}")
-    dist.scatter(worker_frames, scatter_list=scatter_list, src=0)
+    dist.scatter(worker_frames, scatter_list=scatter_list, src=0) # this is where they get sent to other gpus
     with torch.no_grad():
         if rank == 0 and rank0_batch_size_pct < 1.0:
             worker_frames_to_compute = worker_frames[rank_0_pad_size:]

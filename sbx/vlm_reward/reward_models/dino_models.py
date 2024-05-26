@@ -67,7 +67,7 @@ class DINORewardModelWrapper:
 
             logger.debug(f"[{self._device}] transformed image. {transformed_image.size()=}, allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)}")
 
-            image_embeddings, image_masks = self.reward_model.extract_masked_features(batch=transformed_image, use_patch_mask=mask_thresh!=0, mask_thresh=mask_thresh)
+            image_embeddings, image_masks = self.reward_model.extract_masked_features(batch=transformed_image, use_patch_mask= mask_thresh!=0, mask_thresh=mask_thresh)
 
             logger.debug(f"[{self._device}] {image_embeddings.size()=}, {image_masks.size()=} allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)}")
 
