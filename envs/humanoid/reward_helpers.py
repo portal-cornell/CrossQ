@@ -12,6 +12,12 @@ SITUP_TOLERANCE = 0.1
 # since 1.3 is mentioned in the paper (https://ieeexplore-ieee-org.proxy.library.cornell.edu/stamp/stamp.jsp?tp=&arnumber=6386025)
 STANDUP_HEIGHT = 1.3 
 
+GEOM_XPOS_NAMING = {0: "floor", 1:"torso", 2:"head", 3:"uwaist", 4:"lwaist", 5:"bottom",
+                6:"R_thigh", 7:"R_shin", 8:"R_foot",
+                9:"L_thigh", 10:"L_shin", 11:"L_foot",
+                12:"R_uarm", 13:"R_larm", 14:"R_hand",
+                15:"left_uarm", 16:"L_arm", 17:"L_hand"}
+
 def smooth_abs_norm(x, alpha=1.0):
     # on page 3 of the paper (https://ieeexplore-ieee-org.proxy.library.cornell.edu/stamp/stamp.jsp?tp=&arnumber=6386025), mentioned starting alpha=1 then slowly decreasing
     return np.sqrt(x**2 + alpha**2) - alpha
@@ -249,3 +255,19 @@ def hori_com_vel_cost(data):
     
     return control_limiting_cost(torso_xy_vel[0]) + control_limiting_cost(torso_xy_vel[1])
 
+def dist_cost_with_tol(dist_with_tolerance_list):
+    total_cost_list = []
+
+    for i in range(len(dist_with_tolerance_list)):
+        if len(dist_with_tolerance_list[i]) == 2:
+            dist, tol = dist_with_tolerance_list[i]
+            cost = 0 if dist < tol else dist
+        elif len(dist_with_tolerance_list[i]) == 3:
+            dist, tol, weight = dist_with_tolerance_list[i]
+            cost = 0 if dist < tol else dist * weight
+        else:
+            assert len(dist_with_tolerance_list[i]) == 2 or len(dist_with_tolerance_list[i]) == 3, f"{dist_with_tolerance_list[i]} does not have the right format"
+
+        total_cost_list.append(cost)
+
+    return total_cost_list

@@ -12,7 +12,7 @@ from einops import rearrange
 from sbx.vlm_reward.reward_main import compute_rewards, load_reward_model
 from sbx.vlm_reward.reward_transforms import half_gaussian_filter_1d
 
-from sbx.vlm_reward.reward_models.language_irl.utils import rewards_matrix_heatmap, rewards_line_plot
+from sbx.vlm_reward.reward_models.language_irl.utils import rewards_matrix_heatmap, rewards_line_plot, pad_to_longest_sequence
 
 all_source_thresh = [0, .001]
 
@@ -34,21 +34,17 @@ def rewards_from_gifs(gif_paths, reward_config_dict, reward_model_name, batch_si
     for gif_path in gif_paths:
         frames = load_frames_to_torch(gif_path)
         frames = frames.permute(0, 2, 3, 1) # B, 3, H, W -> B, H, W, 3
-        all_frames.append(frames)
-    all_frames = torch.stack(all_frames)
-    frames = rearrange(all_frames, "n_gifs n_steps ... -> (n_steps n_gifs) ...")
-    
+        all_frames.append(frames)    
 
     
     reward_model = load_reward_model(rank=0, worker_actual_batch_size=batch_size,
                                         model_name=reward_model_name,
                                         model_config_dict=reward_config_dict).eval().cuda(0)
 
-    all_rews = []
-    all_labels=[]
-    for thresh in all_source_thresh:
-        reward_model.source_mask_thresh = thresh
 
+    all_rewards = []
+
+    for frames in all_frames:
         rewards = compute_rewards(
             model=reward_model,
             frames=frames,
@@ -57,24 +53,22 @@ def rewards_from_gifs(gif_paths, reward_config_dict, reward_model_name, batch_si
             num_workers=1,
             dist=False
             )
-
-        n_gifs = len(gif_paths)
-        rewards = rearrange(
-            rewards,
-            "(n_steps n_gifs) ... -> n_gifs n_steps ...",
-            n_gifs=n_gifs,
-        )  
-
+        
         smoothed_rewards = half_gaussian_filter_1d(rewards, sigma=sigma, smooth_last_N=True) 
-
         smoothed_transformed_rewards = transform(smoothed_rewards)
 
-        all_rews.append(smoothed_transformed_rewards)
-        labels = [gif_path.split('/')[-1].split('.')[0] for gif_path in gif_paths]
+        all_rewards.append(smoothed_transformed_rewards)
+    
+    all_rewards = pad_to_longest_sequence(all_rewards)
+    all_rewards = np.stack(all_rewards)
 
-        all_labels.append(labels)
+    n_gifs = len(gif_paths)
 
-    return np.array(all_rews), all_labels
+
+    labels = [gif_path.split('/')[-1].split('.')[0] for gif_path in gif_paths]
+
+
+    return all_rewards, labels
 
 
 
@@ -82,15 +76,11 @@ def rewards_from_gifs(gif_paths, reward_config_dict, reward_model_name, batch_si
 if __name__=="__main__":
 #    gif_paths = ['sbx/vlm_reward/reward_models/language_irl/kneeling_gifs_ranked/kneeling_5.gif']
 
-    gif_paths =  ['debugging/gifs/kneeling_gifs/kneeling_almost.gif',
-                    'debugging/gifs/kneeling_gifs/kneeling_bad.gif',
-                    'debugging/gifs/kneeling_gifs/decent_kneeling.gif',
+    gif_paths =  ['debugging/gifs/kneeling_gifs/decent_kneeling.gif',
                 'debugging/gifs/kneeling_gifs/kneel_adversary.gif',
                 'debugging/gifs/kneeling_gifs/leaning_forward.gif',
-                'debugging/gifs/kneeling_gifs/one_leg.gif',
-                'debugging/gifs/standing_gifs/crossq_stand.gif',
-                'sbx/vlm_reward/reward_models/language_irl/kneeling_gifs_ranked/kneeling_5.gif'
-                
+                'debugging/gifs/kneeling_gifs/crossq_kneel.gif',
+                'debugging/gifs/standing_gifs/crossq_stand.gif'
                ]
     # gif_paths =  ['debugging/gifs/standing_gifs/step_291.gif', 'debugging/gifs/standing_gifs/step_531.gif', 'debugging/gifs/standing_gifs/step_781.gif'] 
     
@@ -112,20 +102,28 @@ if __name__=="__main__":
         reward_config_dict = yaml.safe_load(fin)
 
 
-    for gif_path in gif_paths:
-        rewards, all_labels = rewards_from_gifs([gif_path], 
+    rewards, all_labels = rewards_from_gifs(gif_paths, 
                                     reward_config_dict=reward_config_dict, 
                                     reward_model_name=reward_model_name, 
                                     batch_size=batch_size, 
                                     sigma=sigma, 
                                     transform=identity)
+    rewards_matrix_heatmap(rewards, 'debugging/crossq_tests/goodbad.png')
+
+    # for gif_path in gif_paths:
+    #     rewards, all_labels = rewards_from_gifs([gif_path], 
+    #                                 reward_config_dict=reward_config_dict, 
+    #                                 reward_model_name=reward_model_name, 
+    #                                 batch_size=batch_size, 
+    #                                 sigma=sigma, 
+    #                                 transform=identity)
 
 
-        for i, rew in enumerate(rewards):
-            colors = ['blue', 'green']
-            fname = f"gif={gif_path.split('/')[-1]}_t={all_source_thresh[i]}"
-            fp = os.path.join(base_save_path, fname)
-            rewards_line_plot(rew, labels = [f"t={all_source_thresh[i]}"], fp=fp, c=colors[i % len(colors)])
+    #     for i, rew in enumerate(rewards):
+    #         colors = ['blue', 'green']
+    #         fname = f"gif={gif_path.split('/')[-1]}_t={all_source_thresh[i]}"
+    #         fp = os.path.join(base_save_path, fname)
+    #         rewards_line_plot(rew, labels = [f"t={all_source_thresh[i]}"], fp=fp, c=colors[i % len(colors)])
 
 
      #rewards_matrix_heatmap(np.array(rewards), os.path.join(save_base, 'heatmap'))

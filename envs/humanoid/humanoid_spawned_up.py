@@ -292,9 +292,133 @@ def best_standing_from_lying_down(data, **kwargs):
     
     return reward, terms_to_plot
 
+
+def reward_kneeling(data, **kwargs):
+    """
+    """
+    num_steps = kwargs.get('num_steps', 0)
+    
+    # terms_to_plot = dict(
+    #     n=num_steps,
+    #     com=str([f"{data.xipos[1][i]:.2f}" for i in range(3)])
+    # )
+    
+    # naming = {0: "floor", 1:"torso", 2:"head", 3:"uwaist", 4:"lwaist", 5:"bottom",
+    #             6:"R_thigh", 7:"R_shin", 8:"R_foot",
+    #             9:"L_thigh", 10:"L_shin", 11:"L_foot",
+    #             12:"R_uarm", 13:"R_larm", 14:"R_hand",
+    #             15:"left_uarm", 16:"L_arm", 17:"L_hand"}
+    # for i in range(1, len(data.geom_xpos)):
+    #     terms_to_plot[naming[i]] = str([f"{data.geom_xpos[i][j]:.2f}" for j in range(3)])
+
+    
+    # Shin and foot are on the floor
+    l_shin = data.geom_xpos[10]
+    r_shin = data.geom_xpos[7]
+    l_foot = data.geom_xpos[11]
+    r_foot = data.geom_xpos[8]
+    bottom = data.geom_xpos[5]
+    torso = data.geom_xpos[1]
+    head = data.geom_xpos[2]
+
+    good_shin_foot_height = 0.10  # Needs to be below this
+    shin_height_r = (good_shin_foot_height - l_shin[2]) + (good_shin_foot_height - r_shin[2])
+    foot_height_r = (good_shin_foot_height - l_foot[2]) + (good_shin_foot_height - r_foot[2])
+
+    good_torso_height = 0.6
+    good_bottom_height = 0.3
+
+    dist_with_tolerance_list = [
+        (np.abs(torso[2] - good_torso_height), 0.1),  # Torso's height needs to be at around the right range
+        (np.abs(bottom[2] - good_bottom_height), 0.1),  # Bottom's height needs to be at around the right range
+        (np.linalg.norm(torso[:2] - bottom[:2]), 0.2),  # Torse and bottom need to be close to each other in (x,y) questions
+        (np.linalg.norm(head[:2] - torso[:2]), 0.1),  # Torse and head need to be close to each other in (x,y) questions
+    ]
+
+    dist_with_tolerance_cost_list = dist_cost_with_tol(dist_with_tolerance_list)
+
+    ctrl_cost = kwargs.get("ctrl_cost", None)
+    ctrl_cost_w = 1
+
+    reward = shin_height_r + foot_height_r - np.sum(dist_with_tolerance_cost_list) - ctrl_cost * ctrl_cost_w
+
+    terms_to_plot = dict(
+        steps=num_steps,
+    )
+
+    for i in [7, 10, 8, 11, 5, 1, 2]:
+        terms_to_plot[GEOM_XPOS_NAMING[i]] = str([f"{data.geom_xpos[i][j]:.2f}" for j in range(3)])
+
+    terms_to_plot["shin_r"] = f"{shin_height_r:.2f}"
+    terms_to_plot["foot_r"] = f"{foot_height_r:.2f}"
+
+    for i, name in enumerate(["torso_r", "btm_r", "tor-btm", "head-tor"]):
+        terms_to_plot[name] = f"{dist_with_tolerance_list[i][0]:.2f}"
+
+    terms_to_plot["r"] = f"{reward:.2f}"
+
+    # if num_steps == 53:
+    #     with open("./debugging/geom_xpos.npy", "wb") as fout:
+    #         np.save(fout, data.geom_xpos)
+
+    #     with open("./debugging/qpos.npy", "wb") as fout:
+    #         np.save(fout, data.qpos)
+
+    return reward, terms_to_plot
+
+
+def reward_splitting(data, **kwargs):
+    num_steps = kwargs.get('num_steps', 0)
+
+    # L ft: 1.13, 0.10
+    # R ft: 1.13 -0.09
+    l_foot = data.geom_xpos[11]
+    r_foot = data.geom_xpos[8]
+    bottom = data.geom_xpos[5]
+    torso = data.geom_xpos[1]
+    head = data.geom_xpos[2]
+
+    good_torso_height = 0.5
+    good_bottom_height = 0.15
+    good_feet_dist = 1.5
+
+    dist_with_tolerance_list = [
+        (np.abs(torso[2] - good_torso_height), 0.1, 1),  # Torso's height needs to be at around the right range
+        (np.abs(bottom[2] - good_bottom_height), 0.1, 1),  # Bottom's height needs to be at around the right range
+        (np.linalg.norm(torso[:2] - bottom[:2]), 0.2, 1),  # Torse and bottom need to be close to each other in (x,y) questions
+        (np.linalg.norm(head[:2] - torso[:2]), 0.1, 1),  # Torse and head need to be close to each other in (x,y) questions
+        (np.abs(np.linalg.norm(l_foot[:2] - r_foot[:2]) - good_feet_dist), 0.2, 5)  # Two feet need to be far apart
+    ]
+
+    dist_with_tolerance_cost_list = dist_cost_with_tol(dist_with_tolerance_list)
+
+    ctrl_cost = kwargs.get("ctrl_cost", None)
+    ctrl_cost_w = 1
+
+    reward = - np.sum(dist_with_tolerance_cost_list) - ctrl_cost * ctrl_cost_w
+
+    terms_to_plot = dict(
+        steps=num_steps,
+        ctrl_c=ctrl_cost
+    )
+
+    for i in [8, 11, 5, 1, 2]:
+        terms_to_plot[GEOM_XPOS_NAMING[i]] = str([f"{data.geom_xpos[i][j]:.2f}" for j in range(3)])
+
+    for i, name in enumerate(["torso_r", "btm_r", "tor-btm", "head-tor", "feet-apart-r"]):
+        terms_to_plot[name] = f"{dist_with_tolerance_list[i][0]:.2f}"
+
+    terms_to_plot["r"] = f"{reward:.2f}"
+
+    return reward, terms_to_plot
+    
+
 REWARD_FN_MAPPING = dict(
         original = reward_original,
         simple_remain_standing = reward_simple_remain_standing,
         remain_standing = reward_remain_standing,
         best_standing_up = best_standing_from_lying_down,
+        kneeling = reward_kneeling,
+        splitting = reward_splitting
     )
+    

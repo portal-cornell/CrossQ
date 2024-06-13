@@ -14,9 +14,9 @@ python train.py \
     -n_envs 8 \
     -seed 9 \
     -n_workers 2\
-    -rank0_batch_size_pct 0.2\
+    -rank0_batch_size_pct 0\
     -reward_model_name 'dinov2_vitl14_reg'\
-    -reward_batch_size 60\
+    -reward_batch_size 30\
     -reward_config './configs/dino_kneeling_config.yml'\
     -wandb_mode 'online' \
     -total_timesteps=500000 \
@@ -24,7 +24,8 @@ python train.py \
     -model_save_freq=50000 \
     -video_save_freq=10000 \
     -episode_length=120 \
-
+    -model_checkpoint final_model \
+    -model_base_path /share/portal/hw575/CrossQ/train_logs/crossq_HumanoidSpawnedUpCustom_r=kneeling_s=9_2024-05-19_21-43-48__d7adbd23/checkpoint
 
 ######## Public G2 A6000s (must decrease batch size for some reason)
 # python train.py \

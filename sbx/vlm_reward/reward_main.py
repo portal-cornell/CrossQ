@@ -76,7 +76,6 @@ def compute_rewards(
     rewards = torch.zeros(n_samples, device=torch.device("cpu"))
     model = model.eval()
 
-
     if not dist:
 
         for i in range(0, n_samples, batch_size):
@@ -167,19 +166,20 @@ def dist_worker_compute_reward(
             raise ValueError("Must pass render result on rank=0")
 
 
-        if rank0_batch_size_pct < 1.0:
-            rank_0_chunk_size = int(rank0_batch_size_pct * total_batch_size)
+        elif rank0_batch_size_pct < 1.0:
+            rank_0_chunk_size = int(rank0_batch_size_pct * total_batch_size) # .2 * 60 = 12 0 * 60 = 0
 
-            remaining_size = total_batch_size - rank_0_chunk_size
-            remaining_chunk_size = remaining_size // (num_workers - 1)
+            remaining_size = total_batch_size - rank_0_chunk_size # 48  60
+            remaining_chunk_size = remaining_size // (num_workers - 1) #48 60
 
-            chunk_list = [rank_0_chunk_size] + [remaining_chunk_size] * (num_workers - 1)
+            chunk_list = [rank_0_chunk_size] + [remaining_chunk_size] * (num_workers - 1) # [12, 48] [0, 60]
 
             ## only scatter if rank 0 (otherwise, tensors have already been scattered)
             scatter_list = [t.cuda(rank) for t in torch.split(frames, split_size_or_sections=chunk_list, dim=0)]
             
-            rank_0_pad_size = remaining_chunk_size - rank_0_chunk_size
-            # Pad the left of the batch
+
+            rank_0_pad_size = remaining_chunk_size - rank_0_chunk_size # 48-12=26 60-0 = 60
+            # Pad the left of the batch so all the chunks have the same size
             scatter_list[0] = F.pad(scatter_list[0], (0, 0, 0, 0, 0, 0, rank_0_pad_size, 0),
                                     "constant", 0)
         else:
@@ -200,38 +200,41 @@ def dist_worker_compute_reward(
     logger.debug(f"[Worker {rank}] {worker_frames.size()=}, scatter_list={[x.size() for x in scatter_list]}")
     dist.scatter(worker_frames, scatter_list=scatter_list, src=0) # this is where they get sent to other gpus
     with torch.no_grad():
-        if rank == 0 and rank0_batch_size_pct < 1.0:
-            worker_frames_to_compute = worker_frames[rank_0_pad_size:]
+        if rank == 0 and rank0_batch_size_pct == 0: # don't compute anything for device 0 if rank0 batch size is 0
+            rewards = torch.zeros(rank_0_pad_size).to('cuda:0') # create empty rewards for now, but have the correct shape
         else:
-            worker_frames_to_compute = worker_frames
+            if rank == 0 and 0 < rank0_batch_size_pct < 1.0:
+                worker_frames_to_compute = worker_frames[rank_0_pad_size:]
+            else:
+                worker_frames_to_compute = worker_frames
 
-        start_event.record()
-        # logger.debug(f"[Worker {rank}] {worker_frames_to_compute.size()=} allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
-        embeddings = reward_model.embed_module(worker_frames_to_compute, reward_model.source_mask_thresh)
-        end_event.record()
-        # if type(embeddings) == tuple:
-        #     logger.debug(f"[Worker {rank}] {embeddings[0].size()= } allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
-        # else:
-        #     logger.debug(f"[Worker {rank}] {embeddings.size()= } allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
-        
-        ### timing
-        torch.cuda.synchronize()
-        execution_time = start_event.elapsed_time(end_event)
-        logger.info(f"Worker #{rank} - Image Embedding time: {execution_time / 1000} seconds")
-        ####
+            start_event.record()
+            # logger.debug(f"[Worker {rank}] {worker_frames_to_compute.size()=} allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
+            embeddings = reward_model.embed_module(worker_frames_to_compute, reward_model.source_mask_thresh)
+            end_event.record()
+            # if type(embeddings) == tuple:
+            #     logger.debug(f"[Worker {rank}] {embeddings[0].size()= } allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
+            # else:
+            #     logger.debug(f"[Worker {rank}] {embeddings.size()= } allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
+            
+            ### timing
+            torch.cuda.synchronize()
+            execution_time = start_event.elapsed_time(end_event)
+            logger.info(f"Worker #{rank} - Image Embedding time: {execution_time / 1000} seconds")
+            ####
 
-        start_event.record()
-        rewards = reward_model(embeddings)
-        end_event.record()
-        # logger.debug(f"[Worker {rank}] {rewards.size()=} allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
+            start_event.record()
+            rewards = reward_model(embeddings)
+            end_event.record()
+            # logger.debug(f"[Worker {rank}] {rewards.size()=} allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
 
-        if rank == 0 and rank0_batch_size_pct < 1.0:
-            rewards = F.pad(rewards, (rank_0_pad_size, 0))
-        ### timing
-        torch.cuda.synchronize()
-        execution_time = start_event.elapsed_time(end_event)
-        logger.info(f"Worker #{rank} - Reward Calculation time: {execution_time / 1000} seconds")
-        ####
+            if rank == 0 and rank0_batch_size_pct < 1.0:
+                rewards = F.pad(rewards, (rank_0_pad_size, 0))
+            ### timing
+            torch.cuda.synchronize()
+            execution_time = start_event.elapsed_time(end_event)
+            logger.info(f"Worker #{rank} - Reward Calculation time: {execution_time / 1000} seconds")
+            ####
 
     def zero_t():
         return torch.zeros_like(rewards)

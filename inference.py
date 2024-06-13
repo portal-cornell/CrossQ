@@ -5,6 +5,8 @@ import argparse
 import json
 import os
 import subprocess
+import yaml
+
 
 import imageio
 import numpy as np
@@ -12,6 +14,10 @@ import torch
 from PIL import Image, ImageDraw, ImageFont
 
 from sbx import SAC, VLM_SAC
+from sbx.vlm_reward.reward_models.language_irl.utils import rewards_matrix_heatmap, rewards_line_plot, pad_to_longest_sequence
+from sbx.vlm_reward.reward_main import compute_rewards, load_reward_model
+from sbx.vlm_reward.reward_transforms import half_gaussian_filter_1d
+
 
 from utils import get_run_hash, set_os_vars, vlm_for_reward
 from envs.base import get_make_env
@@ -109,13 +115,20 @@ def generate_dataset(args):
                                                         fps=30)
 
         obs = env.reset(seed=args.seed + episode_idx)[0]
+        gt_rewards = []
+        images = []
         for step_idx in range(args.episode_length):
             action = algo.predict(obs)[0]
             obs, _, _, _, info = env.step(action)
 
             image = env.render()
-            image = np.uint8(image)
-            pil_image = Image.fromarray(image)
+            images.append(torch.as_tensor(image.copy()).permute(2,0,1).float() / 255)
+            image_int = np.uint8(image)
+
+            ### Run dino inference on image here
+ 
+            pil_image = Image.fromarray(image_int)
+            gt_rewards.append(float(info['r']))
 
             # Plot the ground truth reward
             plot_info_on_frame(pil_image, info)
@@ -124,19 +137,42 @@ def generate_dataset(args):
             # image_path = str(os.path.join(inference_img_log_dir, image_file_name))
             # pil_image.save(image_path)
             
-            video_writer.append_data(image)
+            video_writer.append_data(image_int)
             video_with_info_writer.append_data(np.uint8(pil_image))
+
 
         video_writer.close()
         video_with_info_writer.close()
 
         env.close()
+    
 
         subprocess.run(["ffmpeg", "-i", str(video_path), "-vf", "fps=10,scale=1280:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse", "-loop", "0", str(video_path)[:-4] + ".gif"])
 
         print(f"Rollout {episode_idx+1} saved at {video_file_name}.")
 
+        with open(args.reward_config, "r") as fin:
+            model_config_dict = yaml.safe_load(fin)
 
+        if use_vlm_for_reward:
+            reward_model = load_reward_model(rank=0, worker_actual_batch_size=args.reward_batch_size,
+                                            model_name=args.reward_model_name,
+                                            model_config_dict=model_config_dict).eval().cuda(0)
+
+            frames = torch.stack(images)
+            dino_rewards = compute_rewards(
+                model=reward_model,
+                frames=frames,
+                rank0_batch_size_pct=1,
+                batch_size=args.reward_batch_size,  # This is the total batch size
+                num_workers=1,
+                dist=False
+                )
+            smoothed_dino_rewards = half_gaussian_filter_1d(dino_rewards, sigma=4, smooth_last_N=True) 
+            # all_rewards=np.stack((gt_rewards, smoothed_dino_rewards))
+
+            rewards_matrix_heatmap(np.array(gt_rewards)[None], os.path.join(inference_video_log_dir,f'gt_heatmap_{step_idx}.png'))
+            rewards_matrix_heatmap(smoothed_dino_rewards[None], os.path.join(inference_video_log_dir,f'dino_heatmap_{step_idx}.png'))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -160,5 +196,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     print(json.dumps(vars(args), indent=4))
+
+
 
     generate_dataset(args)
