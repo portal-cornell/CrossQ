@@ -14,6 +14,8 @@ from sbx.vlm_reward.reward_transforms import half_gaussian_filter_1d
 
 from sbx.vlm_reward.reward_models.language_irl.utils import rewards_matrix_heatmap, rewards_line_plot, pad_to_longest_sequence
 
+from loguru import logger
+
 all_source_thresh = [0, .001]
 
 def load_frames_to_torch(gif_path):
@@ -36,11 +38,11 @@ def rewards_from_gifs(gif_paths, reward_config_dict, reward_model_name, batch_si
         frames = frames.permute(0, 2, 3, 1) # B, 3, H, W -> B, H, W, 3
         all_frames.append(frames)    
 
-    
+    logger.info("Loading reward model...")
     reward_model = load_reward_model(rank=0, worker_actual_batch_size=batch_size,
                                         model_name=reward_model_name,
                                         model_config_dict=reward_config_dict).eval().cuda(0)
-
+    logger.info("Finished loading reward model...")
 
     all_rewards = []
 
@@ -72,25 +74,32 @@ def rewards_from_gifs(gif_paths, reward_config_dict, reward_model_name, batch_si
 
 
 
-
 if __name__=="__main__":
-#    gif_paths = ['sbx/vlm_reward/reward_models/language_irl/kneeling_gifs_ranked/kneeling_5.gif']
-
-    gif_paths =  ['debugging/gifs/kneeling_gifs/decent_kneeling.gif',
-                'debugging/gifs/kneeling_gifs/kneel_adversary.gif',
-                'debugging/gifs/kneeling_gifs/leaning_forward.gif',
-                'debugging/gifs/kneeling_gifs/crossq_kneel.gif',
-                'debugging/gifs/standing_gifs/crossq_stand.gif'
+    gif_paths =  [
+                'debugging/axis_exp/kneeling_gifs/0_success_crossq_kneel.gif',
+                'debugging/axis_exp/kneeling_gifs/1_kneel-at-20_fall-backward.gif',
+                'debugging/axis_exp/kneeling_gifs/2_some-move-close-to-kneeling.gif',
+                'debugging/axis_exp/kneeling_gifs/3_crossq_stand_never-on-ground.gif'
                ]
-    # gif_paths =  ['debugging/gifs/standing_gifs/step_291.gif', 'debugging/gifs/standing_gifs/step_531.gif', 'debugging/gifs/standing_gifs/step_781.gif'] 
-    
-    #gif_paths = ['debugging/gifs/standing_gifs/crossq_stand.gif']
-    base_save_path = 'debugging/threshold/outputs_cos_l'
-    
-    reward_config = 'configs/dino_kneeling_config.yml'
-    reward_model_name = 'dinov2_vitl14_reg' # TODO: change to L
-    batch_size=32
+
+    base_save_path = 'debugging/axis_exp/threshold/outputs_cos_l'
+
+    reward_model_name = 'dinov2_vitl14_reg' # Based on here, DINOv2 large is good enough https://docs.google.com/document/d/14BrYHRFW4cVW2FSIi3-Js2o4rHiPFJSR0TLpUw2Sn2k/edit#bookmark=kix.ogvltufldfdu
+    use_patch = True
+    human_demo = True
+    batch_size = 32
+    # Based on comments by Will
+    #   "Experiment run with best settings so far (source thresh = .001, cosine distance function, wasserstein, anne_kneeling_front, no scaling, sigma=4)"
+    """
+    image_metric: 'wasserstein'
+    human_seg_model_path: '/share/portal/hw575/language_irl/pretrained_checkpoints/SGHM-ResNet50.pth'
+    pos_image_path: 
+    - sbx/vlm_reward/reward_models/language_irl/preference_data/humans_selected_images/kneeling/anne_kneeling_front_final.png
+    source_mask_thresh: 0.001
+    target_mask_thresh: .5
+    """
     sigma = 4
+    reward_config = 'configs/dino_kneeling_config.yml'
 
     def transform_linear(rew):
         return 4.8541 * rew + 159.2704
@@ -108,23 +117,7 @@ if __name__=="__main__":
                                     batch_size=batch_size, 
                                     sigma=sigma, 
                                     transform=identity)
-    rewards_matrix_heatmap(rewards, 'debugging/crossq_tests/goodbad.png')
 
-    # for gif_path in gif_paths:
-    #     rewards, all_labels = rewards_from_gifs([gif_path], 
-    #                                 reward_config_dict=reward_config_dict, 
-    #                                 reward_model_name=reward_model_name, 
-    #                                 batch_size=batch_size, 
-    #                                 sigma=sigma, 
-    #                                 transform=identity)
+    heatmap_name = f"rm={reward_model_name}_patch={use_patch}_h-demo={human_demo}.png"
 
-
-    #     for i, rew in enumerate(rewards):
-    #         colors = ['blue', 'green']
-    #         fname = f"gif={gif_path.split('/')[-1]}_t={all_source_thresh[i]}"
-    #         fp = os.path.join(base_save_path, fname)
-    #         rewards_line_plot(rew, labels = [f"t={all_source_thresh[i]}"], fp=fp, c=colors[i % len(colors)])
-
-
-     #rewards_matrix_heatmap(np.array(rewards), os.path.join(save_base, 'heatmap'))
-    #rewards_matrix_heatmap(np.array(smoothed_rewards), os.path.join(save_base, 'heatmap_smooth'))
+    rewards_matrix_heatmap(rewards, f'debugging/axis_exp/heatmaps/{heatmap_name}')
