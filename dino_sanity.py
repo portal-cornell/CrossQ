@@ -56,7 +56,11 @@ def rewards_from_gifs(gif_paths, reward_config_dict, reward_model_name, batch_si
             dist=False
             )
         
-        smoothed_rewards = half_gaussian_filter_1d(rewards, sigma=sigma, smooth_last_N=True) 
+        logger.info(f"\nsmoothed_size={half_gaussian_filter_1d(rewards, sigma=0.4, smooth_last_N=True).shape}, rewards_size={rewards.cpu().numpy().shape}")
+        if sigma:
+            smoothed_rewards = half_gaussian_filter_1d(rewards, sigma=sigma, smooth_last_N=True) 
+        else:
+            smoothed_rewards = rewards.cpu().numpy()
         smoothed_transformed_rewards = transform(smoothed_rewards)
 
         all_rewards.append(smoothed_transformed_rewards)
@@ -76,15 +80,17 @@ def rewards_from_gifs(gif_paths, reward_config_dict, reward_model_name, batch_si
 
 if __name__=="__main__":
     gif_paths =  [
-                'debugging/axis_exp/kneeling_gifs/0_success_crossq_kneel.gif',
-                'debugging/axis_exp/kneeling_gifs/1_kneel-at-20_fall-backward.gif',
-                'debugging/axis_exp/kneeling_gifs/2_some-move-close-to-kneeling.gif',
-                'debugging/axis_exp/kneeling_gifs/3_crossq_stand_never-on-ground.gif'
+                'axis_exp/kneeling_gifs/0_success_crossq_kneel.gif',
+                'axis_exp/kneeling_gifs/1_kneel-at-20_fall-backward.gif',
+                'axis_exp/kneeling_gifs/2_some-move-close-to-kneeling.gif',
+                'axis_exp/kneeling_gifs/3_crossq_stand_never-on-ground.gif'
                ]
 
-    base_save_path = 'debugging/axis_exp/threshold/outputs_cos_l'
+    base_save_path = 'axis_exp/threshold/outputs_cos_l'
 
+    # TODO: Support loading CLIP as a feature encoder
     reward_model_name = 'dinov2_vitl14_reg' # Based on here, DINOv2 large is good enough https://docs.google.com/document/d/14BrYHRFW4cVW2FSIi3-Js2o4rHiPFJSR0TLpUw2Sn2k/edit#bookmark=kix.ogvltufldfdu
+    # TODO: Support using Pooled feature
     use_patch = True
     human_demo = True
     batch_size = 32
@@ -98,8 +104,11 @@ if __name__=="__main__":
     source_mask_thresh: 0.001
     target_mask_thresh: .5
     """
-    sigma = 4
-    reward_config = 'configs/dino_kneeling_config.yml'
+    sigma = 0
+    if human_demo:
+        reward_config = 'configs/dino_kneeling_config.yml'
+    else:
+        reward_config = 'configs/dino_kneeling_config_robot_demo.yml'
 
     def transform_linear(rew):
         return 4.8541 * rew + 159.2704
@@ -110,7 +119,6 @@ if __name__=="__main__":
     with open(reward_config, "r") as fin:
         reward_config_dict = yaml.safe_load(fin)
 
-
     rewards, all_labels = rewards_from_gifs(gif_paths, 
                                     reward_config_dict=reward_config_dict, 
                                     reward_model_name=reward_model_name, 
@@ -120,4 +128,4 @@ if __name__=="__main__":
 
     heatmap_name = f"rm={reward_model_name}_patch={use_patch}_h-demo={human_demo}.png"
 
-    rewards_matrix_heatmap(rewards, f'debugging/axis_exp/heatmaps/{heatmap_name}')
+    rewards_matrix_heatmap(rewards, f'axis_exp/heatmaps/{heatmap_name}')

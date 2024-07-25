@@ -74,44 +74,34 @@ class DINORewardModelWrapper:
             return image_embeddings, image_masks
 
     def __call__(self, embedding_tuple):
+        all_ds = []
         with torch.no_grad():
-            embeddings, embeddings_masks = embedding_tuple
-            distance = torch.Tensor(self.reward_model.compute_distance_parallel(source_features=embeddings,
-                                                                    source_masks=embeddings_masks,
-                                                                    target_features=self.ref_image_embeddings,
-                                                                    target_masks=self.ref_image_masks)).to(self._device)
-            logger.debug(f"__call__: {distance.size()=}")
-            # return - distance  # Reward is the negative of the distance
-            return distance
-
-    # def __call__(self, embedding_tuple):
-    #     all_ds = []
-    #     with torch.no_grad():
-    #         for i, (target, target_mask) in enumerate(zip(self.target_image_embeddings, self.target_image_masks)):
-    #             source, source_mask = embedding_tuple
+            for i, (target, target_mask) in enumerate(zip(self.target_image_embeddings, self.target_image_masks)):
+                source, source_mask = embedding_tuple
                 
-    #             distance = torch.Tensor(self.reward_model.compute_distance_parallel(source_features=source,
-    #                                                                     source_masks=source_mask,
-    #                                                                     target_features=target,
-    #                                                                     target_masks=target_mask,
-    #                                                                     # gb=self.gb,  # 7/24/2024 (Yuki): Will has some extra stuff with this ("goal baseline?") but it's not on any language_irl branch
-    #                                                                     )).to(self._device)
+                distance = torch.Tensor(self.reward_model.compute_distance_parallel(source_features=source,
+                                                                        source_masks=source_mask,
+                                                                        target_features=target,
+                                                                        target_masks=target_mask,
+                                                                        # gb=self.gb,  # 7/24/2024 (Yuki): Will has some extra stuff with this ("goal baseline?") but it's not on any language_irl branch
+                                                                        )).to(self._device)
                 
-    #             all_ds.append(distance)
+                all_ds.append(distance)
 
-    #             logger.debug(f"__call__: {distance.size()=}")
+                logger.debug(f"__call__: {distance.size()=}")
 
-    #     all_ds = torch.stack(all_ds)
+        all_ds = torch.stack(all_ds)
 
-    #     if self.pos_idx_split < len(self.target_image_embeddings):
-    #         total_distance = torch.sum(all_ds[:self.pos_idx_split], axis=0) / len(all_ds[:self.pos_idx_split]) - (torch.sum(all_ds[self.pos_idx_split:], axis=0) / len(all_ds[self.pos_idx_split:]))
+        if self.pos_idx_split < len(self.target_image_embeddings):
+            total_distance = torch.sum(all_ds[:self.pos_idx_split], axis=0) / len(all_ds[:self.pos_idx_split]) - (torch.sum(all_ds[self.pos_idx_split:], axis=0) / len(all_ds[self.pos_idx_split:]))
             
-    #     else:
-    #         total_distance = torch.sum(all_ds[:self.pos_idx_split], axis=0) / len(all_ds[:self.pos_idx_split])
-    #         #total_distance = total_distance - 33.5 # TODO: MAGIC NUMBER offset to near 0 (tend to be around 33.4)
+        else:
+            total_distance = torch.sum(all_ds[:self.pos_idx_split], axis=0) / len(all_ds[:self.pos_idx_split])
+            #total_distance = total_distance - 33.5 # TODO: MAGIC NUMBER offset to near 0 (tend to be around 33.4)
 
-    #     #total_distance = 500*total_distance # TODO: magic number scales to rewards for RL
-    #     return - total_distance  # Reward is the negative of the distance
+        #total_distance = 500*total_distance # TODO: magic number scales to rewards for RL
+
+        return - total_distance  # Reward is the negative of the distance
 
     def initialize_target_images(self):
         """
@@ -131,7 +121,7 @@ class DINORewardModelWrapper:
             logger.debug(f"[{self._device}] {self.target_image_embeddings.size()=}, {self.target_image_masks.size()=},allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)} ")
             
         self.pos_idx_split = len(self.pos_image_path_list) # index at which self.target_image_embeddings and masks become negative examples
-        
+        logger.debug(f"self.pos_idx_split={self.pos_idx_split}, len(self.target_image_embeddings)={len(self.target_image_embeddings)}")
 
     def initialize_baseline_images(self):
         if self.baseline_image_path is not None:
