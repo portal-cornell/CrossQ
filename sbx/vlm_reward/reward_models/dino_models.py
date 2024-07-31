@@ -6,12 +6,12 @@ from loguru import logger
 import torch
 
 def load_dino_reward_model(
-    rank, batch_size, model_name, image_metric, 
+    rank, batch_size, model_name, image_metric, image_size,
     human_seg_model_path, pos_image_path_list, 
     neg_image_path_list,source_mask_thresh, target_mask_thresh,
-    baseline_image_path, baseline_mask_thresh
+    baseline_image_path, baseline_mask_thresh, return_ot_plan
 ):  
-    feature_extractor = Dino2FeatureExtractor(model_name=model_name, edge_size=448)
+    feature_extractor = Dino2FeatureExtractor(model_name=model_name, edge_size=image_size)
     logger.debug("Initialized feature extractor")
 
     human_seg_model = HumanSegmentationModel(rank, human_seg_model_path)
@@ -28,7 +28,8 @@ def load_dino_reward_model(
                             source_mask_thresh = source_mask_thresh,
                             target_mask_thresh=target_mask_thresh,
                             baseline_image_path=baseline_image_path,
-                            baseline_mask_thresh=baseline_mask_thresh
+                            baseline_mask_thresh=baseline_mask_thresh,
+                            return_ot_plan=return_ot_plan
     ).to(f"cuda:{rank}")
     dino_wrapper.initialize_target_images()
     dino_wrapper.initialize_baseline_images()
@@ -41,7 +42,7 @@ def load_dino_reward_model(
 class DINORewardModelWrapper:
     def __init__(self, rank, batch_size, dino_metric_model, 
             pos_image_path_list, neg_image_path_list,
-            source_mask_thresh, target_mask_thresh, baseline_mask_thresh=.5,baseline_image_path=None):
+            source_mask_thresh, target_mask_thresh, baseline_mask_thresh=.5,baseline_image_path=None, return_ot_plan=False):
         self.reward_model = dino_metric_model
         self._device = f"cuda:{rank}"
         self.batch_size = batch_size
@@ -53,6 +54,12 @@ class DINORewardModelWrapper:
         self.baseline_mask_thresh = baseline_mask_thresh
         self.baseline_image_path = baseline_image_path
         self.gb = baseline_image_path is not None
+
+        # Whether the model should store the optimal transport plan
+        self.return_ot_plan = return_ot_plan
+        self.saved_ot_plan = []
+        self.saved_costs = []
+        self.saved_mask = []
         
     def embed_module(self, image_batch, mask_thresh):
         """
@@ -68,6 +75,7 @@ class DINORewardModelWrapper:
             logger.debug(f"[{self._device}] transformed image. {transformed_image.size()=}, allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)}")
 
             image_embeddings, image_masks = self.reward_model.extract_masked_features(batch=transformed_image, use_patch_mask= mask_thresh!=0, mask_thresh=mask_thresh)
+            self.saved_mask.append(image_masks)
 
             logger.debug(f"[{self._device}] {image_embeddings.size()=}, {image_masks.size()=} allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)}")
 
@@ -78,16 +86,21 @@ class DINORewardModelWrapper:
         with torch.no_grad():
             for i, (target, target_mask) in enumerate(zip(self.target_image_embeddings, self.target_image_masks)):
                 source, source_mask = embedding_tuple
-                
-                distance = torch.Tensor(self.reward_model.compute_distance_parallel(source_features=source,
+
+                raw_output_dict = self.reward_model.compute_distance_parallel(source_features=source,
                                                                         source_masks=source_mask,
                                                                         target_features=target,
                                                                         target_masks=target_mask,
                                                                         # gb=self.gb,  # 7/24/2024 (Yuki): Will has some extra stuff with this ("goal baseline?") but it's not on any language_irl branch
-                                                                        )).to(self._device)
+                                                                        return_ot_plan=self.return_ot_plan
+                                                                        )
                 
+                distance = torch.Tensor(raw_output_dict["wasser"]).to(self._device)
                 all_ds.append(distance)
 
+                self.saved_ot_plan.extend(raw_output_dict.get("T", None))
+                self.saved_costs.extend(raw_output_dict.get("C", None))
+                
                 logger.debug(f"__call__: {distance.size()=}")
 
         all_ds = torch.stack(all_ds)

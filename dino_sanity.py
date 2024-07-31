@@ -7,12 +7,13 @@ from PIL import Image
 import yaml
 import os
 import numpy as np
+import copy
 from einops import rearrange
 
 from sbx.vlm_reward.reward_main import compute_rewards, load_reward_model
 from sbx.vlm_reward.reward_transforms import half_gaussian_filter_1d
 
-from sbx.vlm_reward.reward_models.language_irl.utils import rewards_matrix_heatmap, rewards_line_plot, pad_to_longest_sequence
+from sbx.vlm_reward.reward_models.language_irl.utils import rewards_matrix_heatmap, rewards_line_plot, pad_to_longest_sequence, patch_matching_gif
 
 from loguru import logger
 
@@ -45,6 +46,9 @@ def rewards_from_gifs(gif_paths, reward_config_dict, reward_model_name, batch_si
     logger.info("Finished loading reward model...")
 
     all_rewards = []
+    all_best_match_list = []
+    all_costs_list = []
+    all_masks_matrix = None
 
     for frames in all_frames:
         rewards = compute_rewards(
@@ -55,7 +59,9 @@ def rewards_from_gifs(gif_paths, reward_config_dict, reward_model_name, batch_si
             num_workers=1,
             dist=False
             )
-        
+
+        best_match_list = [np.argmax(ot_plan, axis=1) for ot_plan in reward_model.saved_ot_plan]
+
         logger.info(f"\nsmoothed_size={half_gaussian_filter_1d(rewards, sigma=0.4, smooth_last_N=True).shape}, rewards_size={rewards.cpu().numpy().shape}")
         if sigma:
             smoothed_rewards = half_gaussian_filter_1d(rewards, sigma=sigma, smooth_last_N=True) 
@@ -64,26 +70,29 @@ def rewards_from_gifs(gif_paths, reward_config_dict, reward_model_name, batch_si
         smoothed_transformed_rewards = transform(smoothed_rewards)
 
         all_rewards.append(smoothed_transformed_rewards)
-    
+        all_best_match_list.append(best_match_list)
+        all_costs_list.append(copy.deepcopy(reward_model.saved_costs))
+
+        if all_masks_matrix is None:
+            all_masks_matrix = torch.stack(reward_model.saved_mask)
+        else:
+            all_masks_matrix = torch.stack([all_masks_matrix, torch.stack(reward_model.saved_mask)])
+
     all_rewards = pad_to_longest_sequence(all_rewards)
     all_rewards = np.stack(all_rewards)
 
     n_gifs = len(gif_paths)
 
-
     labels = [gif_path.split('/')[-1].split('.')[0] for gif_path in gif_paths]
 
-
-    return all_rewards, labels
-
-
+    return all_rewards, all_best_match_list, all_costs_list, labels
 
 if __name__=="__main__":
     gif_paths =  [
-                'axis_exp/kneeling_gifs/0_success_crossq_kneel.gif',
+                # 'axis_exp/kneeling_gifs/0_success_crossq_kneel.gif',
                 'axis_exp/kneeling_gifs/1_kneel-at-20_fall-backward.gif',
-                'axis_exp/kneeling_gifs/2_some-move-close-to-kneeling.gif',
-                'axis_exp/kneeling_gifs/3_crossq_stand_never-on-ground.gif'
+                # 'axis_exp/kneeling_gifs/2_some-move-close-to-kneeling.gif',
+                # 'axis_exp/kneeling_gifs/3_crossq_stand_never-on-ground.gif'
                ]
 
     base_save_path = 'axis_exp/threshold/outputs_cos_l'
@@ -119,13 +128,42 @@ if __name__=="__main__":
     with open(reward_config, "r") as fin:
         reward_config_dict = yaml.safe_load(fin)
 
-    rewards, all_labels = rewards_from_gifs(gif_paths, 
+    logger.info("Loading reward model...")
+    reward_model = load_reward_model(rank=0, worker_actual_batch_size=batch_size,
+                                        model_name=reward_model_name,
+                                        model_config_dict=reward_config_dict).eval().cuda(0)
+    logger.info("Finished loading reward model...")
+
+    rewards, all_best_match_list, all_costs_list, all_labels = rewards_from_gifs(gif_paths, 
                                     reward_config_dict=reward_config_dict, 
                                     reward_model_name=reward_model_name, 
                                     batch_size=batch_size, 
                                     sigma=sigma, 
                                     transform=identity)
 
-    heatmap_name = f"rm={reward_model_name}_patch={use_patch}_h-demo={human_demo}.png"
+    heatmap_name = f"rm={reward_model_name}_patch={use_patch}_h-demo={human_demo}_img-size=448.png"
 
     rewards_matrix_heatmap(rewards, f'axis_exp/heatmaps/{heatmap_name}')
+    
+    for i in range(len(gif_paths)):
+        with open(f'debugging/plot_temp_save/r.npy', 'wb') as f:
+            np.save(f, rewards[i])
+
+        for j in range(len(all_best_match_list[i])):
+            print(f"{j}: T={all_best_match_list[i][j].shape}, C={all_costs_list[i][j].shape}")
+            with open(f'debugging/plot_temp_save/best_match_list/t_{j}.npy', 'wb') as f:
+                np.save(f, all_best_match_list[i][j])
+
+            with open(f'debugging/plot_temp_save/cost/c_{j}.npy', 'wb') as f:
+                np.save(f, all_costs_list[i][j])
+        # patch_matching_gif(gif_paths[i], reward_config_dict["pos_image_path"], all_best_match_list[i], all_costs_list[i], all_labels[i])
+
+    # best_match_list=[]
+    # cost_list=[]
+
+    # for j in range(119):
+    #     best_match_list.append(np.load(f'debugging/plot_temp_save/best_match_list/t_{j}.npy'))
+    #     cost_list.append(np.load(f'debugging/plot_temp_save/cost/c_{j}.npy'))
+
+    # patch_matching_gif(reward_model.reward_model.feature_extractor, gif_paths[0], reward_config_dict["pos_image_path"][0], best_match_list, cost_list, gif_paths[0])
+    

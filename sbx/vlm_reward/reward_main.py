@@ -21,31 +21,21 @@ def load_reward_model(
     assert any([model_base_name in model_name.lower() for model_base_name in ["vit", "dino"]])
 
     if "dino" in model_name.lower():
-        if "neg_image_path" in model_config_dict:
-            neg_image_path_list=model_config_dict["neg_image_path"]
-        else:
-            neg_image_path_list = []
-
-        if "baseline_image_path" in model_config_dict:
-            baseline_image_path = model_config_dict["baseline_image_path"]
-            baseline_mask_thresh = model_config_dict["baseline_mask_thresh"]
-        else:
-            baseline_image_path = None
-            baseline_mask_thresh = None
-
         reward_model = load_dino_reward_model(rank=rank,
                                                 batch_size=worker_actual_batch_size,
                                                 model_name=model_name,
                                                 image_metric=model_config_dict["image_metric"],
+                                                image_size=model_config_dict["image_size"],
                                                 human_seg_model_path=model_config_dict["human_seg_model_path"],
                                                 pos_image_path_list=model_config_dict["pos_image_path"],
-                                                neg_image_path_list=neg_image_path_list,
+                                                neg_image_path_list=model_config_dict.get("neg_image_path", []),
                                                 source_mask_thresh=model_config_dict["source_mask_thresh"],
                                                 target_mask_thresh=model_config_dict["target_mask_thresh"],
-                                                baseline_image_path=baseline_image_path,
-                                                baseline_mask_thresh=baseline_mask_thresh)
+                                                baseline_image_path=model_config_dict.get("baseline_image_path", None),
+                                                baseline_mask_thresh=model_config_dict.get("baseline_mask_thresh", None),
+                                                return_ot_plan=model_config_dict.get("return_ot_plan", False))
 
-        logger.debug(f"Loaded DINO reward model. model_name={model_name}, pos_image={model_config_dict['pos_image_path']}, neg_image={neg_image_path_list}")
+        logger.debug(f"Loaded DINO reward model. model_name={model_name}, pos_image={model_config_dict['pos_image_path']}, neg_image={model_config_dict.get('neg_image_path', [])}")
 
     if (not ("dino" in model_name.lower())) and ("vit" in model_name.lower()):
         reward_model = load_clip_reward_model(model_name=model_name,

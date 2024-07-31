@@ -1,4 +1,6 @@
 image_metric: 'wasserstein'
+image_size: 448
+return_ot_plan: True
 human_seg_model_path: '/share/portal/hw575/language_irl/pretrained_checkpoints/SGHM-ResNet50.pth'
 pos_image_path: 
   - axis_exp/humanoid_kneeling_ref.png
