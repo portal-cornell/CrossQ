@@ -2,14 +2,14 @@
 python train.py \
     -algo crossq \
     -env HumanoidSpawnedUpCustom \
-    -reward_type simple_remain_standing \
+    -reward_type simple_remain_standing_exp_dist \
     -n_envs 8 \
     -seed 9 \
     -wandb_mode 'online' \
-    -total_timesteps=1000000 \
+    -total_timesteps=500000 \
     -model_save_freq=100000 \
     -video_save_freq=10000 \
-    -episode_length=240 \
+    -episode_length=120 \
 ################################################################### SAC
 # python train.py \
 #     -algo sac \

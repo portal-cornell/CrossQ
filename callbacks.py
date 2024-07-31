@@ -80,7 +80,7 @@ class VideoRecorderCallback(BaseCallback):
                 pil_image = Image.fromarray(image)
                 info = _locals.get('info', {})
 
-                #plot_info_on_frame(pil_image, info)
+                plot_info_on_frame(pil_image, info)
 
                 # PyTorch uses CxHxW vs HxWxC gym (and tensorflow) image convention
                 screens.append(np.uint8(pil_image).transpose(2, 0, 1))
@@ -98,6 +98,7 @@ class VideoRecorderCallback(BaseCallback):
                 Video(th.ByteTensor(array([screens])), fps=40),
                 exclude=("stdout", "log", "json", "csv"),
             )
+
         return True
 
 

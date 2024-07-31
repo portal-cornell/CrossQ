@@ -31,5 +31,9 @@ pose_config_dict = {
         21: np.pi/4, # Left upper arm perpendicular to the side of the torso
         22: np.pi*3/16, # Left upper arm align with the side of torso
         23: -np.pi*5/8, # Make the angle between left upper arm and left lower arm close to pi
+    },
+    "testing":
+    {
+        2: 1.3, # Land the entire torso on the floor
     }
 }

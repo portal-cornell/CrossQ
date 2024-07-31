@@ -9,6 +9,7 @@ import argparse
 
 import envs
 from create_demo.pose_config import pose_config_dict
+from inference import plot_info_on_frame
 
 # Set up
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
@@ -33,7 +34,8 @@ if args.debug:
 
 # Load the humanoid environment
 make_env_kwargs = dict(
-    episode_length = 120
+    episode_length = 120,
+    reward_type = "simple_remain_standing_exp_dist"
 )
 
 env = gymnasium.make(
@@ -84,15 +86,47 @@ if args.debug:
 
     # Check for pose's stability
     # Action space size from https://www.gymlibrary.dev/environments/mujoco/humanoid/
-    for i in range(20):
-        env.step(np.zeros((17,)))
-        video_writer.append_data(np.uint8(env.render()))
+    # for i in range(20):
+    #     # Test how stable the pose is (0 force/action)
+    #     env.step(np.zeros((17,)))
+    #     video_writer.append_data(np.uint8(env.render()))
+
+    for i in range(50):
+        # Test the environment with random action (force-controlled)
+        o, _, _, _, info = env.step(np.random.uniform(-0.4, 0.4, (17,)))
+        frame = env.render()
+        image = Image.fromarray(frame)
+        plot_info_on_frame(image, info)
+        video_writer.append_data(np.uint8(image))
 
         obs = env.unwrapped.get_obs()
         print(f"{i}:")
         for j in range(len(obs[:22])):
             print(f"  qpos: {j+2}: {obs[:22][j]:.2f}")
-        
+
+    plist = ["both-arms-out", "right-arm-out", "left-arm-out"]
+    for i in range(3):
+        joint_config = pose_config_dict[plist[i]]
+
+        new_qpos = copy.deepcopy(init_qpos)
+        for idx in joint_config.keys():
+            new_qpos[int(idx)] = joint_config[int(idx)] # z-coordinate of torso
+
+        # Set the humanoid joint state to the specified ones, velocity stays at 0
+        env.unwrapped.set_state(qpos=new_qpos, qvel=np.zeros((23,)))
+
+        ref = np.load("create_demo/demos/both-arms-out_joint-state.npy")
+        obs = env.unwrapped.get_obs()
+        print(f"{i}: {np.exp(-np.linalg.norm(obs[:22] - ref[0]))}")
+
+        for j in range(5):
+            # Test the environment with random action (force-controlled)
+            o, _, _, _, info = env.step(np.zeros((17,)))
+            frame = env.render()
+            image = Image.fromarray(frame)
+            plot_info_on_frame(image, info)
+            video_writer.append_data(np.uint8(image))
+                        
     video_writer.close()
 
 # Close the environment
