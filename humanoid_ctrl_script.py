@@ -22,7 +22,7 @@ os.environ["EGL_PLATFORM"] = "device"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-p", "--pose_name",   type=str,   required=True, help="Name of the demo to generate data for (correspond to create_demo/pose_config.py)")
-parser.add_argument("--debug", default=False, action="store_true")
+parser.add_argument("--debug", default=False, action="store_true", help="Store a video and add more prints to help visualize the data")
 
 args = parser.parse_args()
 
@@ -35,7 +35,7 @@ if args.debug:
 # Load the humanoid environment
 make_env_kwargs = dict(
     episode_length = 120,
-    reward_type = "simple_remain_standing_exp_dist"
+    reward_type = "both_arms_out_goal_only_euclidean"
 )
 
 env = gymnasium.make(
@@ -84,13 +84,14 @@ image.save(f"create_demo/demos/{args.pose_name}.png")
 if args.debug:
     video_writer.append_data(np.uint8(frame))
 
-    # Check for pose's stability
-    # Action space size from https://www.gymlibrary.dev/environments/mujoco/humanoid/
-    # for i in range(20):
-    #     # Test how stable the pose is (0 force/action)
-    #     env.step(np.zeros((17,)))
-    #     video_writer.append_data(np.uint8(env.render()))
+    Check for pose's stability
+    Action space size from https://www.gymlibrary.dev/environments/mujoco/humanoid/
+    for i in range(20):
+        # Test how stable the pose is (0 force/action)
+        env.step(np.zeros((17,)))
+        video_writer.append_data(np.uint8(env.render()))
 
+    # TODO: Remove Below. Temporary debugging to check the reward function
     for i in range(50):
         # Test the environment with random action (force-controlled)
         o, _, _, _, info = env.step(np.random.uniform(-0.4, 0.4, (17,)))
@@ -126,6 +127,7 @@ if args.debug:
             image = Image.fromarray(frame)
             plot_info_on_frame(image, info)
             video_writer.append_data(np.uint8(image))
+    # TODO: Remove Above. Temporary debugging to check the reward function
                         
     video_writer.close()
 

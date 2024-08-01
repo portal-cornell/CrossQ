@@ -196,7 +196,7 @@ def primary_worker(run_name, args, stop_event: Optional[multiprocessing.Event] =
             [wandb_callback, video_callback]
         )
 
-        model.learn(total_timesteps=args.total_timesteps, progress_bar=False, callback=callback_list)
+        model.learn(total_timesteps=args.total_timesteps, progress_bar=True, callback=callback_list)
 
         if stop_event is not None:
             stop_event.set()
@@ -323,6 +323,7 @@ if __name__ == "__main__":
     parser.add_argument("-bnstats_live_net",  type=int,   required=False, default=0,choices=[0,1], help="use bn running statistics from live network within the target network")
 
     parser.add_argument('--distributed', default=True, action=argparse.BooleanOptionalAction)
+    parser.add_argument("-run_notes", type=str, required=False, default="", help="Extra notes to put in to help distinguish the run from other runs")
     # TODO: do some args validation
 
     experiment_time, run_id = utils.get_run_hash()
@@ -331,9 +332,9 @@ if __name__ == "__main__":
     utils.validate_args(args)
 
     if utils.vlm_for_reward(args):
-        run_name = f"{args.algo}_{args.env}_rm={args.reward_model_name[:4]}_r={args.reward_type}_s={args.seed}_{experiment_time}_{run_id}"
+        run_name = f"{run_id}_{args.algo}_{args.env}_rm={args.reward_model_name[:4]}_r={args.reward_type}_s={args.seed}_{experiment_time}_n={args.run_notes}"
     else:
-        run_name = f"{args.algo}_{args.env}_r={args.reward_type}_s={args.seed}_{experiment_time}_{run_id}"
+        run_name = f"{run_id}_{args.algo}_{args.env}_r={args.reward_type}_s={args.seed}_{experiment_time}_n={args.run_notes}"
 
     # Create log dir where evaluation results will be saved
     eval_log_dir = os.path.join("./eval_logs", run_name, "eval")

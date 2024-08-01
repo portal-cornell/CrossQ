@@ -152,7 +152,7 @@ class HumanoidEnvCustom(GymHumanoidEnv):
             ref_joint_states_list.append(np.load(fp))
         self._ref_joint_states = np.stack(ref_joint_states_list)
 
-        logger.debug(f"Updated self._ref_joint_states: {self._ref_joint_states.shape}\n{self._ref_joint_states}")
+        # logger.debug(f"Updated self._ref_joint_states: {self._ref_joint_states.shape}\n{self._ref_joint_states}")
 
 def reward_original(data, **kwargs):
     model = kwargs.get("model", None)
@@ -467,6 +467,14 @@ def reward_splitting(data, **kwargs):
 
 
 def reward_both_arms_out_goal_only_euclidean(data, **kwargs):
+    original_mujoco_reward, _ = reward_original(data, **kwargs)
+
+    ctrl_cost = kwargs.get("ctrl_cost", None)
+    ctrl_cost_w = 1
+
+    upward_reward = np.exp(-(data.qpos.flat[2] - 1.3)**2)
+    upward_reward_w = 0
+
     assert "ref_joint_states" in kwargs, "ref_joint_states must be passed in as part of the kwargs"
     ref_joint_states = kwargs.get('ref_joint_states', None)
     num_steps = kwargs.get('num_steps', 0)
@@ -476,13 +484,22 @@ def reward_both_arms_out_goal_only_euclidean(data, **kwargs):
     # Mimicking how they get the observation
     # https://github.com/Farama-Foundation/Gymnasium/blob/b6046caeb30c9938789aeeec183147c7ffd1983b/gymnasium/envs/mujoco/humanoid_v4.py#L119
     curr_qpos = data.qpos.flat.copy()[2:]
+
+    pose_matching_reward = np.exp(-np.linalg.norm(curr_qpos - ref_joint_states[0]))
+    pose_matching_reward_w = 1
     
-    reward = np.exp(-np.linalg.norm(curr_qpos - ref_joint_states[0]))
+    reward = upward_reward_w * upward_reward + pose_matching_reward_w * pose_matching_reward - ctrl_cost_w * ctrl_cost
     
     terms_to_plot = dict(
-        steps=num_steps,
+        tor=str([f"{data.qpos.flat[:3][i]:.2f}" for i in range(3)]),
+        com=str([f"{data.xipos[1][i]:.2f}" for i in range(3)]),
         l2_norm=f"{np.linalg.norm(curr_qpos - ref_joint_states[0]):.2f}",
-        r = f"{reward:.2f}"
+        uph_r= f"{upward_reward:.2f}",
+        ctrl_c= f"{ctrl_cost:.2f}",
+        pose_r = f"{pose_matching_reward:.2f}",
+        r = f"{reward:.2f}",
+        og_r= f"{original_mujoco_reward:.2f}",
+        steps=num_steps,
     )
 
     return reward, terms_to_plot
