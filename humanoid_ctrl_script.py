@@ -84,8 +84,8 @@ image.save(f"create_demo/demos/{args.pose_name}.png")
 if args.debug:
     video_writer.append_data(np.uint8(frame))
 
-    Check for pose's stability
-    Action space size from https://www.gymlibrary.dev/environments/mujoco/humanoid/
+    # Check for pose's stability
+    # Action space size from https://www.gymlibrary.dev/environments/mujoco/humanoid/
     for i in range(20):
         # Test how stable the pose is (0 force/action)
         env.step(np.zeros((17,)))
