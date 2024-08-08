@@ -1,0 +1,26 @@
+# Main configuration file
+# python main.py mode=debug model=gpt4v logger=disabled
+
+hydra:
+  job:
+    chdir: True # https://hydra.cc/docs/1.2/upgrades/1.1_to_1.2/changes_to_job_working_dir/
+  # output_subdir: null
+
+defaults:
+  - _self_
+  - mode: debug # debug, default, eval
+  - model: dinov2lreg
+  - data: mujoco
+  - train: finetuning
+  - logger: disabled
+
+exp_name: ""
+logdir: /home/aw588/exp_nlvr_ft
+
+# General settings
+write_response_to_file: True
+
+seed: 42
+logging: info
+logger: disabled # (wandb) disabled, online, offline
+save_model: False
