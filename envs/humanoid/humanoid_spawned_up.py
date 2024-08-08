@@ -1,6 +1,6 @@
 import pathlib
 from typing import Any, Dict, Optional, Tuple
-
+from loguru import logger
 import numpy as np
 from gymnasium import utils
 from gymnasium.envs.mujoco import MujocoEnv
@@ -24,6 +24,10 @@ DEFAULT_CAMERA_CONFIG = {
 }
 
 class HumanoidEnvCustom(GymHumanoidEnv):
+    DEMOS_DICT = {
+        "both_arms_out_goal_only_euclidean": ["create_demo/demos/both-arms-out_joint-state.npy"]
+    }
+
     def __init__(
         self,
         episode_length=240,
@@ -96,6 +100,14 @@ class HumanoidEnvCustom(GymHumanoidEnv):
         assert reward_type in REWARD_FN_MAPPING.keys()
         self.reward_fn = REWARD_FN_MAPPING[reward_type]
 
+        self._ref_joint_states = np.array([])
+
+        if "_goal_only_" in reward_type or "_seq_" in reward_type:
+            self._load_reference_joint_states(self.DEMOS_DICT[reward_type])
+
+        # Spawned the humanoid not so high
+        self.init_qpos[2] = 1.3
+
     def step(self, action) -> Tuple[NDArray, float, bool, bool, Dict]:
         xy_position_before = mass_center(self.model, self.data)
 
@@ -107,7 +119,8 @@ class HumanoidEnvCustom(GymHumanoidEnv):
                                         xy_position_before=xy_position_before,
                                         ctrl_cost=self.control_cost(action),
                                         healthy_reward=self.healthy_reward,
-                                        forward_reward_weight=self._forward_reward_weight)
+                                        forward_reward_weight=self._forward_reward_weight,
+                                        ref_joint_states=self._ref_joint_states)
 
         self.num_steps += 1
         terminated = self.num_steps >= self.episode_length
@@ -122,6 +135,24 @@ class HumanoidEnvCustom(GymHumanoidEnv):
     def reset(self, *, seed: Optional[int] = None, options: Optional[Dict] = None):
         self.num_steps = 0
         return super().reset(seed=seed, options=options)
+
+    def get_obs(self):
+        return self._get_obs()
+
+    def _load_reference_joint_states(self, joint_state_fp_list):
+        """
+        Parameters:
+            joint_state_fp_list (list): list of path to the saved reference joint state
+
+        Effects:
+            self._ref_joint_states gets updated
+        """
+        ref_joint_states_list = []
+        for fp in joint_state_fp_list:
+            ref_joint_states_list.append(np.load(fp))
+        self._ref_joint_states = np.stack(ref_joint_states_list)
+
+        # logger.debug(f"Updated self._ref_joint_states: {self._ref_joint_states.shape}\n{self._ref_joint_states}")
 
 def reward_original(data, **kwargs):
     model = kwargs.get("model", None)
@@ -170,6 +201,28 @@ def reward_simple_remain_standing(data, **kwargs):
     terms_to_plot = dict(
             uph_c= - upward_cost,
             ctrl_c= - ctrl_cost,
+            tor=str([f"{data.qpos.flat[:3][i]:.2f}" for i in range(3)]),
+            com=str([f"{data.xipos[1][i]:.2f}" for i in range(3)]),
+            r= f"{rewards:.2f}",
+            og_r= f"{original_mujoco_reward:.2f}",
+    )
+    
+    return rewards, terms_to_plot
+
+def reward_simple_remain_standing_exp_dist(data, **kwargs):
+    original_mujoco_reward, _ = reward_original(data, **kwargs)
+
+    ctrl_cost = kwargs.get("ctrl_cost", None)
+    ctrl_cost_w = 1
+
+    upward_reward = np.exp(-(data.qpos.flat[2] - 1.3)**2)
+    upward_reward_w = 1
+
+    rewards = upward_reward_w * upward_reward - ctrl_cost_w * ctrl_cost
+
+    terms_to_plot = dict(
+            uph_r= upward_reward,
+            ctrl_c= ctrl_cost,
             tor=str([f"{data.qpos.flat[:3][i]:.2f}" for i in range(3)]),
             com=str([f"{data.xipos[1][i]:.2f}" for i in range(3)]),
             r= f"{rewards:.2f}",
@@ -411,14 +464,55 @@ def reward_splitting(data, **kwargs):
     terms_to_plot["r"] = f"{reward:.2f}"
 
     return reward, terms_to_plot
+
+
+def reward_both_arms_out_goal_only_euclidean(data, **kwargs):
+    original_mujoco_reward, _ = reward_original(data, **kwargs)
+
+    ctrl_cost = kwargs.get("ctrl_cost", None)
+    ctrl_cost_w = 1
+
+    upward_reward = np.exp(-(data.qpos.flat[2] - 1.3)**2)
+    upward_reward_w = 0
+
+    assert "ref_joint_states" in kwargs, "ref_joint_states must be passed in as part of the kwargs"
+    ref_joint_states = kwargs.get('ref_joint_states', None)
+    num_steps = kwargs.get('num_steps', 0)
+
+    assert ref_joint_states.shape[0] == 1, "there should only be the goal image/joint position"
+
+    # Mimicking how they get the observation
+    # https://github.com/Farama-Foundation/Gymnasium/blob/b6046caeb30c9938789aeeec183147c7ffd1983b/gymnasium/envs/mujoco/humanoid_v4.py#L119
+    curr_qpos = data.qpos.flat.copy()[2:]
+
+    pose_matching_reward = np.exp(-np.linalg.norm(curr_qpos - ref_joint_states[0]))
+    pose_matching_reward_w = 1
     
+    reward = upward_reward_w * upward_reward + pose_matching_reward_w * pose_matching_reward - ctrl_cost_w * ctrl_cost
+    
+    terms_to_plot = dict(
+        tor=str([f"{data.qpos.flat[:3][i]:.2f}" for i in range(3)]),
+        com=str([f"{data.xipos[1][i]:.2f}" for i in range(3)]),
+        l2_norm=f"{np.linalg.norm(curr_qpos - ref_joint_states[0]):.2f}",
+        uph_r= f"{upward_reward:.2f}",
+        ctrl_c= f"{ctrl_cost:.2f}",
+        pose_r = f"{pose_matching_reward:.2f}",
+        r = f"{reward:.2f}",
+        og_r= f"{original_mujoco_reward:.2f}",
+        steps=num_steps,
+    )
+
+    return reward, terms_to_plot
+
 
 REWARD_FN_MAPPING = dict(
         original = reward_original,
         simple_remain_standing = reward_simple_remain_standing,
+        simple_remain_standing_exp_dist = reward_simple_remain_standing_exp_dist,
         remain_standing = reward_remain_standing,
         best_standing_up = best_standing_from_lying_down,
         kneeling = reward_kneeling,
-        splitting = reward_splitting
+        splitting = reward_splitting,
+        both_arms_out_goal_only_euclidean = reward_both_arms_out_goal_only_euclidean
     )
     

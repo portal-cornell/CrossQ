@@ -76,21 +76,30 @@ def rewards_from_gifs(gif_paths, reward_config_dict, reward_model_name, batch_si
 if __name__=="__main__":
 #    gif_paths = ['sbx/vlm_reward/reward_models/language_irl/kneeling_gifs_ranked/kneeling_5.gif']
 
-    gif_paths =  ['debugging/gifs/kneeling_gifs/decent_kneeling.gif',
-                'debugging/gifs/kneeling_gifs/kneel_adversary.gif',
-                'debugging/gifs/kneeling_gifs/leaning_forward.gif',
-                'debugging/gifs/kneeling_gifs/crossq_kneel.gif',
-                'debugging/gifs/standing_gifs/crossq_stand.gif'
-               ]
+    gif_root = "axis_exp/kneeling_gifs"
+    gif_paths = [f"{gif_root}/0_success_crossq_kneel.gif",
+                f"{gif_root}/1_kneel-at-20_fall-backward.gif",
+                f"{gif_root}/2_some-move-close-to-kneeling.gif",]
+
+    # gif_paths =  ['debugging/gifs/kneeling_gifs/decent_kneeling.gif',
+    #             'debugging/gifs/kneeling_gifs/kneel_adversary.gif',
+    #             'debugging/gifs/kneeling_gifs/leaning_forward.gif',
+    #             'debugging/gifs/kneeling_gifs/crossq_kneel.gif',
+    #             'debugging/gifs/standing_gifs/crossq_stand.gif'
+    #            ]
     # gif_paths =  ['debugging/gifs/standing_gifs/step_291.gif', 'debugging/gifs/standing_gifs/step_531.gif', 'debugging/gifs/standing_gifs/step_781.gif'] 
     
     #gif_paths = ['debugging/gifs/standing_gifs/crossq_stand.gif']
-    base_save_path = 'debugging/threshold/outputs_cos_l'
+    # base_save_path = 'debugging/threshold/outputs_cos_l'
     
-    reward_config = 'configs/dino_kneeling_config.yml'
-    reward_model_name = 'dinov2_vitl14_reg' # TODO: change to L
+    reward_config = 'configs/dino_kneeling_config_mujoco.yml' #dino_kneeling_config.yml'
+    # reward_model_name = 'dinov2_vitl14_reg' # TODO: change to L
+    reward_model_name = "google/siglip-base-patch16-224"
     batch_size=32
     sigma = 4
+
+    # output_prefix = "dino_kneeling_config_mujoco_dinov2_vitl14_reg_2"
+    output_prefix = "dino_kneeling_config_mujoco_siglip-base-patch16-224"
 
     def transform_linear(rew):
         return 4.8541 * rew + 159.2704
@@ -108,7 +117,8 @@ if __name__=="__main__":
                                     batch_size=batch_size, 
                                     sigma=sigma, 
                                     transform=identity)
-    rewards_matrix_heatmap(rewards, 'debugging/crossq_tests/goodbad.png')
+    # rewards_matrix_heatmap(rewards, 'debugging/crossq_tests/goodbad.png')
+    rewards_line_plot(rewards, all_labels, f'debugging/crossq_tests/{output_prefix}_goodbad_gifs1-3.png')
 
     # for gif_path in gif_paths:
     #     rewards, all_labels = rewards_from_gifs([gif_path], 

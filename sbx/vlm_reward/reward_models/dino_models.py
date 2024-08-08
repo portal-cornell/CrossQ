@@ -83,7 +83,7 @@ class DINORewardModelWrapper:
                                                                         source_masks=source_mask,
                                                                         target_features=target,
                                                                         target_masks=target_mask,
-                                                                        gb=self.gb)).to(self._device)
+                                                                        )).to(self._device)
                 
                 all_ds.append(distance)
 

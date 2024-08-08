@@ -17,15 +17,15 @@ python train.py \
     -rank0_batch_size_pct 0\
     -reward_model_name 'dinov2_vitl14_reg'\
     -reward_batch_size 30\
-    -reward_config './configs/dino_kneeling_config.yml'\
+    -reward_config './configs/dino_splits_config_mujoco.yml'\
     -wandb_mode 'online' \
-    -total_timesteps=500000 \
+    -total_timesteps=1000000 \
     -eval_freq=100000 \
     -model_save_freq=50000 \
     -video_save_freq=10000 \
-    -episode_length=120 \
-    -model_checkpoint final_model \
-    -model_base_path /share/portal/hw575/CrossQ/train_logs/crossq_HumanoidSpawnedUpCustom_r=kneeling_s=9_2024-05-19_21-43-48__d7adbd23/checkpoint
+    -episode_length=120
+    #-model_checkpoint final_model \
+    #-model_base_path /share/portal/hw575/CrossQ/train_logs/crossq_HumanoidSpawnedUpCustom_r=kneeling_s=9_2024-05-19_21-43-48__d7adbd23/checkpoint
 
 ######## Public G2 A6000s (must decrease batch size for some reason)
 # python train.py \
@@ -65,6 +65,7 @@ python train.py \
 #     -episode_length=256 \
 #     --no-distributed
 ######################################## CLIP
+    - preference_data/splits_f_target_frame231.png
 # python train.py \
 #     -algo crossq \
 #     -env HumanoidSpawnedUpCustom \

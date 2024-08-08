@@ -1,0 +1,7 @@
+image_metric: 'wasserstein'
+human_seg_model_path: '/share/portal/hw575/language_irl/pretrained_checkpoints/SGHM-ResNet50.pth'
+pos_image_path:
+    - preference_data/splits_f_target_frame98.png
+
+source_mask_thresh: 0 # doesn't actually do anything rn
+target_mask_thresh: 0
