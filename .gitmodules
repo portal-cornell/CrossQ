@@ -1,4 +1,3 @@
-[submodule "sbx/vlm_reward/reward_models/language_irl"]
-	path = sbx/vlm_reward/reward_models/language_irl
-	url = https://github.com/annshin/language_irl.git
-	branch = for-crossq-env
+[submodule "SemanticGuidedHumanMatting"]
+	path = vlm_reward/utils/SemanticGuidedHumanMatting
+	url = https://github.com/cxgincsu/SemanticGuidedHumanMatting.git
