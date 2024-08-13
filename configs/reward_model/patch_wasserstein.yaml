@@ -1,3 +1,4 @@
+name: patch_wasserstein
 cost_fn: cosine # Options: euclidean, cosine. What function to use to build the cost matrix
 vlm_model: dinov2_vitl14_reg  # The VLM used to embed the image
 reward_batch_size: 32  # Batch size sent to the VLM reward model
