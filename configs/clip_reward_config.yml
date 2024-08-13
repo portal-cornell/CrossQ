@@ -1,6 +1,0 @@
-target_prompts: # Description of the goal state
-  - a humanoid robot standing up
-baseline_prompts: # Description of the environment
-  - a humanoid robot
-alpha: 0 # Alpha value of Baseline CLIP (CO-RELATE)
-cache_dir: /share/portal/hw575/vlmrm/.cache

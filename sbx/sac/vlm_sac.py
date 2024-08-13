@@ -70,7 +70,6 @@ class VLM_SAC(OffPolicyAlgorithmJax):
     def __init__(
         self,
         policy,
-        args,
         env: Union[GymEnv, str],
         learning_rate: Union[float, Schedule] = 3e-4,
         qf_learning_rate: Optional[float] = None,
@@ -100,12 +99,17 @@ class VLM_SAC(OffPolicyAlgorithmJax):
         device: str = "auto",
         _init_setup_model: bool = True,
         stats_window_size: int = 100,
-        inference_only: bool = False
+        inference_only: bool = False,
+        reward_model_config: dict = None,
+        n_cpu_workers: int = 1,
+        n_gpu_workers: int = 1,
+        episode_length: int = 120,
+        render_dim: Tuple[int, int] = (480, 480),
     ) -> None:
         # TODO: Add a parameter to point to the dataset relevant to the task
         stats_window_size = (
             (learning_starts + train_freq * env.num_envs)
-            // args.episode_length
+            // episode_length
             // env.num_envs
         ) * env.num_envs
         
@@ -119,7 +123,7 @@ class VLM_SAC(OffPolicyAlgorithmJax):
             batch_size=batch_size,
             tau=tau,
             gamma=gamma,
-            train_freq=args.episode_length, # Number of collected env steps between training iterations [From paper: 100, assume this should match episode length]
+            train_freq=episode_length, # Number of collected env steps between training iterations [From paper: 100, assume this should match episode length]
             gradient_steps=gradient_steps,
             action_noise=action_noise,
             replay_buffer_class=replay_buffer_class,
@@ -143,6 +147,12 @@ class VLM_SAC(OffPolicyAlgorithmJax):
         self.use_bnstats_from_live_net = use_bnstats_from_live_net
         self.policy_q_reduce_fn = policy_q_reduce_fn
 
+        self.reward_model_config = reward_model_config
+        self.n_cpu_workers = n_cpu_workers
+        self.n_gpu_workers = n_gpu_workers
+        self.episode_length = episode_length
+        self.render_dim = render_dim
+
         if td3_mode:
             self.action_noise = NormalActionNoise(mean=jnp.zeros(1), sigma=jnp.ones(1) * 0.1)
 
@@ -152,45 +162,42 @@ class VLM_SAC(OffPolicyAlgorithmJax):
         self.ep_clip_info_buffer = None  # type: Optional[deque]
         
         self.inference_only = inference_only
-        self.args = args
         if not self.inference_only:
             self._setup_reward_model()
             self.previous_num_timesteps = 0
             self.previous_num_episodes = 0
 
-            if self.args.rank0_batch_size_pct < 1.0:
+            if self.reward_model_config.rank0_batch_size_pct < 1.0:
                 # Uneven workload split between workers
-                worker_batch_size = int((1 - self.args.rank0_batch_size_pct) * self.args.reward_batch_size) // (self.args.n_workers - 1)
+                worker_batch_size = int((1 - self.reward_model_config.rank0_batch_size_pct) * self.reward_batch_size) // (self.n_gpu_workers - 1)
             else:
-                worker_batch_size = self.args.reward_batch_size // self.args.n_workers
+                worker_batch_size = self.reward_model_config.reward_batch_size // self.n_gpu_workers
             
             self.worker_frames_tensor = torch.zeros(
-                    (worker_batch_size, self.args.render_dim[0], self.args.render_dim[1], 3),
+                    (worker_batch_size, self.render_dim[0], self.render_dim[1], 3),
                     dtype=torch.uint8,
                 ).cuda(0)  # (Batch size per worker, w, h, 3)
-        
 
     """
     Added for VLM reward
     """
     def _setup_reward_model(self):
-        logger.info(f"Setting up VLM reward model: {self.args.reward_model_name}")
-        with open(self.args.reward_config, "r") as fin:
-            model_config_dict = yaml.safe_load(fin)
+        logger.info(f"Setting up VLM reward model: {self.reward_model_config.vlm_model}")
         
         # This is the actual batch size for rank0 inference worker
         #   because this batch_size is used to decide how many copies of the reference human image to use
-        if self.args.rank0_batch_size_pct < 1.0:
-            rank0_worker_batch = int(self.args.rank0_batch_size_pct * self.args.reward_batch_size)
+        if self.reward_model_config.rank0_batch_size_pct < 1.0:
+            rank0_worker_batch = int(self.reward_model_config.rank0_batch_size_pct * self.reward_model_config.reward_batch_size)
         else:
-            rank0_worker_batch = self.args.reward_batch_size // self.args.n_workers
+            rank0_worker_batch = self.reward_model_config.reward_batch_size // self.n_gpu_workers
 
-        reward_model = load_reward_model(rank=0, worker_actual_batch_size=rank0_worker_batch,
-                                         model_name=self.args.reward_model_name,
-                                         model_config_dict=model_config_dict).eval().cuda(0)
+        reward_model = load_reward_model(rank=0,            
+                                        worker_actual_batch_size=rank0_worker_batch,
+                                         model_name=self.reward_model_config.vlm_model,
+                                         model_config_dict=self.reward_model_config).eval().cuda(0)
         self.reward_model = reward_model
 
-        logger.debug(f"Finished loading up VLM reward model: {self.args.reward_model_name}")
+        logger.debug(f"Finished loading up VLM reward model: {self.reward_model_config.vlm_model}")
 
     def _setup_learn(
         self,
@@ -230,7 +237,7 @@ class VLM_SAC(OffPolicyAlgorithmJax):
         total_episodes = self._episode_num - self.previous_num_episodes
         env_episodes = total_episodes // self.env.num_envs
         
-        assert self.args.episode_length == env_episode_timesteps // env_episodes
+        assert self.episode_length == env_episode_timesteps // env_episodes
 
         frames = torch.from_numpy(np.array(self.replay_buffer.render_arrays))
 
@@ -246,16 +253,16 @@ class VLM_SAC(OffPolicyAlgorithmJax):
 
         frames = rearrange(frames, "n_steps n_envs ... -> (n_steps n_envs) ...")
     
-        assert frames.shape[1:] == (self.args.render_dim[0], self.args.render_dim[1], 3)
+        assert frames.shape[1:] == (self.render_dim[0], self.render_dim[1], 3)
 
 
         # NOTE: distributed will be off if dist is False
         rewards = compute_rewards(
             model=self.reward_model,
             frames=frames,
-            rank0_batch_size_pct=self.args.rank0_batch_size_pct,
-            batch_size=self.args.reward_batch_size,  # This is the total batch size
-            num_workers=self.args.n_workers,
+            rank0_batch_size_pct=self.reward_model_config.rank0_batch_size_pct,
+            batch_size=self.reward_model_config.reward_batch_size,  # This is the total batch size
+            num_workers=self.n_gpu_workers,
             worker_frames_tensor=self.worker_frames_tensor,
             dist=self.use_distributed
         )
@@ -263,7 +270,7 @@ class VLM_SAC(OffPolicyAlgorithmJax):
         rewards = rearrange(
             rewards,
             "(n_steps n_envs) ... -> (n_envs n_steps) ...",
-            n_envs=self.args.n_envs,
+            n_envs=self.n_cpu_workers,
         )
 
         # Filter the rewards
@@ -276,7 +283,7 @@ class VLM_SAC(OffPolicyAlgorithmJax):
         rewards = rearrange(
             rewards,
             "(n_envs n_steps) ... -> n_steps n_envs ...",
-            n_envs=self.args.n_envs,
+            n_envs=self.n_cpu_workers,
         )
 
         if DEBUG_REWS:
@@ -309,7 +316,7 @@ class VLM_SAC(OffPolicyAlgorithmJax):
             # Compute sum of rewards per episode
             rewards_per_episode = np.sum(
                 np.reshape(
-                    rewards[env_idx], (env_episodes, self.args.episode_length)
+                    rewards[env_idx], (env_episodes, self.episode_length)
                 ),
                 axis=1,
             )

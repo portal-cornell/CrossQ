@@ -50,7 +50,6 @@ class SAC(OffPolicyAlgorithmJax):
     def __init__(
         self,
         policy,
-        args,
         env: Union[GymEnv, str],
         learning_rate: Union[float, Schedule] = 3e-4,
         qf_learning_rate: Optional[float] = None,
@@ -80,6 +79,7 @@ class SAC(OffPolicyAlgorithmJax):
         device: str = "auto",
         _init_setup_model: bool = True,
         stats_window_size: int = 100,
+        **kwargs,  # So that we can ignore additional arguments
     ) -> None:
         super().__init__(
             policy=policy,

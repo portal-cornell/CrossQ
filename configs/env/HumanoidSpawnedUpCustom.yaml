@@ -1,0 +1,6 @@
+name: HumanoidSpawnedUpCustom
+reward_type: original
+episode_length: 120
+render_dim: 
+  - 480
+  - 480

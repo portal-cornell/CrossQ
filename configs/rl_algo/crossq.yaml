@@ -1,0 +1,25 @@
+name: crossq  # Name of the RL algorithm
+
+lr: 1e-3  # Actor and critic learning rate
+
+adam_b1: 0.5  # adam b1 parameter
+bn: True  # Use batch norm layers in the actor and critic networks
+bn_momentum: 0.99  # Batch norm momentum parameter
+bn_mode: brn_actor  # Batch norm mode (bn or brn)
+critic_activation: relu  # Critic activation function
+crossq_style: True  # Crossq style joint forward pass through critic network
+dropout: False  # Whether to use dropout for SAC
+dropout_rate: null  # Dropout rate
+ln: False  # Layernorm in critic network
+n_critics: 2  # Number of critics to use
+policy_delay: 3  # Policy is updated after this many critic updates
+tau: 1.0  # Target network averaging (without target networks)
+utd: 1  # Number of critic updates per env step (update to data ratio)
+bnstats_live_net: False  # Use bn running statistics from live network within the target network
+net_arch:
+  pi:
+    - 256
+    - 256
+  qf:
+    - 2048
+    - 2048

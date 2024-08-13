@@ -1,0 +1,41 @@
+seed: 9
+
+total_timesteps: 1000000
+
+run_notes: null
+
+model_base_path: null  # Folder to load the model from
+model_checkpoint: null  # Model checkpoint zip file name (without .zip) to load
+
+compute:
+  n_gpu_workers: 2
+  n_cpu_workers: 2  # One gym env per cpu
+
+  distributed: True
+
+logging:
+  log_freq: 300  # How many times to log during training
+  eval_freq: 300  # How many times to evaluate during training
+  video_save_freq: 10000 # Frequency to save the video
+  model_save_freq: 100000  # Frequency to save the model
+
+  wandb_project: crossQ
+  wandb_mode: online
+
+defaults:
+  - env: HumanoidSpawnedUpCustom
+  - reward_model: hand_engineered
+  - rl_algo: crossq
+  - _self_
+
+hydra:
+  run:
+    dir: ./train_logs/${now:%Y-%m-%d-%H%M%S}_${rl_algo.name}_envr=${env.reward_type}_rm=${reward_model.name}_s=${seed}_nt=${run_notes}
+
+# If you want to specify a specific reward function used in the env, you can uncomment and overwrite reward_type
+# env:
+#   reward_type: both_arms_out_goal_only_euclidean
+
+# If you are using patch wasserstein as reward, you can uncomment and overwrite pos_image_path, neg_image_path in the patch_wasserstein.yaml
+# reward_model:
+#   - axis_exp/humanoid_kneeling_ref.png
