@@ -1,3 +1,0 @@
-[submodule "SemanticGuidedHumanMatting"]
-	path = vlm_reward/utils/SemanticGuidedHumanMatting
-	url = https://github.com/cxgincsu/SemanticGuidedHumanMatting.git
