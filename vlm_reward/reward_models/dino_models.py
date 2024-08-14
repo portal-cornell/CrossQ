@@ -1,5 +1,5 @@
-from sbx.vlm_reward.reward_models.language_irl.dino_reward_model import Dino2FeatureExtractor, metric_factory
-from sbx.vlm_reward.reward_models.language_irl.human_seg import HumanSegmentationModel
+from vlm_reward.utils.dino_reward_model import Dino2FeatureExtractor, metric_factory
+from vlm_reward.utils.human_seg import HumanSegmentationModel
 
 from loguru import logger
 
@@ -9,7 +9,7 @@ def load_dino_reward_model(
     rank, batch_size, model_name, image_metric, image_size,
     human_seg_model_path, pos_image_path_list, 
     neg_image_path_list,source_mask_thresh, target_mask_thresh,
-    baseline_image_path, baseline_mask_thresh, return_ot_plan
+    baseline_image_path, baseline_mask_thresh, cost_fn, return_ot_plan
 ):  
     feature_extractor = Dino2FeatureExtractor(model_name=model_name, edge_size=image_size)
     logger.debug("Initialized feature extractor")
@@ -29,6 +29,7 @@ def load_dino_reward_model(
                             target_mask_thresh=target_mask_thresh,
                             baseline_image_path=baseline_image_path,
                             baseline_mask_thresh=baseline_mask_thresh,
+                            cost_fn=cost_fn,
                             return_ot_plan=return_ot_plan
     ).to(f"cuda:{rank}")
     dino_wrapper.initialize_target_images()
@@ -42,7 +43,7 @@ def load_dino_reward_model(
 class DINORewardModelWrapper:
     def __init__(self, rank, batch_size, dino_metric_model, 
             pos_image_path_list, neg_image_path_list,
-            source_mask_thresh, target_mask_thresh, baseline_mask_thresh=.5,baseline_image_path=None, return_ot_plan=False):
+            source_mask_thresh, target_mask_thresh, baseline_mask_thresh=.5,baseline_image_path=None, cost_fn='cosine', return_ot_plan=False):
         self.reward_model = dino_metric_model
         self._device = f"cuda:{rank}"
         self.batch_size = batch_size
@@ -54,6 +55,8 @@ class DINORewardModelWrapper:
         self.baseline_mask_thresh = baseline_mask_thresh
         self.baseline_image_path = baseline_image_path
         self.gb = baseline_image_path is not None
+
+        self.cost_fn = cost_fn
 
         # Whether the model should store the optimal transport plan
         self.return_ot_plan = return_ot_plan
@@ -92,14 +95,16 @@ class DINORewardModelWrapper:
                                                                         target_features=target,
                                                                         target_masks=target_mask,
                                                                         # gb=self.gb,  # 7/24/2024 (Yuki): Will has some extra stuff with this ("goal baseline?") but it's not on any language_irl branch
+                                                                        cost_fn=self.cost_fn,
                                                                         return_ot_plan=self.return_ot_plan
                                                                         )
                 
                 distance = torch.Tensor(raw_output_dict["wasser"]).to(self._device)
                 all_ds.append(distance)
 
-                self.saved_ot_plan.extend(raw_output_dict.get("T", None))
-                self.saved_costs.extend(raw_output_dict.get("C", None))
+                if self.return_ot_plan:
+                    self.saved_ot_plan.extend(raw_output_dict.get("T", None))
+                    self.saved_costs.extend(raw_output_dict.get("C", None))
                 
                 logger.debug(f"__call__: {distance.size()=}")
 
@@ -201,8 +206,6 @@ class DINOFullFeatureWrapper:
         self.pos_idx_split = len(self.pos_image_path_list) # index at which self.target_image_embeddings and masks become negative examples
 
     def embed_module(self, image_batch):
-
-
         with torch.no_grad():
             if image_batch.shape[1] != 3:
                 image_batch = image_batch.permute(0, 3, 1, 2)

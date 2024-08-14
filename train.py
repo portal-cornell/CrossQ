@@ -38,7 +38,7 @@ from loguru import logger
 import utils
 import multiprocess
 from envs.base import get_make_env
-from sbx.vlm_reward.reward_main import load_reward_model, dist_worker_compute_reward
+from vlm_reward.reward_main import load_reward_model, dist_worker_compute_reward
 from callbacks import VideoRecorderCallback, WandbCallback
     
 
@@ -53,7 +53,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             The event to signal the workers to stop
     """
     # Save logging also into a file
-    logger.add(os.path.join(utils.get_output_path(), "logs.txt"), enqueue=True)
+    logger.add(os.path.join(cfg.logging.run_path, "logs.txt"), enqueue=True)
 
     # Initialize the environment
     use_vlm_for_reward = utils.use_vlm_for_reward(cfg)
@@ -118,8 +118,8 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         buffer_size=1_000_000,
         seed=cfg.seed,
         stats_window_size=1,  # don't smooth the episode return stats over time
-        tensorboard_log=os.path.join(utils.get_output_path(), "tensorboard"),
-        reward_model_config = cfg.reward_model if use_vlm_for_reward else None,
+        tensorboard_log=os.path.join(cfg.logging.run_path, "tensorboard"),
+        reward_model_config = OmegaConf.to_container(cfg.reward_model, resolve=True, throw_on_missing=True) if use_vlm_for_reward else None,
         n_cpu_workers = cfg.compute.n_cpu_workers,
         n_gpu_workers = cfg.compute.n_gpu_workers,
         episode_length = cfg.env.episode_length,
@@ -137,15 +137,15 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
     
     with wandb.init(
         project=cfg.logging.wandb_project,
-        name=utils.get_output_folder_name(),
+        name=cfg.logging.run_name,
         tags=[],
         sync_tensorboard=True,
         config=OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True),
         mode=cfg.logging.wandb_mode,
         monitor_gym=True,  # auto-upload the videos of agents playing the game
-        dir=utils.get_output_path(),
+        dir=cfg.logging.run_path,
     ) as wandb_run:
-        checkpoint_dir = os.path.join(utils.get_output_path(), "checkpoint")
+        checkpoint_dir = os.path.join(cfg.logging.run_path, "checkpoint")
 
         wandb_callback = WandbCallback(
             model_save_path=str(checkpoint_dir),
@@ -187,7 +187,7 @@ def vlm_inference_worker(rank: int, cfg: DictConfig, stop_event: multiprocessing
             The event to signal the workers to stop
     """
     # Save logging also into a file
-    logger.add(os.path.join(utils.get_output_path(), "logs.txt"), enqueue=True)
+    logger.add(os.path.join(cfg.logging.run_path, "logs.txt"), enqueue=True)
 
     logger.info(f"[Worker {rank}] Loading Reward model....")
 
@@ -199,7 +199,7 @@ def vlm_inference_worker(rank: int, cfg: DictConfig, stop_event: multiprocessing
     reward_model = load_reward_model(rank, 
                                         worker_actual_batch_size=worker_batch_size,  # Note that this is different size compared to rank 0's reward model when rank0_batch_size_pct < 1.0
                                         model_name=cfg.reward_model.vlm_model, 
-                                        model_config_dict=cfg.reward_model).eval().cuda(rank)
+                                        model_config_dict=OmegaConf.to_container(cfg.reward_model, resolve=True, throw_on_missing=True)).eval().cuda(rank)
     logger.debug(f"Loaded the reward model at rank={rank}: allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
 
     worker_frames_tensor = torch.zeros(
@@ -243,9 +243,9 @@ def init_process(
 
 @hydra.main(version_base=None, config_path="configs", config_name="train_config")
 def main(cfg: DictConfig):
-    utils.validate_cfg(cfg)
+    utils.validate_and_preprocess_cfg(cfg)
 
-    logger.info(f"Started run with run_name={utils.get_output_path()}")
+    logger.info(f"Started run with run_name={cfg.logging.run_path}")
 
     @logger.catch
     def _train():
@@ -256,7 +256,7 @@ def main(cfg: DictConfig):
             multiprocess.spawn(
                 fn=init_process,
                 args=args_with_multiprocessing,
-                nprocs=args.n_gpu_workers,
+                nprocs=cfg.compute.n_gpu_workers,
                 join=True,
                 daemon=False,
                 start_method="spawn",

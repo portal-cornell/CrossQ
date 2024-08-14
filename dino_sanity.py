@@ -10,10 +10,10 @@ import numpy as np
 import copy
 from einops import rearrange
 
-from sbx.vlm_reward.reward_main import compute_rewards, load_reward_model
-from sbx.vlm_reward.reward_transforms import half_gaussian_filter_1d
+from vlm_reward.reward_main import compute_rewards, load_reward_model
+from vlm_reward.reward_transforms import half_gaussian_filter_1d
 
-from sbx.vlm_reward.reward_models.language_irl.utils import rewards_matrix_heatmap, rewards_line_plot, pad_to_longest_sequence, patch_matching_gif
+from vlm_reward.utils import rewards_matrix_heatmap, rewards_line_plot, pad_to_longest_sequence, patch_matching_gif
 
 from loguru import logger
 

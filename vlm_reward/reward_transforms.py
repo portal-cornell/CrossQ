@@ -28,5 +28,5 @@ if __name__=="__main__":
     x = torch.load('debugging/testing_after/rewards.pt')
 
     y2 = half_gaussian_filter_1d(x[None], sigma=20)
-    from sbx.vlm_reward.reward_models.language_irl.utils import rewards_matrix_heatmap
+    from vlm_reward.utils.utils import rewards_matrix_heatmap
     rewards_matrix_heatmap(y2, 'heatmap.png')

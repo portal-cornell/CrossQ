@@ -30,9 +30,9 @@ from sbx.common.off_policy_algorithm import OffPolicyAlgorithmJax
 from sbx.common.type_aliases import ReplayBufferSamplesNp, RLTrainState, ActorTrainState
 from sbx.sac.policies import SACPolicy
 
-from sbx.vlm_reward.reward_main import compute_rewards, load_reward_model
-from sbx.vlm_reward.reward_transforms import half_gaussian_filter_1d
-from sbx.vlm_reward.vlm_buffer import VLMReplayBuffer
+from vlm_reward.reward_main import compute_rewards, load_reward_model
+from vlm_reward.reward_transforms import half_gaussian_filter_1d
+from vlm_reward.vlm_buffer import VLMReplayBuffer
 
 
 
@@ -167,11 +167,11 @@ class VLM_SAC(OffPolicyAlgorithmJax):
             self.previous_num_timesteps = 0
             self.previous_num_episodes = 0
 
-            if self.reward_model_config.rank0_batch_size_pct < 1.0:
+            if self.reward_model_config["rank0_batch_size_pct"] < 1.0:
                 # Uneven workload split between workers
-                worker_batch_size = int((1 - self.reward_model_config.rank0_batch_size_pct) * self.reward_batch_size) // (self.n_gpu_workers - 1)
+                worker_batch_size = int((1 - self.reward_model_config["rank0_batch_size_pct"]) * self.reward_model_config["reward_batch_size"]) // (self.n_gpu_workers - 1)
             else:
-                worker_batch_size = self.reward_model_config.reward_batch_size // self.n_gpu_workers
+                worker_batch_size = self.reward_model_config["reward_batch_size"] // self.n_gpu_workers
             
             self.worker_frames_tensor = torch.zeros(
                     (worker_batch_size, self.render_dim[0], self.render_dim[1], 3),
@@ -182,22 +182,22 @@ class VLM_SAC(OffPolicyAlgorithmJax):
     Added for VLM reward
     """
     def _setup_reward_model(self):
-        logger.info(f"Setting up VLM reward model: {self.reward_model_config.vlm_model}")
+        logger.info(f"Setting up VLM reward model: {self.reward_model_config['vlm_model']}")
         
         # This is the actual batch size for rank0 inference worker
         #   because this batch_size is used to decide how many copies of the reference human image to use
-        if self.reward_model_config.rank0_batch_size_pct < 1.0:
-            rank0_worker_batch = int(self.reward_model_config.rank0_batch_size_pct * self.reward_model_config.reward_batch_size)
+        if self.reward_model_config["rank0_batch_size_pct"] < 1.0:
+            rank0_worker_batch = int(self.reward_model_config["rank0_batch_size_pct"] * self.reward_model_config["reward_batch_size"])
         else:
-            rank0_worker_batch = self.reward_model_config.reward_batch_size // self.n_gpu_workers
+            rank0_worker_batch = self.reward_model_config["reward_batch_size"] // self.n_gpu_workers
 
         reward_model = load_reward_model(rank=0,            
                                         worker_actual_batch_size=rank0_worker_batch,
-                                         model_name=self.reward_model_config.vlm_model,
+                                         model_name=self.reward_model_config["vlm_model"],
                                          model_config_dict=self.reward_model_config).eval().cuda(0)
         self.reward_model = reward_model
 
-        logger.debug(f"Finished loading up VLM reward model: {self.reward_model_config.vlm_model}")
+        logger.debug(f"Finished loading up VLM reward model: {self.reward_model_config['vlm_model']}")
 
     def _setup_learn(
         self,
@@ -260,8 +260,8 @@ class VLM_SAC(OffPolicyAlgorithmJax):
         rewards = compute_rewards(
             model=self.reward_model,
             frames=frames,
-            rank0_batch_size_pct=self.reward_model_config.rank0_batch_size_pct,
-            batch_size=self.reward_model_config.reward_batch_size,  # This is the total batch size
+            rank0_batch_size_pct=self.reward_model_config["rank0_batch_size_pct"],
+            batch_size=self.reward_model_config["reward_batch_size"],  # This is the total batch size
             num_workers=self.n_gpu_workers,
             worker_frames_tensor=self.worker_frames_tensor,
             dist=self.use_distributed
@@ -287,7 +287,7 @@ class VLM_SAC(OffPolicyAlgorithmJax):
         )
 
         if DEBUG_REWS:
-            from sbx.vlm_reward.reward_models.language_irl.utils import rewards_matrix_heatmap
+            from vlm_reward.utils.utils import rewards_matrix_heatmap
             logger.debug(f"Rewards shaped {rewards.shape} type {type(rewards)}")
 
             rews_to_save = rewards[:100, 0]

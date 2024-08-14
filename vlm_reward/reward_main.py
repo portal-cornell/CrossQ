@@ -8,8 +8,8 @@ from torchvision.utils import save_image
 from loguru import logger
 
 # TODO: finish all the imports needed here
-from sbx.vlm_reward.reward_models.dino_models import load_dino_reward_model
-from sbx.vlm_reward.reward_models.clip_models import load_clip_reward_model
+from vlm_reward.reward_models.dino_models import load_dino_reward_model
+from vlm_reward.reward_models.clip_models import load_clip_reward_model
 
 
 
@@ -20,11 +20,13 @@ def load_reward_model(
                     model_config_dict):
     assert any([model_base_name in model_name.lower() for model_base_name in ["vit", "dino"]])
 
+    print(model_config_dict)
+
     if "dino" in model_name.lower():
         reward_model = load_dino_reward_model(rank=rank,
                                                 batch_size=worker_actual_batch_size,
                                                 model_name=model_name,
-                                                image_metric=model_config_dict["image_metric"],
+                                                image_metric="wasserstein",
                                                 image_size=model_config_dict["image_size"],
                                                 human_seg_model_path=model_config_dict["human_seg_model_path"],
                                                 pos_image_path_list=model_config_dict["pos_image_path"],
@@ -33,6 +35,7 @@ def load_reward_model(
                                                 target_mask_thresh=model_config_dict["target_mask_thresh"],
                                                 baseline_image_path=model_config_dict.get("baseline_image_path", None),
                                                 baseline_mask_thresh=model_config_dict.get("baseline_mask_thresh", None),
+                                                cost_fn=model_config_dict["cost_fn"],
                                                 return_ot_plan=model_config_dict.get("return_ot_plan", False))
 
         logger.debug(f"Loaded DINO reward model. model_name={model_name}, pos_image={model_config_dict['pos_image_path']}, neg_image={model_config_dict.get('neg_image_path', [])}")

@@ -37,7 +37,7 @@ from loguru import logger
 import utils
 import multiprocess
 from envs.base import get_make_env
-from sbx.vlm_reward.reward_main import load_reward_model, dist_worker_compute_reward
+from vlm_reward.reward_main import load_reward_model, dist_worker_compute_reward
 from callbacks import VideoRecorderCallback, WandbCallback
 
    

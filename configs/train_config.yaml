@@ -9,7 +9,7 @@ model_checkpoint: null  # Model checkpoint zip file name (without .zip) to load
 
 compute:
   n_gpu_workers: 2
-  n_cpu_workers: 2  # One gym env per cpu
+  n_cpu_workers: 8  # One gym env per cpu
 
   distributed: True
 
@@ -21,6 +21,9 @@ logging:
 
   wandb_project: crossQ
   wandb_mode: online
+
+  run_name: null
+  run_path: null
 
 defaults:
   - env: HumanoidSpawnedUpCustom
@@ -38,4 +41,5 @@ hydra:
 
 # If you are using patch wasserstein as reward, you can uncomment and overwrite pos_image_path, neg_image_path in the patch_wasserstein.yaml
 # reward_model:
-#   - axis_exp/humanoid_kneeling_ref.png
+#   pos_image_path:
+#     - axis_exp/humanoid_kneeling_ref.png

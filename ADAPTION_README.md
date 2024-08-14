@@ -71,13 +71,22 @@ pip install nvidia-cublas-cu12==12.4.2.65 nvidia-cuda-cupti-cu12==12.4.99 nvidia
 
 # How to train
 
-## Training VLM based reward
+## Training
+Using all default hydra parameters
+```bash
+python train.py 
+```
 
-You can look at example commands in start_training.sh
+For training with hand-engineered reward, you can edit the yaml or directly pass the arguments in the command line.
+```bash
+python train.py env.reward_type='both_arms_out_goal_only_euclidean'
+``` 
 
-## Training baseline RL on sparse/hand-engineered reward
+For training VLM, you can edit the yaml or directly pass the arguments in the command line.
+```bash
+python train.py env.reward_type='both_arms_out_goal_only_euclidean' reward_model=patch_wasserstein
+``` 
 
-You can look at example commands in 
 
 ## Sometimes ctrl-c doesn't exit...
 When you ctrl-c sometimes, the progress bar might keep appear when you type.
