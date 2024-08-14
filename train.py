@@ -57,16 +57,8 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
 
     # Initialize the environment
     use_vlm_for_reward = utils.use_vlm_for_reward(cfg)
-    if use_vlm_for_reward:
-        make_env_kwargs = dict(
-            episode_length = cfg.env.episode_length,
-        )
-    else:
-        make_env_kwargs = dict(
-            max_episode_steps = cfg.env.episode_length,
-        )
-    if "custom" in cfg.env.name.lower():
-        make_env_kwargs["reward_type"] = cfg.env.reward_type
+
+    make_env_kwargs = utils.get_make_env_kwargs(cfg)
 
     logger.info(f"Creating environment={cfg.env.name} instances with {make_env_kwargs=}")
 

@@ -728,12 +728,14 @@ class VLM_SAC(OffPolicyAlgorithmJax):
         cls,
         path,
         env = None,
-        args = None,
         inference_only = True,
         device = "auto",
         custom_objects = None,
         print_system_info: bool = False,
         force_reset: bool = True,
+        reward_model_config: dict = None,
+        episode_length: int = 120,
+        render_dim: Tuple[int, int] = (480, 480),
         **kwargs,
     ):
         """
@@ -817,10 +819,12 @@ class VLM_SAC(OffPolicyAlgorithmJax):
         model = cls(
             policy=data["policy_class"],
             env=env,
-            args=args,
             inference_only = inference_only,
             device=device,
             _init_setup_model=False,  # type: ignore[call-arg]
+            reward_model_config=reward_model_config,
+            episode_length=episode_length,
+            render_dim=render_dim
         )
 
         # load parameters

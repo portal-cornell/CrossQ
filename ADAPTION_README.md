@@ -79,13 +79,21 @@ python train.py
 
 For training with hand-engineered reward, you can edit the yaml or directly pass the arguments in the command line.
 ```bash
-python train.py env.reward_type='both_arms_out_goal_only_euclidean'
+python train.py env.reward_type="both_arms_out_goal_only_euclidean"
 ``` 
 
 For training VLM, you can edit the yaml or directly pass the arguments in the command line.
 ```bash
-python train.py env.reward_type='both_arms_out_goal_only_euclidean' reward_model=patch_wasserstein
+python train.py env.reward_type="both_arms_out_goal_only_euclidean" reward_model=patch_wasserstein
 ``` 
+
+## Inference
+The rollouts/videos are saved in training logs.
+
+Note. If you want to specify the `model_base_path`, because the model_base_path contains `=` which is how hydra uses to identify argument assignment, you need to wrap the model_base_path in quotes, i.e. `'model_base_path="<path to model folder>"'`
+```bash
+python inference.py 'model_base_path="train_logs/2024-08-14-120406_crossq_envr=both_arms_out_goal_only_euclidean_rm=patch_wasserstein_s=9_nt=None/checkpoint"' model_checkpoint="model_2000_steps" env.reward_type="both_arms_out_goal_only_euclidean"
+```
 
 
 ## Sometimes ctrl-c doesn't exit...

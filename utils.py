@@ -78,3 +78,24 @@ def validate_and_preprocess_cfg(cfg: DictConfig):
 
     cfg.logging.run_name = get_output_folder_name()
     cfg.logging.run_path = get_output_path()
+
+def get_make_env_kwargs(cfg: DictConfig):
+    """
+    Set the make_env_kwargs based on the config
+
+    Parameters:
+        cfg: DictConfig
+            - The hydra config object
+    """
+    if use_vlm_for_reward(cfg):
+        make_env_kwargs = dict(
+            episode_length = cfg.env.episode_length,
+        )
+    else:
+        make_env_kwargs = dict(
+            max_episode_steps = cfg.env.episode_length,
+        )
+    if "custom" in cfg.env.name.lower():
+        make_env_kwargs["reward_type"] = cfg.env.reward_type
+
+    return make_env_kwargs
