@@ -60,7 +60,7 @@ def plot_similarity(all_scores, metric_names, gif_names, output_path):
             plt.plot(score, label=f'{gif_name} - {metric_name}')
     plt.xlabel('Frame')
     plt.ylabel('Similarity')
-    plt.title('Similarity between target image and GIF frames using DreamSim')
+    plt.title('Similarity between target image and GIF frames using LPIPS')
     plt.legend()
     plt.savefig(output_path)
     plt.close()
@@ -71,15 +71,18 @@ gif_paths = [f"{gif_root}/0_success_crossq_kneel.gif",
                 f"{gif_root}/1_kneel-at-20_fall-backward.gif",
                 f"{gif_root}/2_some-move-close-to-kneeling.gif",]
 #                 f"{gif_root}/3_crossq_stand_never-on-ground.gif",]
-# RuntimeError: imageio.mimread() has read over 256000000B of image data.
+# With gif 3 (why?) RuntimeError: imageio.mimread() has read over 256000000B of image data.
 # Stopped to avoid memory problems. Use imageio.get_reader(), increase threshold, or memtest=False
 
-target_image_path = "/home/aw588/git_annshin/CrossQ/preference_data/kneeling_success_frame45.png"
-output_path = "test_perceptual_similarity_plot_dreamsim.png"
+target_image_path = "/home/aw588/git_annshin/CrossQ/preference_data/humanoid_kneeling_ref.png"
+output_path = "test_similarity_plot_lpips_tgtlast.png"
+
+# target_image_path = "/home/aw588/git_annshin/CrossQ/preference_data/kneeling_success_frame45.png"
+# output_path = "test_perceptual_similarity_plot_dreamsim.png"
 
 # Process each GIF and plot the similarities
 all_scores = []
-metric_names = ['DreamSim'] #['LPIPS'] # 'DreamSim', 
+metric_names = ['LPIPS']
 for metric_name in metric_names:
     metric_scores = []
     for gif_path in gif_paths:
