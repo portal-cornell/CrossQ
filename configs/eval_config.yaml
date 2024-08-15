@@ -2,10 +2,10 @@ seed: 9
 
 n_rollouts: 1  # Number of rollouts/videos to generate
 
-video_base_name: 'standing_up'  # "Name of the video when we just generate one video
+video_base_name: 'arms_out'  # "Name of the video when we just generate one video
 
-model_base_path: null  # Folder to load the model from
-model_checkpoint: null  # Model checkpoint zip file name (without .zip) to load
+model_base_path: train_logs/before_migration_to_hydra/crossq_HumanoidSpawnedUpCustom_r=both_arms_out_goal_only_euclidean_s=9_2024-07-31_22-39-23__ec25b98b/checkpoint  # Folder to load the model from
+model_checkpoint: final_model  # Model checkpoint zip file name (without .zip) to load
 
 defaults:
   - env: HumanoidSpawnedUpCustom

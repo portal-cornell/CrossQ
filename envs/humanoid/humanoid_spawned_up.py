@@ -25,7 +25,8 @@ DEFAULT_CAMERA_CONFIG = {
 
 class HumanoidEnvCustom(GymHumanoidEnv):
     DEMOS_DICT = {
-        "both_arms_out_goal_only_euclidean": ["create_demo/demos/both-arms-out_joint-state.npy"]
+        "both_arms_out_goal_only_euclidean": ["create_demo/demos/both-arms-out_joint-state.npy"],
+        "both_arms_out_seq_euclidean": ["create_demo/demos/left-arm-out_joint-state.npy", "create_demo/demos/both-arms-out_joint-state.npy"],
     }
 
     def __init__(
@@ -115,6 +116,7 @@ class HumanoidEnvCustom(GymHumanoidEnv):
 
         reward, info = self.reward_fn(self.data, model=self.model, 
                                         dt=self.dt,
+                                        num_steps=self.num_steps,
                                         timestep=self.model.opt.timestep,
                                         xy_position_before=xy_position_before,
                                         ctrl_cost=self.control_cost(action),
@@ -467,17 +469,23 @@ def reward_splitting(data, **kwargs):
 
 
 def reward_both_arms_out_goal_only_euclidean(data, **kwargs):
+    """Only use the goal joint states to calculate the reward
+    - The reward is based on the euclidean distance between the current joint states and the reference joint states
+
+    Final goal: Both arms out
+
+    This task is a goal-reaching task (i.e. doesn't matter how you get to the goal, as long as you get to the goal)
+    """
     original_mujoco_reward, _ = reward_original(data, **kwargs)
 
-    ctrl_cost = kwargs.get("ctrl_cost", None)
-    ctrl_cost_w = 1
+    basic_standing_reward, terms_to_plot = basic_remain_standing_rewards(data, 
+                                                            upward_reward_w=1, 
+                                                            ctrl_cost_w=1, 
+                                                            **kwargs)
 
-    upward_reward = np.exp(-(data.qpos.flat[2] - 1.3)**2)
-    upward_reward_w = 0
-
+    # Calculate the reward based on the euclidean distance between the current joint states and the goal joint states
     assert "ref_joint_states" in kwargs, "ref_joint_states must be passed in as part of the kwargs"
     ref_joint_states = kwargs.get('ref_joint_states', None)
-    num_steps = kwargs.get('num_steps', 0)
 
     assert ref_joint_states.shape[0] == 1, "there should only be the goal image/joint position"
 
@@ -488,20 +496,51 @@ def reward_both_arms_out_goal_only_euclidean(data, **kwargs):
     pose_matching_reward = np.exp(-np.linalg.norm(curr_qpos - ref_joint_states[0]))
     pose_matching_reward_w = 1
     
-    reward = upward_reward_w * upward_reward + pose_matching_reward_w * pose_matching_reward - ctrl_cost_w * ctrl_cost
-    
-    terms_to_plot = dict(
-        tor=str([f"{data.qpos.flat[:3][i]:.2f}" for i in range(3)]),
-        com=str([f"{data.xipos[1][i]:.2f}" for i in range(3)]),
-        l2_norm=f"{np.linalg.norm(curr_qpos - ref_joint_states[0]):.2f}",
-        uph_r= f"{upward_reward:.2f}",
-        ctrl_c= f"{ctrl_cost:.2f}",
-        pose_r = f"{pose_matching_reward:.2f}",
-        r = f"{reward:.2f}",
-        og_r= f"{original_mujoco_reward:.2f}",
-        steps=num_steps,
-    )
+    reward = basic_standing_reward + pose_matching_reward_w
 
+    terms_to_plot["pose_r"] = f"{pose_matching_reward:.2f}"
+    terms_to_plot["r"] = f"{reward:.2f}"
+    terms_to_plot["og_r"] = f"{original_mujoco_reward:.2f}"
+    terms_to_plot["steps"] = kwargs.get("num_steps", 0)
+
+    return reward, terms_to_plot
+
+
+def reward_both_arms_out_seq_euclidean(data, **kwargs):
+    """Use a sequence of reference joint states to calculate the reward
+
+    Final goal: Both arms out
+
+    This task is a goal-reaching task (i.e. doesn't matter how you get to the goal, as long as you get to the goal)
+    """
+    original_mujoco_reward, _ = reward_original(data, **kwargs)
+
+    basic_standing_reward, terms_to_plot = basic_remain_standing_rewards(data, 
+                                                            upward_reward_w=1, 
+                                                            ctrl_cost_w=1, 
+                                                            **kwargs)
+
+    # Calculate the reward based on the euclidean distance between the current joint states and a sequence of referenece joint states
+    assert "ref_joint_states" in kwargs, "ref_joint_states must be passed in as part of the kwargs"
+    ref_joint_states = kwargs.get('ref_joint_states', None)
+
+    num_ref_joint_states = ref_joint_states.shape[0]
+    # Assumption, the reference joint states are in order
+    ref_joint_states_weights = np.array([2**(-x) for x in range(num_ref_joint_states)])[::-1]
+
+    curr_qpos = data.qpos.flat.copy()[2:]
+
+    unweighted_reward_for_each_ref = np.exp(-np.linalg.norm(curr_qpos - ref_joint_states, axis=1))
+    pose_matching_reward = np.sum(ref_joint_states_weights * unweighted_reward_for_each_ref)
+
+    reward = pose_matching_reward + basic_standing_reward
+
+    terms_to_plot["pose_r_l"] = str([f"{unweighted_reward_for_each_ref[i]:.2f}" for i in range(num_ref_joint_states)])
+    terms_to_plot["pose_r"] = f"{pose_matching_reward:.2f}"
+    terms_to_plot["r"] = f"{reward:.2f}"
+    terms_to_plot["og_r"] = f"{original_mujoco_reward:.2f}"
+    terms_to_plot["steps"] = kwargs.get("num_steps", 0)
+    
     return reward, terms_to_plot
 
 
@@ -513,6 +552,7 @@ REWARD_FN_MAPPING = dict(
         best_standing_up = best_standing_from_lying_down,
         kneeling = reward_kneeling,
         splitting = reward_splitting,
-        both_arms_out_goal_only_euclidean = reward_both_arms_out_goal_only_euclidean
+        both_arms_out_goal_only_euclidean = reward_both_arms_out_goal_only_euclidean,
+        both_arms_out_seq_euclidean = reward_both_arms_out_seq_euclidean,
     )
     
