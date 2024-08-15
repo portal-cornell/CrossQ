@@ -27,6 +27,8 @@ class HumanoidEnvCustom(GymHumanoidEnv):
     DEMOS_DICT = {
         "both_arms_out_goal_only_euclidean": ["create_demo/demos/both-arms-out_joint-state.npy"],
         "both_arms_out_seq_euclidean": ["create_demo/demos/left-arm-out_joint-state.npy", "create_demo/demos/both-arms-out_joint-state.npy"],
+        "arms_up_then_down_seq_euclidean": ["create_demo/demos/left-arm-out_joint-state.npy", "create_demo/demos/both-arms-out_joint-state.npy", "create_demo/demos/right-arm-out_joint-state.npy"],
+        "arms_up_then_down_seq_stage_detector": ["create_demo/demos/left-arm-out_joint-state.npy", "create_demo/demos/both-arms-out_joint-state.npy", "create_demo/demos/right-arm-out_joint-state.npy"],
     }
 
     def __init__(
@@ -95,6 +97,7 @@ class HumanoidEnvCustom(GymHumanoidEnv):
         )
         self.episode_length = episode_length
         self.num_steps = 0
+        self.stage = 0  # For the stage detector reward function
         if camera_config:
             self.camera_id = -1
 
@@ -117,6 +120,7 @@ class HumanoidEnvCustom(GymHumanoidEnv):
         reward, info = self.reward_fn(self.data, model=self.model, 
                                         dt=self.dt,
                                         num_steps=self.num_steps,
+                                        curr_stage=self.stage,
                                         timestep=self.model.opt.timestep,
                                         xy_position_before=xy_position_before,
                                         ctrl_cost=self.control_cost(action),
@@ -125,6 +129,7 @@ class HumanoidEnvCustom(GymHumanoidEnv):
                                         ref_joint_states=self._ref_joint_states)
 
         self.num_steps += 1
+        self.stage = int(info.get("stage", 0))
         terminated = self.num_steps >= self.episode_length
         return (
             obs,
@@ -136,6 +141,7 @@ class HumanoidEnvCustom(GymHumanoidEnv):
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[Dict] = None):
         self.num_steps = 0
+        self.stage = 0
         return super().reset(seed=seed, options=options)
 
     def get_obs(self):
@@ -506,10 +512,8 @@ def reward_both_arms_out_goal_only_euclidean(data, **kwargs):
     return reward, terms_to_plot
 
 
-def reward_both_arms_out_seq_euclidean(data, **kwargs):
+def reward_seq_euclidean(data, **kwargs):
     """Use a sequence of reference joint states to calculate the reward
-
-    Final goal: Both arms out
 
     This task is a goal-reaching task (i.e. doesn't matter how you get to the goal, as long as you get to the goal)
     """
@@ -544,6 +548,60 @@ def reward_both_arms_out_seq_euclidean(data, **kwargs):
     return reward, terms_to_plot
 
 
+def reward_seq_stage_detector(data, **kwargs):
+    """Use a sequence of reference joint states to calculate the reward
+
+    This task is a goal-reaching task (i.e. doesn't matter how you get to the goal, as long as you get to the goal)
+    """
+    original_mujoco_reward, _ = reward_original(data, **kwargs)
+
+    basic_standing_reward, terms_to_plot = basic_remain_standing_rewards(data, 
+                                                            upward_reward_w=1, 
+                                                            ctrl_cost_w=1, 
+                                                            **kwargs)
+
+    # Calculate the reward based on the euclidean distance between the current joint states and a sequence of referenece joint states
+    assert "ref_joint_states" in kwargs, "ref_joint_states must be passed in as part of the kwargs"
+    ref_joint_states = kwargs.get('ref_joint_states', None)
+
+    num_ref_joint_states = ref_joint_states.shape[0]
+    # Assumption, the reference joint states are in order
+    # ref_joint_states_weights = np.array([2**(-x) for x in range(num_ref_joint_states)])[::-1]
+    ref_joint_states_weights = np.array([1 for _ in range(num_ref_joint_states)])[::-1]  # Trying uniform weights
+
+    curr_stage = int(kwargs.get('curr_stage', 0))
+
+    curr_qpos = data.qpos.flat.copy()[2:]
+
+    unweighted_reward_for_each_ref = np.exp(-np.linalg.norm(curr_qpos - ref_joint_states, axis=1))
+    curr_stage_unweighted_reward  = unweighted_reward_for_each_ref[curr_stage]
+    
+    # If the reward for the current stage is large enough, move to the next stage
+    if curr_stage_unweighted_reward > 0.85:
+        new_stage = np.min(curr_stage + 1, num_ref_joint_states - 1)
+    else:
+        new_stage = curr_stage
+
+    if curr_stage > 0:
+        # Add a base reward for each stage that has been completed
+        stage_reward = np.sum(ref_joint_states_weights[:curr_stage])
+    else:
+        stage_reward = 0
+
+    pose_matching_reward = stage_reward + curr_stage_unweighted_reward * ref_joint_states_weights[curr_stage]
+
+    reward = pose_matching_reward + basic_standing_reward
+
+    terms_to_plot["pose_r_l"] = str([f"{unweighted_reward_for_each_ref[i]:.2f}" for i in range(num_ref_joint_states)])
+    terms_to_plot["pose_r"] = f"{pose_matching_reward:.2f}"
+    terms_to_plot["stage"] = new_stage
+    terms_to_plot["r"] = f"{reward:.2f}"
+    terms_to_plot["og_r"] = f"{original_mujoco_reward:.2f}"
+    terms_to_plot["steps"] = kwargs.get("num_steps", 0)
+    
+    return reward, terms_to_plot
+
+
 REWARD_FN_MAPPING = dict(
         original = reward_original,
         simple_remain_standing = reward_simple_remain_standing,
@@ -553,6 +611,8 @@ REWARD_FN_MAPPING = dict(
         kneeling = reward_kneeling,
         splitting = reward_splitting,
         both_arms_out_goal_only_euclidean = reward_both_arms_out_goal_only_euclidean,
-        both_arms_out_seq_euclidean = reward_both_arms_out_seq_euclidean,
+        both_arms_out_seq_euclidean = reward_seq_euclidean,
+        arms_up_then_down_seq_euclidean = reward_seq_euclidean,
+        arms_up_then_down_seq_stage_detector = reward_seq_stage_detector,
     )
     

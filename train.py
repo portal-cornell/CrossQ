@@ -135,7 +135,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         config=OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True),
         mode=cfg.logging.wandb_mode,
         monitor_gym=True,  # auto-upload the videos of agents playing the game
-        dir=cfg.logging.run_path,
+        # dir=cfg.logging.run_path, # Warning: This will mess up video upload
     ) as wandb_run:
         checkpoint_dir = os.path.join(cfg.logging.run_path, "checkpoint")
 
