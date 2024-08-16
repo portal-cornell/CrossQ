@@ -29,6 +29,7 @@ class HumanoidEnvCustom(GymHumanoidEnv):
         "both_arms_out_seq_euclidean": ["create_demo/demos/left-arm-out_joint-state.npy", "create_demo/demos/both-arms-out_joint-state.npy"],
         "arms_up_then_down_seq_euclidean": ["create_demo/demos/left-arm-out_joint-state.npy", "create_demo/demos/both-arms-out_joint-state.npy", "create_demo/demos/right-arm-out_joint-state.npy"],
         "arms_up_then_down_seq_stage_detector": ["create_demo/demos/left-arm-out_joint-state.npy", "create_demo/demos/both-arms-out_joint-state.npy", "create_demo/demos/right-arm-out_joint-state.npy"],
+        "arms_up_then_down_seq_avg": ["create_demo/demos/left-arm-out_joint-state.npy", "create_demo/demos/both-arms-out_joint-state.npy", "create_demo/demos/right-arm-out_joint-state.npy"],
     }
 
     def __init__(
@@ -602,6 +603,41 @@ def reward_seq_stage_detector(data, **kwargs):
     return reward, terms_to_plot
 
 
+def reward_seq_avg(data, **kwargs):
+    """Use a sequence of reference joint states to calculate the reward
+
+    This task is a goal-reaching task (i.e. doesn't matter how you get to the goal, as long as you get to the goal)
+    """
+    original_mujoco_reward, _ = reward_original(data, **kwargs)
+
+    basic_standing_reward, terms_to_plot = basic_remain_standing_rewards(data, 
+                                                            upward_reward_w=1, 
+                                                            ctrl_cost_w=1, 
+                                                            **kwargs)
+
+    # Calculate the reward based on the euclidean distance between the current joint states and a sequence of referenece joint states
+    assert "ref_joint_states" in kwargs, "ref_joint_states must be passed in as part of the kwargs"
+    ref_joint_states = kwargs.get('ref_joint_states', None)
+
+    num_ref_joint_states = ref_joint_states.shape[0]
+
+    curr_qpos = data.qpos.flat.copy()[2:]
+
+    unweighted_reward_for_each_ref = np.exp(-np.linalg.norm(curr_qpos - ref_joint_states, axis=1))
+    # Average of the reward from each reference joint state
+    pose_matching_reward = np.mean(unweighted_reward_for_each_ref)
+
+    reward = pose_matching_reward + basic_standing_reward
+
+    terms_to_plot["pose_r_l"] = str([f"{unweighted_reward_for_each_ref[i]:.2f}" for i in range(num_ref_joint_states)])
+    terms_to_plot["pose_r"] = f"{pose_matching_reward:.2f}"
+    terms_to_plot["r"] = f"{reward:.2f}"
+    terms_to_plot["og_r"] = f"{original_mujoco_reward:.2f}"
+    terms_to_plot["steps"] = kwargs.get("num_steps", 0)
+    
+    return reward, terms_to_plot
+
+
 REWARD_FN_MAPPING = dict(
         original = reward_original,
         simple_remain_standing = reward_simple_remain_standing,
@@ -614,5 +650,6 @@ REWARD_FN_MAPPING = dict(
         both_arms_out_seq_euclidean = reward_seq_euclidean,
         arms_up_then_down_seq_euclidean = reward_seq_euclidean,
         arms_up_then_down_seq_stage_detector = reward_seq_stage_detector,
+        arms_up_then_down_seq_avg = reward_seq_avg,
     )
     
