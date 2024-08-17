@@ -39,7 +39,7 @@ import utils
 import multiprocess
 from envs.base import get_make_env
 from vlm_reward.reward_main import load_reward_model, dist_worker_compute_reward
-from callbacks import VideoRecorderCallback, WandbCallback
+from sbx.common.callbacks import VideoRecorderCallback, WandbCallback, OTRewardCallback
     
 
 def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] = None):
@@ -101,6 +101,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         td3_mode=cfg.rl_algo.td3_mode if "td3_mode" in cfg.rl_algo else False,
         use_bnstats_from_live_net=bool(cfg.rl_algo.bnstats_live_net),
         policy_q_reduce_fn=jax.numpy.min,  # Both CrossQ and SAC use min
+        train_freq=cfg.env.episode_length if "wasserstein" in cfg.reward_model.name else 1,  # If we are using Wasserstein, we need to wait until rollout for the entire episode is calculated (TODO: this does not handle env when the episode can terminate early). Otherwise, set it to default 1
         learning_starts=5000,
         learning_rate=cfg.rl_algo.lr,
         qf_learning_rate=cfg.rl_algo.lr,
@@ -150,10 +151,19 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             render_freq=cfg.logging.video_save_freq // cfg.compute.n_cpu_workers,
         )
 
+        callback_list = [wandb_callback, video_callback]
+
+        if cfg.reward_model.name == "joint_wasserstein":
+            # Add the OT reward callback if we are using joint_wasserstein as the reward model
+            callback_list.append(OTRewardCallback(
+                                    seq_name = cfg.reward_model.seq_name,
+                                    cost_fn_type = cfg.reward_model.cost_fn,
+            ))
+
         model.learn(
             total_timesteps=cfg.total_timesteps, 
             progress_bar=True, 
-            callback=CallbackList([wandb_callback, video_callback])
+            callback=CallbackList(callback_list),
         )
 
         if stop_event is not None:

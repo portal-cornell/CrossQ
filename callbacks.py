@@ -1,6 +1,8 @@
 import os
 from typing import Any, Dict, Optional
 
+from scipy.spatial.distance import cdist
+import ot
 import gymnasium
 import torch as th
 import numpy as np
@@ -16,6 +18,135 @@ from stable_baselines3.common.base_class import BaseAlgorithm
 
 from PIL import Image, ImageDraw, ImageFont
 from numbers import Number
+
+from loguru import logger
+
+class OTRewardCallback(BaseCallback):
+    """
+    Custom callback for calculating Optimal Transport (OT) rewards after rollouts are collected.
+    """
+    SEQ_DICT = {
+        "arms_up_then_down": ["create_demo/demos/left-arm-out_joint-state.npy", "create_demo/demos/both-arms-out_joint-state.npy", "create_demo/demos/right-arm-out_joint-state.npy"],
+    }
+
+    def __init__(self, seq_name, cost_fn_type="cosine", verbose=0):
+        super(OTRewardCallback, self).__init__(verbose)
+
+        COST_FN_DICT = {
+            "cosine": OTRewardCallback.cosine_distance,
+            "euclidean": OTRewardCallback.euclidean_distance,
+        }
+
+        self._ref_seq = self.load_reference_seq(seq_name)
+
+        self._cost_fn = COST_FN_DICT[cost_fn_type]
+
+    def load_reference_seq(self, seq_name: str) -> np.ndarray:
+        """
+        Load the reference sequence for the given sequence name
+        """
+        ref_seq = []
+        for joint in self.SEQ_DICT[seq_name]:
+            ref_seq.append(np.load(joint))
+        return np.stack(ref_seq)
+
+    def _compute_ot_reward(self, obs: np.ndarray) -> np.ndarray:
+        """
+        Compute the Optimal Transport (OT) reward between the reference sequence and the observed sequence
+
+        Parameters:
+            obs: np.ndarray
+                The observed sequence of joint states
+                size: (train_freq, 22)
+                    For OT-based reward, train_freq == episode_length
+                    22 is the observation size that we want to calculate
+        """
+        # Calculate the cost matrix between the reference sequence and the observed sequence
+        #   size: (train_freq, ref_seq_len)
+        cost_matrix = self._cost_fn(obs, self._ref_seq)
+
+        # Calculate the OT plan between the reference sequence and the observed sequence
+        obs_weight = np.ones(obs.shape[0]) / obs.shape[0]
+        ref_weight = np.ones(self._ref_seq.shape[0]) / self._ref_seq.shape[0]
+        T = ot.sinkhorn(obs_weight, ref_weight, cost_matrix, reg=0.01, log=False)  # size: (train_freq, ref_seq_len)
+
+        # Calculate the OT reward for each timestep
+        #   sum by row of (cost matrix * OT plan)
+        ot_reward = np.sum(cost_matrix * T, axis=1)  # size: (train_freq,)
+
+        return ot_reward
+
+
+    def on_rollout_end(self) -> None:
+        """
+        This method is called after the rollout ends.
+        You can access and modify the rewards in the ReplayBuffer here.
+        """
+        replay_buffer_pos = self.model.replay_buffer.pos
+        total_timesteps = self.model.num_timesteps - self.model.previous_num_timesteps  # Total number of timesteps that we have collected
+        env_episode_timesteps = total_timesteps // self.model.env.num_envs  # Number of timesteps that we have collected per environment
+
+        logger.debug(f"\nreplay_buffer_pos={replay_buffer_pos}, total_timesteps={total_timesteps}, \nenv_episode_timesteps={env_episode_timesteps}, self.model.num_timesteps={self.model.num_timesteps}")
+
+        # Get the observation from the replay buffer
+        #   size: (train_freq, n_envs, obs_size)
+        #   For OT-based reward, train_freq = episode_length
+        if replay_buffer_pos - env_episode_timesteps >= 0:
+            # logger.debug(f"not circular, check replay buffer: {self.model.replay_buffer.observations[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :].shape}")
+
+            obs_to_process = np.array(self.model.replay_buffer.observations[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :])
+        else:
+            # Split reward assignment (circular buffer)
+            logger.debug(f"\ncircular, part 1={self.model.replay_buffer.observations[-(env_episode_timesteps - replay_buffer_pos) :, :].shape} \n part 2={self.model.replay_buffer.observations[:replay_buffer_pos, :].shape}")
+
+            obs_to_process = np.concatenate((self.model.replay_buffer.observations[-(env_episode_timesteps - replay_buffer_pos) :, :], self.model.replay_buffer.observations[:replay_buffer_pos, :]), axis=0)
+
+        ot_reward_list = []
+        for env_i in range(self.model.env.num_envs):
+            # TODO: A hard-coded value (22 is matching qpos of the environment)
+            obs = obs_to_process[:, env_i, :22]  # size: (train_freq, 22)
+            ot_reward = self._compute_ot_reward(obs)  # size: (train_freq,)
+            logger.debug(f"ot_reward={ot_reward.shape}")
+            ot_reward_list.append(ot_reward)
+
+        rewards = np.stack(ot_reward_list, axis=1)  # size: (train_freq, n_envs)
+
+        if replay_buffer_pos - env_episode_timesteps >= 0:
+            self.model.replay_buffer.rewards[
+                replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
+            ] = rewards[:, :]
+        else:
+            # Split reward assignment (circular buffer)
+            self.model.replay_buffer.rewards[
+                -(env_episode_timesteps - replay_buffer_pos) :, :
+            ] = rewards[: env_episode_timesteps - replay_buffer_pos, :]
+
+            self.model.replay_buffer.rewards[:replay_buffer_pos, :] = rewards[
+                env_episode_timesteps - replay_buffer_pos :, :
+            ]
+
+
+    def _on_step(self) -> bool:
+        """
+        Just need to define this method to avoid NotImplementedError
+
+        Return: 
+            If the callback returns False, training is aborted early.
+        """
+        return True
+    
+    @classmethod
+    def cosine_distance(cls, x, y):
+        distance = np.dot(x, y.T) / np.linalg.norm(x, axis=1, keepdims=True) / np.linalg.norm(y.T, axis=0, keepdims=True) # Transpose B to match dimensions
+
+        # Rescale to be between 0 and 1
+        distance_rescaled = (distance + 1) / 2
+        return 1 - distance_rescaled
+    
+    @classmethod
+    def euclidean_distance(cls, x, y):
+        return cdist(x, y, metric="euclidean")
+
 
 def plot_info_on_frame(pil_image, info, font_size=20):
     # TODO: this is a hard-coded path
