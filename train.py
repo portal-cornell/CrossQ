@@ -1,12 +1,6 @@
-import argparse
-import functools
 import os
-import time
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
-import warnings
 import wandb
-import json
-import yaml
 
 from omegaconf import DictConfig, OmegaConf
 import hydra
@@ -15,20 +9,15 @@ import torch
 from torch import multiprocessing
 import torch.distributed as dist
 
-import numpy as np
 import jax
-import jax.numpy as jnp
-import rlax
-import flax.linen as nn
 
-from stable_baselines3.common import type_aliases
-from stable_baselines3.common.callbacks import EvalCallback, CallbackList, BaseCallback
-from stable_baselines3.common.vec_env import DummyVecEnv, VecEnv, VecMonitor, is_vecenv_wrapped, sync_envs_normalization
+from stable_baselines3.common.callbacks import CallbackList
+
 from sbx import SAC, VLM_SAC
 
 from sbx.common.make_vec_env import make_vec_env
 from sbx.common.subproc_vec_env import SubprocVecEnv
-from sbx.sac.actor_critic_evaluation_callback import CriticBiasCallback, EvalCallback
+
 from sbx.sac.utils import *
 
 import gymnasium as gym
@@ -136,8 +125,11 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         config=OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True),
         mode=cfg.logging.wandb_mode,
         monitor_gym=True,  # auto-upload the videos of agents playing the game
-        # dir=cfg.logging.run_path, # Warning: This will mess up video upload
     ) as wandb_run:
+        # Make an alias for the wandb in the run_path
+        if cfg.logging.wandb_mode != "disabled":
+            os.symlink(os.path.abspath(wandb_run.dir), os.path.join(cfg.logging.run_path, "wandb"), target_is_directory=True)
+
         checkpoint_dir = os.path.join(cfg.logging.run_path, "checkpoint")
 
         wandb_callback = WandbCallback(
@@ -148,7 +140,10 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
 
         video_callback = VideoRecorderCallback(
             SubprocVecEnv([make_env_fn], render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3)),
+            rollout_save_path=os.path.join(cfg.logging.run_path, "eval"),
             render_freq=cfg.logging.video_save_freq // cfg.compute.n_cpu_workers,
+            seq_name = cfg.reward_model.seq_name if cfg.reward_model.name == "joint_wasserstein" else "",
+            cost_fn_type = cfg.reward_model.cost_fn if cfg.reward_model.name == "joint_wasserstein" else "",
         )
 
         callback_list = [wandb_callback, video_callback]

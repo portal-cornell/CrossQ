@@ -274,7 +274,7 @@ class Image2ImageMetric(nn.Module):
         Extract masked features from a batch
         batch: (B, 3, H, W), where B is number of images in batch
         """
-        logger.debug(f"use_patch_mask={use_patch_mask}, mask_thresh={mask_thresh}")
+        # logger.debug(f"use_patch_mask={use_patch_mask}, mask_thresh={mask_thresh}")
         # Start human mask extraction first because interpolation is GPU-memory expensive
         if use_patch_mask:
             # logger.debug(f"{self.patch_masker.device=}, {batch.device=}")

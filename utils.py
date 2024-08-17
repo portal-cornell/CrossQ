@@ -2,9 +2,7 @@ import datetime
 import secrets
 import os
 
-import itertools
-from typing import Any, Callable, Dict, List, Optional, Type, Union
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 from loguru import logger
 
 import hydra
@@ -78,6 +76,8 @@ def validate_and_preprocess_cfg(cfg: DictConfig):
 
     cfg.logging.run_name = get_output_folder_name()
     cfg.logging.run_path = get_output_path()
+
+    os.makedirs(os.path.join(cfg.logging.run_path, "eval"), exist_ok=True)
 
 def get_make_env_kwargs(cfg: DictConfig):
     """

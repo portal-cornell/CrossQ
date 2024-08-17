@@ -1,8 +1,6 @@
 import os
 from typing import Any, Dict, Optional
-
-from scipy.spatial.distance import cdist
-import ot
+import imageio
 import gymnasium
 import torch as th
 import numpy as np
@@ -21,61 +19,17 @@ from numbers import Number
 
 from loguru import logger
 
+import vlm_reward.utils.optimal_transport as custom_ot
+
 class OTRewardCallback(BaseCallback):
     """
     Custom callback for calculating Optimal Transport (OT) rewards after rollouts are collected.
     """
-    SEQ_DICT = {
-        "arms_up_then_down": ["create_demo/demos/left-arm-out_joint-state.npy", "create_demo/demos/both-arms-out_joint-state.npy", "create_demo/demos/right-arm-out_joint-state.npy"],
-    }
-
     def __init__(self, seq_name, cost_fn_type="cosine", verbose=0):
         super(OTRewardCallback, self).__init__(verbose)
 
-        COST_FN_DICT = {
-            "cosine": OTRewardCallback.cosine_distance,
-            "euclidean": OTRewardCallback.euclidean_distance,
-        }
-
-        self._ref_seq = self.load_reference_seq(seq_name)
-
-        self._cost_fn = COST_FN_DICT[cost_fn_type]
-
-    def load_reference_seq(self, seq_name: str) -> np.ndarray:
-        """
-        Load the reference sequence for the given sequence name
-        """
-        ref_seq = []
-        for joint in self.SEQ_DICT[seq_name]:
-            ref_seq.append(np.load(joint))
-        return np.stack(ref_seq)
-
-    def _compute_ot_reward(self, obs: np.ndarray) -> np.ndarray:
-        """
-        Compute the Optimal Transport (OT) reward between the reference sequence and the observed sequence
-
-        Parameters:
-            obs: np.ndarray
-                The observed sequence of joint states
-                size: (train_freq, 22)
-                    For OT-based reward, train_freq == episode_length
-                    22 is the observation size that we want to calculate
-        """
-        # Calculate the cost matrix between the reference sequence and the observed sequence
-        #   size: (train_freq, ref_seq_len)
-        cost_matrix = self._cost_fn(obs, self._ref_seq)
-
-        # Calculate the OT plan between the reference sequence and the observed sequence
-        obs_weight = np.ones(obs.shape[0]) / obs.shape[0]
-        ref_weight = np.ones(self._ref_seq.shape[0]) / self._ref_seq.shape[0]
-        T = ot.sinkhorn(obs_weight, ref_weight, cost_matrix, reg=0.01, log=False)  # size: (train_freq, ref_seq_len)
-
-        # Calculate the OT reward for each timestep
-        #   sum by row of (cost matrix * OT plan)
-        ot_reward = np.sum(cost_matrix * T, axis=1)  # size: (train_freq,)
-
-        return ot_reward
-
+        self._ref_seq = custom_ot.load_reference_seq(seq_name)
+        self._cost_fn = custom_ot.COST_FN_DICT[cost_fn_type]
 
     def on_rollout_end(self) -> None:
         """
@@ -86,7 +40,7 @@ class OTRewardCallback(BaseCallback):
         total_timesteps = self.model.num_timesteps - self.model.previous_num_timesteps  # Total number of timesteps that we have collected
         env_episode_timesteps = total_timesteps // self.model.env.num_envs  # Number of timesteps that we have collected per environment
 
-        logger.debug(f"\nreplay_buffer_pos={replay_buffer_pos}, total_timesteps={total_timesteps}, \nenv_episode_timesteps={env_episode_timesteps}, self.model.num_timesteps={self.model.num_timesteps}")
+        # logger.debug(f"\nreplay_buffer_pos={replay_buffer_pos}, total_timesteps={total_timesteps}, \nenv_episode_timesteps={env_episode_timesteps}, self.model.num_timesteps={self.model.num_timesteps}")
 
         # Get the observation from the replay buffer
         #   size: (train_freq, n_envs, obs_size)
@@ -105,8 +59,8 @@ class OTRewardCallback(BaseCallback):
         for env_i in range(self.model.env.num_envs):
             # TODO: A hard-coded value (22 is matching qpos of the environment)
             obs = obs_to_process[:, env_i, :22]  # size: (train_freq, 22)
-            ot_reward = self._compute_ot_reward(obs)  # size: (train_freq,)
-            logger.debug(f"ot_reward={ot_reward.shape}")
+            ot_reward = custom_ot.compute_ot_reward(obs, self._ref_seq, self._cost_fn)  # size: (train_freq,)
+            # logger.debug(f"ot_reward={ot_reward.shape}")
             ot_reward_list.append(ot_reward)
 
         rewards = np.stack(ot_reward_list, axis=1)  # size: (train_freq, n_envs)
@@ -134,21 +88,21 @@ class OTRewardCallback(BaseCallback):
             If the callback returns False, training is aborted early.
         """
         return True
-    
-    @classmethod
-    def cosine_distance(cls, x, y):
-        distance = np.dot(x, y.T) / np.linalg.norm(x, axis=1, keepdims=True) / np.linalg.norm(y.T, axis=0, keepdims=True) # Transpose B to match dimensions
-
-        # Rescale to be between 0 and 1
-        distance_rescaled = (distance + 1) / 2
-        return 1 - distance_rescaled
-    
-    @classmethod
-    def euclidean_distance(cls, x, y):
-        return cdist(x, y, metric="euclidean")
 
 
 def plot_info_on_frame(pil_image, info, font_size=20):
+    """
+    Parameters:
+        pil_image: PIL.Image
+            The image to plot the info on
+        info: Dict
+            The information to plot on the image
+        font_size: int
+            The size of the font to use for the text
+    
+    Effects:
+        pil_image is modified to include the info
+    """
     # TODO: this is a hard-coded path
     font = ImageFont.truetype("/share/portal/hw575/vlmrm/src/vlmrm/cli/arial.ttf", font_size)
     draw = ImageDraw.Draw(pil_image)
@@ -162,7 +116,7 @@ def plot_info_on_frame(pil_image, info, font_size=20):
         if not any([text in k for text in ["TimeLimit", "render_array"]]):
             reward_text = f"{k}:{info[k]}"
             # Plot the text from bottom to top
-            text_position = (x, y - 30*(i+1))
+            text_position = (x, y - (font_size + 10)*(i+1))
             draw.text(text_position, reward_text, fill=(255, 255, 255), font=font)
         i += 1
 
@@ -171,29 +125,49 @@ class VideoRecorderCallback(BaseCallback):
     def __init__(
         self,
         eval_env: gymnasium.Env,
+        rollout_save_path: str,
         render_freq: int,
         n_eval_episodes: int = 1,
         deterministic: bool = True,
+        seq_name: str = "",
+        cost_fn_type="cosine"
     ):
         """
         Records a video of an agent's trajectory traversing ``eval_env`` and logs it to
         TensorBoard
 
-        :param eval_env: A gym environment from which the trajectory is recorded
-        :param render_freq: Render the agent's trajectory every eval_freq call of the
-         callback.
-        :param n_eval_episodes: Number of episodes to render
-        :param deterministic: Whether to use deterministic or stochastic policy
+        Pararmeters
+            eval_env: A gym environment from which the trajectory is recorded
+                Assumes that there's only 1 environment
+            rollout_save_path: The path to save the rollouts (states and rewards)
+            render_freq: Render the agent's trajectory every eval_freq call of the callback.
+            n_eval_episodes: Number of episodes to render
+            deterministic: Whether to use deterministic or stochastic policy
+            seq_name: The name of the reference sequence to compare with
+                You only need to set this if you want to calculate the OT reward
+            cost_fn_type: The type of cost function to use for the OT reward calculation
         """
         super().__init__()
         self._eval_env = eval_env
         self._render_freq = render_freq
         self._n_eval_episodes = n_eval_episodes
         self._deterministic = deterministic
+        self._rollout_save_path = rollout_save_path  # Save the state of the environment
+
+        if seq_name:
+            self._calc_ot_reward = True
+            self._ref_seq = custom_ot.load_reference_seq(seq_name)
+            self._cost_fn = custom_ot.COST_FN_DICT[cost_fn_type]
+        else:
+            self._calc_ot_reward = False
 
     def _on_step(self) -> bool:
         if self.n_calls % self._render_freq == 0:
             screens = []
+            states = []
+            infos = []
+            rewards = []
+            video_writer = imageio.get_writer(os.path.join(self._rollout_save_path, f"raw_video_{self.num_timesteps}.mp4"), fps=30)
 
             def grab_screens(_locals: Dict[str, Any], _globals: Dict[str, Any]) -> None:
                 """
@@ -207,82 +181,16 @@ class VideoRecorderCallback(BaseCallback):
                 """
                 screen = self._eval_env.render()
 
-                image = np.uint8(screen)
-                pil_image = Image.fromarray(image)
-                info = _locals.get('info', {})
+                image_int = np.uint8(screen)
 
-                plot_info_on_frame(pil_image, info)
+                video_writer.append_data(image_int)
 
-                # PyTorch uses CxHxW vs HxWxC gym (and tensorflow) image convention
-                screens.append(np.uint8(pil_image).transpose(2, 0, 1))
+                pil_image = Image.fromarray(image_int)
 
-            evaluate_policy(
-                self.model,
-                self._eval_env,
-                callback=grab_screens,
-                n_eval_episodes=self._n_eval_episodes,
-                deterministic=self._deterministic,
-            )
-
-            self.logger.record(
-                "trajectory/video",
-                Video(th.ByteTensor(array([screens])), fps=40),
-                exclude=("stdout", "log", "json", "csv"),
-            )
-
-        return True
-
-
-
-class DinoVideoRecorderCallback(BaseCallback):
-    def __init__(
-        self,
-        model,
-        eval_env: gymnasium.Env,
-        render_freq: int,
-        n_eval_episodes: int = 1,
-        deterministic: bool = True,
-    ):
-        """
-        Records a video of an agent's trajectory traversing ``eval_env`` and logs it to
-        TensorBoard
-
-        :param eval_env: A gym environment from which the trajectory is recorded
-        :param render_freq: Render the agent's trajectory every eval_freq call of the
-         callback.
-        :param n_eval_episodes: Number of episodes to render
-        :param deterministic: Whether to use deterministic or stochastic policy
-        """
-        super().__init__()
-        self._eval_env = eval_env
-        self._render_freq = render_freq
-        self._n_eval_episodes = n_eval_episodes
-        self._deterministic = deterministic
-
-    def _on_step(self) -> bool:
-        if self.n_calls % self._render_freq == 0:
-            screens = []
-
-            def grab_screens(_locals: Dict[str, Any], _globals: Dict[str, Any]) -> None:
-                """
-                Renders the environment in its current state, recording the screen in
-                the captured `screens` list
-
-                :param _locals: A dictionary containing all local variables of the
-                 callback's scope
-                :param _globals: A dictionary containing all global variables of the
-                 callback's scope
-                """
-                screen = self._eval_env.render()
-
-                image = np.uint8(screen)
-                pil_image = Image.fromarray(image)
-                info = _locals.get('info', {})
-
-               # plot_info_on_frame(pil_image, info)
-
-                # PyTorch uses CxHxW vs HxWxC gym (and tensorflow) image convention
-                screens.append(np.uint8(pil_image).transpose(2, 0, 1))
+                screens.append(pil_image)
+                infos.append(_locals.get('info', {}))
+                states.append(_locals["observations"])
+                rewards.append(_locals["rewards"])
 
             evaluate_policy(
                 self.model,
@@ -292,11 +200,46 @@ class DinoVideoRecorderCallback(BaseCallback):
                 deterministic=self._deterministic,
             )
 
+            # Originally, states is a list of np.arrays size (1, env_obs_size)
+            #   We want to concatenate them to get a single np.array size (n_timesteps, env_obs_size)
+            states = np.concatenate(states)
+            rewards = np.concatenate(rewards)
+
+            if self._calc_ot_reward:
+                ot_reward = custom_ot.compute_ot_reward(np.array(states)[:, :22], self._ref_seq, self._cost_fn)
+
+                self.logger.record("rollout/avg_ot_reward", 
+                                np.mean(ot_reward), 
+                                exclude=("stdout", "log", "json", "csv"))
+
+                # Add the ot_reward to the infos so that we can plot it
+                for i in range(len(infos)):
+                    infos[i]["ot_reward"] = f"{ot_reward[i]:.2f}"
+
+                # Save the ot_rewards locally    
+                with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_ot_rewards.npy"), "wb") as f:
+                    np.save(f, np.array(states))
+
+            # Plot info on the frames  
+            for i in range(len(screens)):
+                plot_info_on_frame(screens[i], infos[i])
+
+            screens = [np.uint8(s).transpose(2, 0, 1) for s in screens]
+
+            # Log to wandb
             self.logger.record(
                 "trajectory/video",
                 Video(th.ByteTensor(array([screens])), fps=40),
                 exclude=("stdout", "log", "json", "csv"),
             )
+
+            # Save the rollouts locally    
+            with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_states.npy"), "wb") as f:
+                np.save(f, np.array(states))
+            
+            with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_rewards.npy"), "wb") as f:
+                np.save(f, np.array(rewards))
+
         return True
 
 
