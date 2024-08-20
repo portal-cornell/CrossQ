@@ -38,11 +38,11 @@ def compute_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn) -> np.ndarray:
     ref_weight = np.ones(ref.shape[0]) / ref.shape[0]
     T = ot.sinkhorn(obs_weight, ref_weight, cost_matrix, reg=0.01, log=False)  # size: (train_freq, ref_seq_len)
 
-    # Calculate the OT reward for each timestep
+    # Calculate the OT cost for each timestep
     #   sum by row of (cost matrix * OT plan)
-    ot_reward = np.sum(cost_matrix * T, axis=1)  # size: (train_freq,)
+    ot_cost = np.sum(cost_matrix * T, axis=1)  # size: (train_freq,)
 
-    return ot_reward
+    return - ot_cost
 
 def cosine_distance(x, y):
     distance = np.dot(x, y.T) / np.linalg.norm(x, axis=1, keepdims=True) / np.linalg.norm(y.T, axis=0, keepdims=True) # Transpose B to match dimensions

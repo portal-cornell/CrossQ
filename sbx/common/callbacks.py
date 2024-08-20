@@ -65,17 +65,18 @@ class OTRewardCallback(BaseCallback):
 
         rewards = np.stack(ot_reward_list, axis=1)  # size: (train_freq, n_envs)
 
+        # Add the optimal transport reward to exisiting rewards
         if replay_buffer_pos - env_episode_timesteps >= 0:
             self.model.replay_buffer.rewards[
                 replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
-            ] = rewards[:, :]
+            ] += rewards[:, :]
         else:
             # Split reward assignment (circular buffer)
             self.model.replay_buffer.rewards[
                 -(env_episode_timesteps - replay_buffer_pos) :, :
-            ] = rewards[: env_episode_timesteps - replay_buffer_pos, :]
+            ] += rewards[: env_episode_timesteps - replay_buffer_pos, :]
 
-            self.model.replay_buffer.rewards[:replay_buffer_pos, :] = rewards[
+            self.model.replay_buffer.rewards[:replay_buffer_pos, :] += rewards[
                 env_episode_timesteps - replay_buffer_pos :, :
             ]
 
@@ -163,11 +164,11 @@ class VideoRecorderCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         if self.n_calls % self._render_freq == 0:
+            raw_screens = []
             screens = []
             states = []
             infos = []
             rewards = []
-            video_writer = imageio.get_writer(os.path.join(self._rollout_save_path, f"raw_video_{self.num_timesteps}.mp4"), fps=30)
 
             def grab_screens(_locals: Dict[str, Any], _globals: Dict[str, Any]) -> None:
                 """
@@ -183,11 +184,8 @@ class VideoRecorderCallback(BaseCallback):
 
                 image_int = np.uint8(screen)
 
-                video_writer.append_data(image_int)
-
-                pil_image = Image.fromarray(image_int)
-
-                screens.append(pil_image)
+                raw_screens.append(Image.fromarray(image_int))
+                screens.append(Image.fromarray(image_int))  # The frames here will get plotted with info later
                 infos.append(_locals.get('info', {}))
                 states.append(_locals["observations"])
                 rewards.append(_locals["rewards"])
@@ -200,6 +198,9 @@ class VideoRecorderCallback(BaseCallback):
                 deterministic=self._deterministic,
             )
 
+            # Save the raw_screens locally
+            imageio.mimsave(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts.gif"), raw_screens, duration=1/30, loop=0)
+
             # Originally, states is a list of np.arrays size (1, env_obs_size)
             #   We want to concatenate them to get a single np.array size (n_timesteps, env_obs_size)
             states = np.concatenate(states)
@@ -210,6 +211,10 @@ class VideoRecorderCallback(BaseCallback):
 
                 self.logger.record("rollout/avg_ot_reward", 
                                 np.mean(ot_reward), 
+                                exclude=("stdout", "log", "json", "csv"))
+                
+                self.logger.record("rollout/avg_total_reward", 
+                                np.mean(ot_reward + rewards), 
                                 exclude=("stdout", "log", "json", "csv"))
 
                 # Add the ot_reward to the infos so that we can plot it
