@@ -79,6 +79,8 @@ def validate_and_preprocess_cfg(cfg: DictConfig):
     cfg.logging.run_name = get_output_folder_name()
     cfg.logging.run_path = get_output_path()
 
+    os.makedirs(os.path.join(cfg.logging.run_path, "eval"), exist_ok=True)
+
 def get_make_env_kwargs(cfg: DictConfig):
     """
     Set the make_env_kwargs based on the config

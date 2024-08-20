@@ -1,11 +1,7 @@
 """
 Generate an unlabelled dataset from a model checkpoint.
 """
-import argparse
-import json
 import os
-import subprocess
-import yaml
 
 from omegaconf import DictConfig, OmegaConf
 import hydra
