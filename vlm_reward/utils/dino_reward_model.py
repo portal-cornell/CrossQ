@@ -127,8 +127,9 @@ class Dino2FeatureExtractor:
         images: list of PIL.Images or Torch.Tensor
         Applies self.transform on the given batch of images using multithreading
         """
-        # If a list of images is provided, use multi-threading for parallel processing
-        if isinstance(images, list):
+        # If a list of images or a tensor with 4 dimension is provided, 
+        # use multi-threading for parallel processing
+        if isinstance(images, list) or (isinstance(images, torch.Tensor) and len(images.shape) > 3):
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 
                 futures = executor.map(self._prepare_single_image, images)
