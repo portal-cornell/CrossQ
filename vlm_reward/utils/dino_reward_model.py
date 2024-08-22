@@ -93,14 +93,13 @@ class Dino2FeatureExtractor:
                 image_batch = image_batch
 
             image_batch = image_batch.to(self.device)
-            
             all_tokens = self.model.get_intermediate_layers(image_batch)
 
             if batch_size != 1:
                 tokens = all_tokens[0].squeeze()
             else:
                 tokens = all_tokens[0]
-            
+
         return tokens
 
     def extract_features_final(self, images_tensor):
@@ -122,7 +121,7 @@ class Dino2FeatureExtractor:
         return all_tokens
 
 
-    def prepare_images_parallel(self, images):
+    def prepare_images_parallel(self, images) -> torch.Tensor:
         """
         images: list of PIL.Images or Torch.Tensor
         Applies self.transform on the given batch of images using multithreading

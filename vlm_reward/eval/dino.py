@@ -44,7 +44,7 @@ class DinoRewardModel(RewardModel):
         self.batch_size = batch_size
 
         self.source_mask_thresh = source_mask_thresh
-        self.target_mask_thresh = target_mask_thresh    
+        self.target_mask_thresh = target_mask_thresh   
 
     def set_target_embedding(self, target_image: Float[torch.Tensor, "c h w"]) -> None:
         """
@@ -66,33 +66,51 @@ class DinoRewardModel(RewardModel):
         
         self.target_mask_thresh is masking the threshold to apply to source images
         """
+
+        # These will store batches of embeddings and masks
+        self.source_embeddings = []
+        self.source_masks = [] 
+        
         with torch.no_grad():
             source_images_prepared = self.reward_model.feature_extractor.prepare_images_parallel(source_images)
-            source_embeddings, source_masks = self.reward_model.extract_masked_features(batch=source_images_prepared, use_patch_mask= self.source_mask_thresh!=0, mask_thresh=self.source_mask_thresh)
 
-            self.source_embeddings = source_embeddings
-            self.source_masks = source_masks
+            source_image_batches = torch.split(source_images_prepared, self.batch_size)
+
+            # inference on all at once will cause an out of memory error
+            for batch in source_image_batches:
+                batch_source_embeddings, batch_source_masks = self.reward_model.extract_masked_features(batch=batch, use_patch_mask=self.source_mask_thresh!=0, mask_thresh=self.source_mask_thresh)
+                # Cache batches of embeddings
+                self.source_embeddings.append(batch_source_embeddings)
+                self.source_masks.append(batch_source_masks)
 
     def predict(self) -> Float[torch.Tensor, 'rews']:
+        if not hasattr(self, 'source_embeddings') or not hasattr(self, 'source_masks'):
+            raise Exception("Source not yet initialized. Try calling set_source_embeddings")
+        if not hasattr(self, 'target_embedding') or not hasattr(self, 'target_mask'):
+            raise Exception("Target not yet initialized. Try calling set_target_embedding")
+
         all_ds = []
-        target_embeddings_repeat = target_image_embeddings.repeat(self.batch_size, 1, 1, 1).permute(1,0,2,3)
-        target_masks_repeat = target_image_masks.repeat(self.batch_size, 1, 1).permute(1,0,2)
+        target_embedding_repeat = self.target_embedding.repeat(self.batch_size, 1, 1)
+        target_mask_repeat = self.target_mask.repeat(self.batch_size, 1)
 
-        for source_embedding, source_mask in zip(self.source_embeddings, self.source_masks):
+        for source_embedding_batch, source_mask_batch in zip(self.source_embeddings, self.source_masks):
             with torch.no_grad():
-
-                distance = torch.Tensor(self.reward_model.compute_distance_parallel(source_features=source_embedding,
-                                                                        source_masks=source_mask,
-                                                                        target_features=target_embeddings_repeat,
-                                                                        target_masks=target_masks_repeat
-                                                                        )).to(self.device)
                 
-                distance = torch.Tensor(raw_output_dict["wasser"]).to(self._device)
+                # The last batch might sometimes be smaller
+                source_batch_size = source_embedding_batch.shape[1]
+                if source_batch_size != target_embedding_repeat.shape[1]: 
+                    target_embedding_repeat =  self.target_embedding.repeat(source_batch_size, 1, 1)
+                    target_mask_repeat = self.target_mask.repeat(source_batch_size, 1)
+                raw_output_dict = self.reward_model.compute_distance_parallel(source_features=source_embedding_batch,
+                                                                        source_masks=source_mask_batch,
+                                                                        target_features=target_embedding_repeat,
+                                                                        target_masks=target_mask_repeat
+                                                                        )
+                distance = torch.Tensor(raw_output_dict["wasser"]).to(self.device)
                 
                 all_ds.append(distance)
-                logger.debug(f"__call__: {distance.size()=}")
 
-        all_ds = torch.stack(all_ds)
+        all_ds = torch.cat(all_ds)
 
         return - all_ds  # Reward is the negative of the distance
 

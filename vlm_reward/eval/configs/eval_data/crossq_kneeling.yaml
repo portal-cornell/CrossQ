@@ -1,0 +1,2 @@
+name: crossq_kneeling
+sequence_and_reward_dir: /share/portal/hw575/CrossQ/train_logs/2024-08-21-104048_crossq_envr=kneeling_rm=hand_engineered_s=9_nt=collect-rollouts/eval 

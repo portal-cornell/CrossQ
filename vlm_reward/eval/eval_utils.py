@@ -5,6 +5,8 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 
+import os
+
 from PIL import Image
 
 def load_gif_frames(path: str, output_type="torch") -> Union[List[Image], Float[torch.Tensor, "n c h w"]]:
@@ -45,6 +47,21 @@ def load_images_from_paths(paths: List[str], output_type="torch")-> Union[List[I
     
     return torch.stack([load_image_from_path(path, output_type="torch") for path in paths])
 
+def get_filename_from_path(path):    
+    return os.path.basename(path).split('.')[0]
+
+def load_np_or_torch_to_torch(path: str):
+    """
+    loads a .npy file or a .pt file to a torch tensor
+    """
+
+    if path.endswith('.pt'):
+        return torch.load(path)
+    elif path.endswith('.npy'):
+        return torch.as_tensor(np.load(path))
+    else:
+        raise Exception("Unsupported object type")
+
 def cut_to_shortest_length(sequences: List):
     """
     cut each array in sequences to the length of the shortest sequence, so they all have the same length
@@ -65,6 +82,62 @@ def pad_to_longest_sequence(sequences):
     for i in range(len(sequences)):
         sequences[i] = np.concatenate((sequences[i], [min_val] * (max_len-len(sequences[i]))))
     return sequences
+
+def plot_permutation_diagram(ground_truth_ranking, predicted_ranking, fp):
+    # Create a figure and axis
+    fig, ax = plt.subplots()
+
+    # Plot the rankings as scatter points connected by lines
+    for i in range(len(ground_truth_ranking)):
+        ax.plot([0, 1], [ground_truth_ranking[i], predicted_ranking[i]], marker='o')
+
+    # Set the ticks and labels on the x-axis
+    ax.set_xticks([0, 1])
+    ax.set_xticklabels(['Ground Truth', 'Predicted'])
+
+    # Set the y-axis ticks and labels
+    ax.set_yticks(np.arange(len(ground_truth_ranking)))
+    ax.set_yticklabels([f'Item {i}' for i in range(len(ground_truth_ranking))])
+
+    # Add a grid for better readability
+    ax.grid(True)
+
+    # Set labels
+    ax.set_xlabel('Rankings')
+    ax.set_ylabel('Items')
+
+    # Display the plot
+    plt.title('Ranking Comparison')
+    plt.savefig(fp)
+
+def create_empty_file(fp):
+    open(fp, 'a').close()
+
+
+def gt_vs_source_heatmap(gt, source, fp):
+    # Create a figure and axis
+    fig, ax = plt.subplots(2, figsize=(5, 5))
+
+    # Display heatmap for the first sequence
+    heatmap1 = ax[0].imshow([gt], aspect='auto', cmap=plt.cm.hot, interpolation='nearest')
+    ax[0].set_title('Ground Truth')
+    ax[0].set_xlabel('Frame')
+    ax[0].set_yticks([])  # Remove y-axis ticks for a cleaner look
+
+    # Display heatmap for the second sequence
+    heatmap2 = ax[1].imshow([source], aspect='auto', cmap=plt.cm.hot, interpolation='nearest')
+    ax[1].set_title('Model')
+    ax[1].set_xlabel('Frame')
+    ax[1].set_yticks([])  # Remove y-axis ticks for a cleaner look
+
+    # Add colorbars
+    fig.colorbar(heatmap1, ax=ax[0])
+    fig.colorbar(heatmap2, ax=ax[1])
+
+    # Display the plot
+    plt.tight_layout()
+    plt.savefig(fp)
+    plt.clf()
 
 def rewards_matrix_heatmap(rewards, fp):
     """

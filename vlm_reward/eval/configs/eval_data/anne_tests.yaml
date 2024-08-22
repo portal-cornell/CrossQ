@@ -1,4 +1,0 @@
-name: anne_tests
-source_sequence_dir: data/anne_tests/gifs
-reward_dir: data/anne_tests/rewards
-target_image_path: data/anne_tests/target_image/humanoid_kneeling_ref.png
