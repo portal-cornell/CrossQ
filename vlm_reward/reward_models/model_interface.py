@@ -31,6 +31,8 @@ class RewardModel(ABC):
     def set_source_embeddings(self, image_batch: Float[torch.Tensor, "b c h w"]) -> None:
         """
         Embed a batch of images, caching the embeddings as instance variables
+
+        The images are tensors of type torch.uint8 (0,255)
         
         The embeddings will have arbitrary shapes/types, but it is guaranteed that 
         self.predict uses them as inputs
@@ -41,6 +43,8 @@ class RewardModel(ABC):
     def set_target_embedding(self, target_image: Float[torch.Tensor, "c h w"]) -> None:
         """
         Cache an embedding of the target image
+
+        The images are tensors of type torch.uint8 (0,255)
         """
         pass
 

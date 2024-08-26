@@ -1,5 +1,27 @@
 import os
 from typing import List, Tuple
+import pandas as pd
+
+def consolidate_experiment_metrics(eval_log_folder, output_file):
+    consolidated_df = pd.DataFrame()
+    
+    for folder in os.listdir(eval_log_folder):
+        # Construct the path to the performance.csv file
+        file_path = os.path.join(eval_log_folder, folder, 'performance.csv')
+        
+        df = pd.read_csv(file_path)
+        
+        # Add a new column 'Folder' with the name of the current folder
+        df['Experiment'] = os.path.basename(folder).split("_rm=")[-1]
+        
+        # Append the DataFrame to the consolidated DataFrame
+        consolidated_df = pd.concat([consolidated_df, df], ignore_index=True)
+    
+    # Reorder columns to have 'Folder' as the first column
+    cols = ['Experiment'] + [col for col in consolidated_df.columns if col != 'Experiment']
+    consolidated_df = consolidated_df[cols]
+    
+    consolidated_df.to_csv(output_file, index=False)
 
 def parse_mujoco_eval_dir(directory, get_every_nth=1) -> List[Tuple[str, str]]:
     """
@@ -47,3 +69,6 @@ def get_matched_source_and_reward_files(source_sequence_dir, reward_dir) -> List
     reward_paths = [os.path.join(reward_dir, name) for name in reward_filenames]
 
     return zip(source_paths, reward_paths)
+
+if __name__=="__main__":
+    consolidate_experiment_metrics("eval_logs/", "experiment_outputs.csv")

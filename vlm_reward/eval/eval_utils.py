@@ -6,8 +6,24 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import os
+import csv
 
 from PIL import Image
+
+def write_metrics_to_csv(metrics, headers, file_name):
+    """
+    Writes the values from the list metrics to a CSV file with headers.
+
+    :param metrics: List of lists where each sublist represents a row of values to write.
+    :param headers: List of strings representing the headers for the CSV.
+    :param file_name: String representing the name of the CSV file.
+    """
+    with open(file_name, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        # Write the headers
+        writer.writerow(headers)
+        # Write the metrics
+        writer.writerows(metrics)
 
 def load_gif_frames(path: str, output_type="torch") -> Union[List[Image], Float[torch.Tensor, "n c h w"]]:
     """
@@ -83,13 +99,20 @@ def pad_to_longest_sequence(sequences):
         sequences[i] = np.concatenate((sequences[i], [min_val] * (max_len-len(sequences[i]))))
     return sequences
 
-def plot_permutation_diagram(ground_truth_ranking, predicted_ranking, fp):
+def plot_permutation_diagram(ground_truth_ranking, predicted_ranking, fp, sequence_labels=None):
     # Create a figure and axis
     fig, ax = plt.subplots()
 
+    # order[i] is the index of ranking[i] (i.e., the location in the ranking of the ith element)
+    gt_order = torch.empty_like(ground_truth_ranking)
+    gt_order[ground_truth_ranking] = torch.arange(len(ground_truth_ranking))
+
+    pred_order = torch.empty_like(predicted_ranking)
+    pred_order[predicted_ranking] = torch.arange(len(predicted_ranking))
+
     # Plot the rankings as scatter points connected by lines
-    for i in range(len(ground_truth_ranking)):
-        ax.plot([0, 1], [ground_truth_ranking[i], predicted_ranking[i]], marker='o')
+    for i in range(len(gt_order)):
+        ax.plot([0, 1], [gt_order[i], pred_order[i]], marker='o')
 
     # Set the ticks and labels on the x-axis
     ax.set_xticks([0, 1])
@@ -97,18 +120,23 @@ def plot_permutation_diagram(ground_truth_ranking, predicted_ranking, fp):
 
     # Set the y-axis ticks and labels
     ax.set_yticks(np.arange(len(ground_truth_ranking)))
-    ax.set_yticklabels([f'Item {i}' for i in range(len(ground_truth_ranking))])
+    if sequence_labels is not None:
+        ax.set_yticklabels(sequence_labels)
+    else:
+        ax.set_yticklabels([f'Sequence {i}' for i in range(len(ground_truth_ranking))])
 
     # Add a grid for better readability
     ax.grid(True)
 
     # Set labels
     ax.set_xlabel('Rankings')
-    ax.set_ylabel('Items')
-
-    # Display the plot
+    ax.set_ylabel('Sequence')
     plt.title('Ranking Comparison')
+
+    plt.tight_layout()
+
     plt.savefig(fp)
+    plt.close()
 
 def create_empty_file(fp):
     open(fp, 'a').close()
@@ -138,6 +166,7 @@ def gt_vs_source_heatmap(gt, source, fp):
     plt.tight_layout()
     plt.savefig(fp)
     plt.clf()
+    plt.close()
 
 def rewards_matrix_heatmap(rewards, fp):
     """

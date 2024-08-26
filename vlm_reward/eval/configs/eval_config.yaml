@@ -6,7 +6,7 @@
 run_notes: null
 
 defaults:
-  - reward_model: patch_wasserstein 
+  - reward_model: dino_patch_wasserstein 
   - eval_data: crossq_kneeling 
   - _self_
 

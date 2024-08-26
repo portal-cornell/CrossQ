@@ -1,0 +1,15 @@
+name: dreamsim
+vlm_model: dreamsim  # The VLM used to embed the image
+pos_image_path: 
+  - /share/portal/wph52/CrossQ/vlm_reward/eval/target_images/humanoid_kneeling_ref.png
+
+### USELESS FOR DREAMSIM
+cost_fn: cosine # Options: euclidean, cosine. What function to use to build the cost matrix
+reward_batch_size: 16  # Batch size sent to the VLM reward model
+image_size: 224  # How should the image be resized
+return_ot_plan: False  # (For debugging purpose) Whether to return the OT plan (so that we can visualize)
+human_seg_model_path: '/share/portal/hw575/language_irl/pretrained_checkpoints/SGHM-ResNet50.pth'
+source_mask_thresh: 0.001
+target_mask_thresh: 0.001
+neg_image_path: []
+rank0_batch_size_pct: 0.0  # Determine how many percentage of the batch the main worker (rank = 0) need to process when doing reward calculation
