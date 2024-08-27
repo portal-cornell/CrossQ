@@ -647,14 +647,12 @@ def reward_seq_avg(data, **kwargs):
 def reward_only_basic_r(data, **kwargs):
     """Only provide basic reward to remain standing and control cost
     """
-    original_mujoco_reward, _ = reward_original(data, **kwargs)
-
     basic_standing_reward, terms_to_plot = basic_remain_standing_rewards(data, 
                                                             upward_reward_w=1, 
                                                             ctrl_cost_w=1, 
                                                             **kwargs)
     
-    reward =  basic_standing_reward
+    reward = basic_standing_reward
 
     # Still calculating the pose matching reward (to individual poses) to show in the terms_to_plot
     assert "ref_joint_states" in kwargs, "ref_joint_states must be passed in as part of the kwargs"
@@ -668,7 +666,6 @@ def reward_only_basic_r(data, **kwargs):
 
     terms_to_plot["pose_r_l"] = str([f"{unweighted_reward_for_each_ref[i]:.2f}" for i in range(num_ref_joint_states)])
     terms_to_plot["r"] = f"{reward:.2f}"
-    terms_to_plot["og_r"] = f"{original_mujoco_reward:.2f}"
     terms_to_plot["steps"] = kwargs.get("num_steps", 0)
     
     return reward, terms_to_plot
