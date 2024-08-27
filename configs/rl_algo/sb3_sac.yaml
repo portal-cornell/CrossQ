@@ -1,0 +1,22 @@
+name: sb3-sac  # Name of the RL algorithm
+
+lr: 1e-3  # Actor and critic learning rate
+
+adam_b1: 0.9 # adam b1 parameter (according to the CrossQ paper appendix)
+critic_activation: relu  # Critic activation function
+crossq_style: False  # Crossq style joint forward pass through critic network
+dropout: False  # Whether to use dropout for SAC
+dropout_rate: null  # Dropout rate
+ln: Fase  # Layernorm in critic network
+n_critics: 2  # Number of critics to use
+policy_delay: 1  # Policy is updated after this many critic updates
+tau: 0.005  # Target network averaging (without target networks) (according to the CrossQ paper appendix)
+utd: 1  # Number of critic updates per env step (update to data ratio)
+bnstats_live_net: False  # Use bn running statistics from live network within the target network
+net_arch:
+  pi:
+    - 256
+    - 256
+  qf:
+    - 256
+    - 256 # narrow critic compared to crossq

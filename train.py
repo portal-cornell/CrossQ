@@ -1,3 +1,7 @@
+import utils
+
+utils.set_os_vars()
+
 import os
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import wandb
@@ -13,18 +17,17 @@ import jax
 
 from stable_baselines3.common.callbacks import CallbackList
 
-from sbx import SAC, VLM_SAC
+# import regular stable_baseline3 sac
+from stable_baselines3 import SAC
+from stable_baselines3.sac.policies import MultiInputPolicy
 
 from sbx.common.make_vec_env import make_vec_env
 from sbx.common.subproc_vec_env import SubprocVecEnv
-
-from sbx.sac.utils import *
 
 import gymnasium as gym
 
 from loguru import logger
 
-import utils
 import multiprocess
 from envs.base import get_make_env
 from vlm_reward.reward_main import load_reward_model, dist_worker_compute_reward
@@ -65,50 +68,29 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
 
     logger.info("Creating the learner...")
     # Train a model from scatch
-    sac_class = VLM_SAC if use_vlm_for_reward else SAC
-    model = sac_class(
-        "MultiInputPolicy" if isinstance(training_env.observation_space, gym.spaces.Dict) else "MlpPolicy",
+
+    # TODO: Write the stablebaseline3 SAC model for VLM reward
+    model = SAC(
+        MultiInputPolicy if isinstance(training_env.observation_space, gym.spaces.Dict) else "MlpPolicy",
         training_env,
-        policy_kwargs=dict({
-            'activation_fn': activation_fn[cfg.rl_algo.critic_activation],  # From sbx.sac.utils import *
-            'layer_norm': cfg.rl_algo.ln,
-            'batch_norm': bool(cfg.rl_algo.bn),
-            'batch_norm_momentum': float(cfg.rl_algo.bn_momentum),
-            'batch_norm_mode': cfg.rl_algo.bn_mode,
-            'dropout_rate': cfg.rl_algo.dropout_rate,
-            'n_critics': cfg.rl_algo.n_critics,
-            'net_arch': cfg.rl_algo.net_arch,
-            'optimizer_class': optax.adam,
-            'optimizer_kwargs': dict({
-                'b1': cfg.rl_algo.adam_b1,
-                'b2': 0.999 # default
-            })
-        }),
-        gradient_steps=cfg.rl_algo.utd,
-        policy_delay=cfg.rl_algo.policy_delay,
-        crossq_style=bool(cfg.rl_algo.crossq_style),
-        td3_mode=cfg.rl_algo.td3_mode if "td3_mode" in cfg.rl_algo else False,
-        use_bnstats_from_live_net=bool(cfg.rl_algo.bnstats_live_net),
-        policy_q_reduce_fn=jax.numpy.min,  # Both CrossQ and SAC use min
-        train_freq=cfg.env.episode_length if "wasserstein" in cfg.reward_model.name else 1,  # If we are using Wasserstein, we need to wait until rollout for the entire episode is calculated (TODO: this does not handle env when the episode can terminate early). Otherwise, set it to default 1
-        learning_starts=5000,
         learning_rate=cfg.rl_algo.lr,
-        qf_learning_rate=cfg.rl_algo.lr,
+        buffer_size=1_000_000,
+        learning_starts=5000,
+        batch_size=256,
         tau=cfg.rl_algo.tau,
         gamma=0.99,
-        verbose=0,
-        buffer_size=1_000_000,
-        seed=cfg.seed,
+        train_freq=(cfg.env.episode_length, "step"),
+        gradient_steps=cfg.rl_algo.utd,
         stats_window_size=1,  # don't smooth the episode return stats over time
         tensorboard_log=os.path.join(cfg.logging.run_path, "tensorboard"),
-        reward_model_config = OmegaConf.to_container(cfg.reward_model, resolve=True, throw_on_missing=True) if use_vlm_for_reward else None,
-        n_cpu_workers = cfg.compute.n_cpu_workers,
-        n_gpu_workers = cfg.compute.n_gpu_workers,
-        episode_length = cfg.env.episode_length,
-        render_dim = cfg.env.render_dim,
+        policy_kwargs=dict({
+            'activation_fn': torch.nn.ReLU,
+            'net_arch': dict(cfg.rl_algo.net_arch),
+            'n_critics': cfg.rl_algo.n_critics,
+        }),
+        verbose=0,
+        seed=cfg.seed,
     )
-
-    model.use_distributed = cfg.compute.distributed
 
     # TODO: Not sure if .load() is better than .set_parameters()
     if cfg.model_base_path:
@@ -120,7 +102,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
     with wandb.init(
         project=cfg.logging.wandb_project,
         name=cfg.logging.run_name,
-        tags=[],
+        tags=cfg.logging.wandb_tags,
         sync_tensorboard=True,
         config=OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True),
         mode=cfg.logging.wandb_mode,

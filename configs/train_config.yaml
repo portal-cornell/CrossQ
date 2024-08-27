@@ -20,6 +20,7 @@ logging:
 
   wandb_project: crossQ
   wandb_mode: online
+  wandb_tags: []
 
   run_name: null
   run_path: null
