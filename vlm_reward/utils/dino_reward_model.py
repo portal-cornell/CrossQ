@@ -93,14 +93,13 @@ class Dino2FeatureExtractor:
                 image_batch = image_batch
 
             image_batch = image_batch.to(self.device)
-            
             all_tokens = self.model.get_intermediate_layers(image_batch)
 
             if batch_size != 1:
                 tokens = all_tokens[0].squeeze()
             else:
                 tokens = all_tokens[0]
-            
+
         return tokens
 
     def extract_features_final(self, images_tensor):
@@ -122,13 +121,14 @@ class Dino2FeatureExtractor:
         return all_tokens
 
 
-    def prepare_images_parallel(self, images):
+    def prepare_images_parallel(self, images) -> torch.Tensor:
         """
         images: list of PIL.Images or Torch.Tensor
         Applies self.transform on the given batch of images using multithreading
         """
-        # If a list of images is provided, use multi-threading for parallel processing
-        if isinstance(images, list):
+        # If a list of images or a tensor with 4 dimension is provided, 
+        # use multi-threading for parallel processing
+        if isinstance(images, list) or (isinstance(images, torch.Tensor) and len(images.shape) > 3):
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 
                 futures = executor.map(self._prepare_single_image, images)
@@ -452,6 +452,13 @@ class PatchWassersteinDistance(Image2ImageMetric):
             "wasser": the wasserstein distance
             "T": (optional) the optimal transport plan
         """   
+        if len(features) == 0:
+            print('Error: no source features found. Distance is considered -1. Consider decreasing the human threshold for the source or target')
+            return dict(wasser = -1)
+        elif len(target_features) == 0:
+            print('Error: no target features found. Distance is considered -1. Consider decreasing the human threshold for the source or target')
+            return dict(wasser = -1)
+
         match d:
             case 'cosine':
                 similarity = np.dot(features, target_features.T) / np.linalg.norm(features, axis=1, keepdims=True) / np.linalg.norm(target_features.T, axis=0, keepdims=True) # Transpose B to match dimensions
@@ -473,24 +480,16 @@ class PatchWassersteinDistance(Image2ImageMetric):
             case 'euclidean':
                 M = cdist(target_features, features)
         
-        if M.shape[1] == 0:
-            print('Error: no features found. Distance is considered -1. Consider decreasing the human threshold for the source or target')
-            return -1
-        else:
-            # The old implementation
-            # features_weights = []
-            # target_features_weights = []
+        # Uniform distribution
+        features_weights = np.ones(features.shape[0]) * (1 / features.shape[0])
+        target_features_weights = np.ones(target_features.shape[0]) * (1 / target_features.shape[0])
+        
+        # Sinkhorn2 directly outputs the distance (compared to sinkhorn which outputs the OT solution)
+        # For regularizing, using this paper: (https://github.com/siddhanthaldar/ROT/blob/41ef7b98ca3950b9f31dd174f306cbe6916a09c9/ROT/rewarder.py#L4)
+        T = ot.sinkhorn(features_weights, target_features_weights, M, reg=0.01, log=False)
 
-            # Uniform distribution
-            features_weights = np.ones(features.shape[0]) * (1 / features.shape[0])
-            target_features_weights = np.ones(target_features.shape[0]) * (1 / target_features.shape[0])
-            
-            # Sinkhorn2 directly outputs the distance (compared to sinkhorn which outputs the OT solution)
-            # For regularizing, using this paper: (https://github.com/siddhanthaldar/ROT/blob/41ef7b98ca3950b9f31dd174f306cbe6916a09c9/ROT/rewarder.py#L4)
-            T = ot.sinkhorn(features_weights, target_features_weights, M, reg=0.01, log=False)
-
-            # Calculate the wasserstein distance (ref: )
-            wasser = np.sum(T*M)
+        # Calculate the wasserstein distance (ref: )
+        wasser = np.sum(T*M)
 
         return dict(wasser=wasser, T=T, C=M)
 

@@ -267,4 +267,3 @@ class WandbCallback(SB3WandbCallback):
         )
         self.model.save(model_path)
 
-

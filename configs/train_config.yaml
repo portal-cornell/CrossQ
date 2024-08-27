@@ -39,7 +39,7 @@ hydra:
 # env:
 #   reward_type: both_arms_out_goal_only_euclidean
 
-# If you are using patch wasserstein as reward, you can uncomment and overwrite pos_image_path, neg_image_path in the patch_wasserstein.yaml
+# If you are using patch wasserstein as reward, you can uncomment and overwrite pos_image_path, neg_image_path in the dino_patch_wasserstein.yaml
 # reward_model:
 #   pos_image_path:
 #     - axis_exp/humanoid_kneeling_ref.png

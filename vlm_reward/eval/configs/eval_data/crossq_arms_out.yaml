@@ -1,0 +1,2 @@
+name: crossq-arms-out
+sequence_and_reward_dir: /share/portal/hw575/CrossQ/train_logs/2024-08-21-104329_crossq_envr=both_arms_out_seq_euclidean_rm=hand_engineered_s=9_nt=collect-rollouts/eval

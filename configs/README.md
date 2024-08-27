@@ -15,3 +15,4 @@ When you define a new config for a new reward model, you must have
 ## rl_algo
 When you define a new config for a new RL algorithm, you must have
 - name: str. The name of the RL algorithm.
+

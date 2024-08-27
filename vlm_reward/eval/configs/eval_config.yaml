@@ -1,0 +1,18 @@
+# When you define a new config for a eval_data, you must have
+# - source_sequence_dir: the directory containing the source data
+# - reward_dir: the directory containing the rewards (with the same filenames as the source data, except .npy or .pt)
+# - target_image_path: a path to the target image to use
+
+run_notes: null
+
+defaults:
+  - reward_model: dino_patch_wasserstein 
+  - eval_data: crossq_kneeling 
+  - _self_
+
+hydra:
+  searchpath:
+    - file://../../configs
+  run:
+    dir: ./eval_logs/${now:%Y-%m-%d-%H%M%S}_rm=${reward_model.name}_src=${eval_data.name}_nt=${run_notes}
+
