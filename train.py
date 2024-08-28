@@ -184,7 +184,15 @@ def vlm_inference_worker(rank: int, cfg: DictConfig, stop_event: multiprocessing
     reward_model = load_reward_model(rank, 
                                         worker_actual_batch_size=worker_batch_size,  # Note that this is different size compared to rank 0's reward model when rank0_batch_size_pct < 1.0
                                         model_name=cfg.reward_model.vlm_model, 
-                                        model_config_dict=OmegaConf.to_container(cfg.reward_model, resolve=True, throw_on_missing=True)).eval().cuda(rank)
+                                        model_config_dict=OmegaConf.to_container(cfg.reward_model, resolve=True, throw_on_missing=True))
+    
+    # TODO: A temporary hack, because DreamSimRewardModel inherited from RewardModel
+    if "dreamsim" in cfg.reward_model.vlm_model.lower():
+        reward_model.embed_module.eval()
+    else:
+        reward_model.eval()
+    reward_model.cuda(rank)
+    
     logger.debug(f"Loaded the reward model at rank={rank}: allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
 
     worker_frames_tensor = torch.zeros(

@@ -194,7 +194,13 @@ class VLM_SAC(OffPolicyAlgorithmJax):
         reward_model = load_reward_model(rank=0,            
                                         worker_actual_batch_size=rank0_worker_batch,
                                          model_name=self.reward_model_config["vlm_model"],
-                                         model_config_dict=self.reward_model_config).eval().cuda(0)
+                                         model_config_dict=self.reward_model_config)
+        # TODO: A temporary hack, because DreamSimRewardModel inherited from RewardModel
+        if "dreamsim" in self.reward_model_config["vlm_model"].lower():
+            reward_model.embed_module.eval()
+            reward_model.cuda(0)
+        else:
+            reward_model.eval().cuda(0)
         self.reward_model = reward_model
 
         logger.debug(f"Finished loading up VLM reward model: {self.reward_model_config['vlm_model']}")
