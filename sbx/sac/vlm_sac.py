@@ -178,6 +178,8 @@ class VLM_SAC(OffPolicyAlgorithmJax):
                     dtype=torch.uint8,
                 ).cuda(0)  # (Batch size per worker, w, h, 3)
 
+        self.filter_rewards = False # whether or not to gaussian filter the rewards after computing
+
     """
     Added for VLM reward
     """
@@ -280,11 +282,8 @@ class VLM_SAC(OffPolicyAlgorithmJax):
         )
 
         # Filter the rewards
-        rewards = half_gaussian_filter_1d(rewards, sigma=4, smooth_last_N=True) 
-
-        # scale and bias the rewards to around [0, 500] (GT reward range)
-        # TODO: magic numbers
-        # rewards = 50*(rewards)
+        if self.filter_rewards:
+            rewards = half_gaussian_filter_1d(rewards, sigma=4, smooth_last_N=True) 
 
         rewards = rearrange(
             rewards,
@@ -303,18 +302,36 @@ class VLM_SAC(OffPolicyAlgorithmJax):
 
         self.replay_buffer.clear_render_arrays()
 
-        if replay_buffer_pos - env_episode_timesteps >= 0:
-            self.replay_buffer.rewards[
-                replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
-            ] = rewards[:, :]
+        # TODO: very hacky way of adding to the ground truth rewards
+        if self.add_to_gt_rewards is not None and self.add_to_gt_rewards:
+            logger.info(f"Ground truth rewards: { self.replay_buffer.rewards[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :]}, " +
+                        f"VLM computed rewards: {rewards[:, :]}")
+            if replay_buffer_pos - env_episode_timesteps >= 0:
+                self.replay_buffer.rewards[
+                    replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
+                ] += rewards[:, :]
+            else:
+                # Split reward assignment (circular buffer)
+                self.replay_buffer.rewards[
+                    -(env_episode_timesteps - replay_buffer_pos) :, :
+                ] += rewards[: env_episode_timesteps - replay_buffer_pos, :]
+                self.replay_buffer.rewards[:replay_buffer_pos, :] = rewards[
+                    env_episode_timesteps - replay_buffer_pos :, :
+                ]
         else:
-            # Split reward assignment (circular buffer)
-            self.replay_buffer.rewards[
-                -(env_episode_timesteps - replay_buffer_pos) :, :
-            ] = rewards[: env_episode_timesteps - replay_buffer_pos, :]
-            self.replay_buffer.rewards[:replay_buffer_pos, :] = rewards[
-                env_episode_timesteps - replay_buffer_pos :, :
-            ]
+            if replay_buffer_pos - env_episode_timesteps >= 0:
+                self.replay_buffer.rewards[
+                    replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
+                ] = rewards[:, :]
+            else:
+                # Split reward assignment (circular buffer)
+                self.replay_buffer.rewards[
+                    -(env_episode_timesteps - replay_buffer_pos) :, :
+                ] = rewards[: env_episode_timesteps - replay_buffer_pos, :]
+                self.replay_buffer.rewards[:replay_buffer_pos, :] = rewards[
+                    env_episode_timesteps - replay_buffer_pos :, :
+                ]
+
 
         # The total rewards are indexed by environment
         rewards = rearrange(rewards, "n_steps n_envs -> n_envs n_steps")
@@ -327,6 +344,12 @@ class VLM_SAC(OffPolicyAlgorithmJax):
                 axis=1,
             )
             self.ep_clip_info_buffer.extend([rewards_per_episode.tolist()])     
+
+    def set_filter_rewards(self, filter_rewards: bool):
+        self.filter_rewards = filter_rewards
+
+    def set_add_to_gt_rewards(self, add_to_gt_rewards: bool):
+        self.add_to_gt_rewards = add_to_gt_rewards
 
     def save(self, *args, **kwargs) -> None:  # type: ignore
         super().save(*args, exclude=["reward_model", "worker_frames_tensor"], **kwargs)

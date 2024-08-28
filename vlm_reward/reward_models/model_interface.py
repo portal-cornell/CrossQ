@@ -61,4 +61,3 @@ class RewardModel(ABC):
         Send the model to cuda
         """
         pass
-

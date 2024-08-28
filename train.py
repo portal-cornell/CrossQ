@@ -107,6 +107,11 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         render_dim = cfg.env.render_dim,
     )
 
+    ### TODO: a little hacky here
+    if use_vlm_for_reward:
+        model.set_filter_rewards(cfg.reward_model.filter_rewards)
+        model.set_add_to_gt_rewards(cfg.reward_model.add_to_gt_rewards)
+
     model.use_distributed = cfg.compute.distributed
 
     # TODO: Not sure if .load() is better than .set_parameters()

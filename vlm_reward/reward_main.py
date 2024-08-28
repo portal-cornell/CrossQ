@@ -221,7 +221,7 @@ def dist_worker_compute_reward(
             # logger.debug(f"[Worker {rank}] {worker_frames_to_compute.size()=} allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
             # TODO: ugly hack to be fixed once we refactor the code to inherit from RewardModel
             if isinstance(reward_model, DreamSimRewardModel):
-                embeddings = reward_model.set_source_embeddings(worker_frames_to_compute)
+                embeddings = reward_model.set_source_embeddings(worker_frames_to_compute.permute(0, 3, 1, 2))
             else:
                 embeddings = reward_model.embed_module(worker_frames_to_compute, reward_model.source_mask_thresh)
             end_event.record()
