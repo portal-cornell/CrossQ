@@ -19,6 +19,223 @@ from numbers import Number
 
 from loguru import logger
 
+import vlm_reward.utils.optimal_transport as custom_ot
+import time
+
+import torch
+from einops import rearrange
+
+from vlm_reward.reward_main import compute_rewards
+from vlm_reward.reward_transforms import half_gaussian_filter_1d
+
+class VLMRewardCallback(BaseCallback):
+    """
+    Custom callback for calculating Optimal Transport (OT) rewards after rollouts are collected.
+    """
+    def __init__(self, scale=1, filter_rewards=False, add_to_gt_rewards=True, verbose=0):
+        super(VLMRewardCallback, self).__init__(verbose)
+
+        self._scale = scale
+        self._filter_rewards = filter_rewards
+        self._add_to_gt_rewards = add_to_gt_rewards
+
+    def on_rollout_end(self) -> None:
+        """
+        This method is called after the rollout ends.
+        You can access and modify the rewards in the ReplayBuffer here.
+        """
+        # Time this function
+        start_time = time.time()
+
+        replay_buffer_pos = self.model.replay_buffer.pos
+        total_timesteps = self.model.num_timesteps - self.model.previous_num_timesteps  # Total number of timesteps that we have collected
+        env_episode_timesteps = total_timesteps // self.model.env.num_envs  # Number of timesteps that we have collected per environment
+        total_episodes = self.model.get_episode_num() - self.model.previous_num_episodes
+        env_episodes = total_episodes // self.model.env.num_envs
+
+        ### Prepare the frame to be processed
+        frames = torch.from_numpy(np.array(self.model.replay_buffer.render_arrays))
+
+        print(f"Start calculating rewards: frames.shape={frames.shape}")
+
+        frames = rearrange(frames, "n_steps n_envs ... -> (n_steps n_envs) ...")
+        
+        ### Compute rewards
+        # NOTE: distributed will be off if dist is False
+        rewards = compute_rewards(
+            model=self.model.reward_model,
+            frames=frames,
+            rank0_batch_size_pct=self.model.reward_model_config["rank0_batch_size_pct"],
+            batch_size=self.model.reward_model_config["reward_batch_size"],  # This is the total batch size
+            num_workers=self.model.n_gpu_workers,
+            worker_frames_tensor=self.model.worker_frames_tensor,
+            dist=self.model.use_distributed
+        )
+        
+        rewards = rearrange(
+            rewards,
+            "(n_steps n_envs) ... -> (n_envs n_steps) ...",
+            n_envs=self.model.env.num_envs,
+        )
+
+        # Scale the rewards
+        rewards = rewards * self._scale
+
+        # Filter the rewards
+        if self._filter_rewards:
+            print("Filtering rewards")
+            rewards = half_gaussian_filter_1d(rewards, sigma=4, smooth_last_N=True) 
+            
+        # Clear the rendered images in the ReplayBuffer
+        self.model.replay_buffer.clear_render_arrays()
+
+        ### Update the rewards
+        if self._add_to_gt_rewards:
+            print("Adding VLM rewards to GT rewards")
+            # Add the VLM reward to exisiting rewards
+            if replay_buffer_pos - env_episode_timesteps >= 0:
+                self.model.replay_buffer.rewards[
+                    replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
+                ] += rewards[:, :]
+            else:
+                # Split reward assignment (circular buffer)
+                self.model.replay_buffer.rewards[
+                    -(env_episode_timesteps - replay_buffer_pos) :, :
+                ] += rewards[: env_episode_timesteps - replay_buffer_pos, :]
+
+                self.model.replay_buffer.rewards[:replay_buffer_pos, :] += rewards[
+                    env_episode_timesteps - replay_buffer_pos :, :
+                ]
+        else:
+            print("Overwriting GT rewards with VLM rewards")
+            # Overwrite the rewards with VLM rewards
+            if replay_buffer_pos - env_episode_timesteps >= 0:
+                self.model.replay_buffer.rewards[
+                    replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
+                ] = rewards[:, :]
+            else:
+                # Split reward assignment (circular buffer)
+                self.model.replay_buffer.rewards[
+                    -(env_episode_timesteps - replay_buffer_pos) :, :
+                ] = rewards[: env_episode_timesteps - replay_buffer_pos, :]
+
+                self.model.replay_buffer.rewards[:replay_buffer_pos, :] = rewards[
+                    env_episode_timesteps - replay_buffer_pos :, :
+                ]
+
+        ### Logging the rewards 
+        rewards = rearrange(rewards, "n_steps n_envs -> n_envs n_steps")
+        for env_idx in range(self.model.env.num_envs):
+            # Compute sum of rewards per episode
+            rewards_per_episode = np.sum(
+                np.reshape(
+                    rewards[env_idx], (env_episodes, self.model.episode_length)
+                ),
+                axis=1,
+            )
+            self.model.ep_vlm_info_buffer.extend([rewards_per_episode.tolist()])
+
+        print(f"VLMRewardCallback took {time.time() - start_time} seconds")
+
+
+    def _on_step(self) -> bool:
+        """
+        Just need to define this method to avoid NotImplementedError
+
+        Return: 
+            If the callback returns False, training is aborted early.
+        """
+        return True
+
+class OTRewardCallback(BaseCallback):
+    """
+    Custom callback for calculating Optimal Transport (OT) rewards after rollouts are collected.
+    """
+    def __init__(self, seq_name, cost_fn_type="cosine", scale=1, verbose=0):
+        super(OTRewardCallback, self).__init__(verbose)
+
+        self._ref_seq = custom_ot.load_reference_seq(seq_name)
+        self._cost_fn = custom_ot.COST_FN_DICT[cost_fn_type]
+        self._scale = scale
+
+    def on_rollout_end(self) -> None:
+        """
+        This method is called after the rollout ends.
+        You can access and modify the rewards in the ReplayBuffer here.
+        """
+        # Time this function
+        start_time = time.time()
+
+        replay_buffer_pos = self.model.replay_buffer.pos
+        total_timesteps = self.model.num_timesteps - self.model.previous_num_timesteps  # Total number of timesteps that we have collected
+        env_episode_timesteps = total_timesteps // self.model.env.num_envs  # Number of timesteps that we have collected per environment
+
+        # logger.debug(f"\nreplay_buffer_pos={replay_buffer_pos}, total_timesteps={total_timesteps}, \nenv_episode_timesteps={env_episode_timesteps}, self.model.num_timesteps={self.model.num_timesteps}")
+
+        # Get the observation from the replay buffer
+        #   size: (train_freq, n_envs, obs_size)
+        #   For OT-based reward, train_freq = episode_length
+        if replay_buffer_pos - env_episode_timesteps >= 0:
+            # logger.debug(f"not circular, check replay buffer: {self.model.replay_buffer.observations[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :].shape}")
+
+            obs_to_process = np.array(self.model.replay_buffer.observations[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :])
+        else:
+            # Split reward assignment (circular buffer)
+            logger.debug(f"\ncircular, part 1={self.model.replay_buffer.observations[-(env_episode_timesteps - replay_buffer_pos) :, :].shape} \n part 2={self.model.replay_buffer.observations[:replay_buffer_pos, :].shape}")
+
+            obs_to_process = np.concatenate((self.model.replay_buffer.observations[-(env_episode_timesteps - replay_buffer_pos) :, :], self.model.replay_buffer.observations[:replay_buffer_pos, :]), axis=0)
+
+        ot_reward_list = []
+        for env_i in range(self.model.env.num_envs):
+            # TODO: A hard-coded value (22 is matching qpos of the environment)
+            obs = obs_to_process[:, env_i, :22]  # size: (train_freq, 22)
+            ot_reward, _ = custom_ot.compute_ot_reward(obs, self._ref_seq, self._cost_fn, self._scale)  # size: (train_freq,)
+            # logger.debug(f"ot_reward={ot_reward.shape}")
+            ot_reward_list.append(ot_reward)
+
+        rewards = np.stack(ot_reward_list, axis=1)  # size: (train_freq, n_envs)
+
+        # Add the optimal transport reward to exisiting rewards
+        if replay_buffer_pos - env_episode_timesteps >= 0:
+            self.model.replay_buffer.rewards[
+                replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
+            ] += rewards[:, :]
+        else:
+            # Split reward assignment (circular buffer)
+            self.model.replay_buffer.rewards[
+                -(env_episode_timesteps - replay_buffer_pos) :, :
+            ] += rewards[: env_episode_timesteps - replay_buffer_pos, :]
+
+            self.model.replay_buffer.rewards[:replay_buffer_pos, :] += rewards[
+                env_episode_timesteps - replay_buffer_pos :, :
+            ]
+
+        ### Logging the rewards
+        # The total rewards are indexed by environment
+        rewards = rearrange(rewards, "n_steps n_envs -> n_envs n_steps")
+        for env_idx in range(self.model.env.num_envs):
+            # Compute sum of rewards per episode
+            rewards_per_episode = np.sum(
+                np.reshape(
+                    rewards[env_idx], (env_episodes, self.episode_length)
+                ),
+                axis=1,
+            )
+            self.ep_clip_info_buffer.extend([rewards_per_episode.tolist()])     
+
+        print(f"OTRewardCallback took {time.time() - start_time} seconds")
+
+
+    def _on_step(self) -> bool:
+        """
+        Just need to define this method to avoid NotImplementedError
+
+        Return: 
+            If the callback returns False, training is aborted early.
+        """
+        return True
+
+
 def plot_info_on_frame(pil_image, info, font_size=20):
     """
     Parameters:
@@ -58,6 +275,8 @@ class VideoRecorderCallback(BaseCallback):
         render_freq: int,
         n_eval_episodes: int = 1,
         deterministic: bool = True,
+        seq_name: str = "",
+        cost_fn_type="cosine"
     ):
         """
         Records a video of an agent's trajectory traversing ``eval_env`` and logs it to
@@ -70,6 +289,9 @@ class VideoRecorderCallback(BaseCallback):
             render_freq: Render the agent's trajectory every eval_freq call of the callback.
             n_eval_episodes: Number of episodes to render
             deterministic: Whether to use deterministic or stochastic policy
+            seq_name: The name of the reference sequence to compare with
+                You only need to set this if you want to calculate the OT reward
+            cost_fn_type: The type of cost function to use for the OT reward calculation
         """
         super().__init__()
         self._eval_env = eval_env
@@ -77,6 +299,13 @@ class VideoRecorderCallback(BaseCallback):
         self._n_eval_episodes = n_eval_episodes
         self._deterministic = deterministic
         self._rollout_save_path = rollout_save_path  # Save the state of the environment
+
+        if seq_name:
+            self._calc_ot_reward = True
+            self._ref_seq = custom_ot.load_reference_seq(seq_name)
+            self._cost_fn = custom_ot.COST_FN_DICT[cost_fn_type]
+        else:
+            self._calc_ot_reward = False
 
     def _on_step(self) -> bool:
         if self.n_calls % self._render_freq == 0:
@@ -122,6 +351,25 @@ class VideoRecorderCallback(BaseCallback):
             states = np.concatenate(states)
             rewards = np.concatenate(rewards)
 
+            if self._calc_ot_reward:
+                ot_reward, _ = custom_ot.compute_ot_reward(np.array(states)[:, :22], self._ref_seq, self._cost_fn)
+
+                self.logger.record("rollout/avg_ot_reward", 
+                                np.mean(ot_reward), 
+                                exclude=("stdout", "log", "json", "csv"))
+                
+                self.logger.record("rollout/avg_total_reward", 
+                                np.mean(ot_reward + rewards), 
+                                exclude=("stdout", "log", "json", "csv"))
+
+                # Add the ot_reward to the infos so that we can plot it
+                for i in range(len(infos)):
+                    infos[i]["ot_reward"] = f"{ot_reward[i]:.2f}"
+
+                # Save the ot_rewards locally    
+                with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_ot_rewards.npy"), "wb") as f:
+                    np.save(f, np.array(states))
+
             # Plot info on the frames  
             for i in range(len(screens)):
                 plot_info_on_frame(screens[i], infos[i])
@@ -163,4 +411,3 @@ class WandbCallback(SB3WandbCallback):
         self.model_save_path, f"model_{self.model.num_timesteps}_steps.zip"
         )
         self.model.save(model_path)
-

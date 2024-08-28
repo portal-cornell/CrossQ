@@ -59,4 +59,4 @@ wandb/
 /checkpoints
 /train_logs
 /inference_logs
-
+/vlm_reward/eval/joint_eval_logs

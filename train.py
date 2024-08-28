@@ -1,3 +1,7 @@
+import utils
+
+utils.set_os_vars()
+
 import os
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import wandb
@@ -9,16 +13,13 @@ import torch
 from torch import multiprocessing
 import torch.distributed as dist
 
-import jax
-
 from stable_baselines3.common.callbacks import CallbackList
 
-from sbx import SAC, VLM_SAC
+from sb3_sac import SAC, VLM_SAC
+from stable_baselines3.sac.policies import MultiInputPolicy
 
 from sbx.common.make_vec_env import make_vec_env
 from sbx.common.subproc_vec_env import SubprocVecEnv
-
-from sbx.sac.utils import *
 
 import gymnasium as gym
 
@@ -28,7 +29,7 @@ import utils
 import multiprocess
 from envs.base import get_make_env
 from vlm_reward.reward_main import load_reward_model, dist_worker_compute_reward
-from sbx.common.callbacks import VideoRecorderCallback, WandbCallback
+from sbx.common.callbacks import VideoRecorderCallback, WandbCallback, OTRewardCallback, VLMRewardCallback
     
 
 def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] = None):
@@ -47,6 +48,8 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
     # Initialize the environment
     use_vlm_for_reward = utils.use_vlm_for_reward(cfg)
 
+    logger.info(f"using_vlm_for_reward={use_vlm_for_reward}")
+
     make_env_kwargs = utils.get_make_env_kwargs(cfg)
 
     logger.info(f"Creating environment={cfg.env.name} instances with {make_env_kwargs=}")
@@ -61,56 +64,39 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         vec_env_kwargs=dict(render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3)),
     )
 
-    import optax
-
     logger.info("Creating the learner...")
+
+    assert cfg.rl_algo.name == "sb3_sac", "Only StableBaseline3 SAC is supported for now"
     # Train a model from scatch
     sac_class = VLM_SAC if use_vlm_for_reward else SAC
     model = sac_class(
-        "MultiInputPolicy" if isinstance(training_env.observation_space, gym.spaces.Dict) else "MlpPolicy",
+        MultiInputPolicy if isinstance(training_env.observation_space, gym.spaces.Dict) else "MlpPolicy",
         training_env,
-        policy_kwargs=dict({
-            'activation_fn': activation_fn[cfg.rl_algo.critic_activation],  # From sbx.sac.utils import *
-            'layer_norm': cfg.rl_algo.ln,
-            'batch_norm': bool(cfg.rl_algo.bn),
-            'batch_norm_momentum': float(cfg.rl_algo.bn_momentum),
-            'batch_norm_mode': cfg.rl_algo.bn_mode,
-            'dropout_rate': cfg.rl_algo.dropout_rate,
-            'n_critics': cfg.rl_algo.n_critics,
-            'net_arch': cfg.rl_algo.net_arch,
-            'optimizer_class': optax.adam,
-            'optimizer_kwargs': dict({
-                'b1': cfg.rl_algo.adam_b1,
-                'b2': 0.999 # default
-            })
-        }),
-        gradient_steps=cfg.rl_algo.utd,
-        policy_delay=cfg.rl_algo.policy_delay,
-        crossq_style=bool(cfg.rl_algo.crossq_style),
-        td3_mode=cfg.rl_algo.td3_mode if "td3_mode" in cfg.rl_algo else False,
-        use_bnstats_from_live_net=bool(cfg.rl_algo.bnstats_live_net),
-        policy_q_reduce_fn=jax.numpy.min,  # Both CrossQ and SAC use min
-        learning_starts=5000,
         learning_rate=cfg.rl_algo.lr,
-        qf_learning_rate=cfg.rl_algo.lr,
+        buffer_size=1_000_000,
+        learning_starts=5000,
+        batch_size=256,
         tau=cfg.rl_algo.tau,
         gamma=0.99,
-        verbose=0,
-        buffer_size=1_000_000,
-        seed=cfg.seed,
+        train_freq=(cfg.env.episode_length, "step"),
+        gradient_steps=cfg.env.episode_length,
         stats_window_size=1,  # don't smooth the episode return stats over time
         tensorboard_log=os.path.join(cfg.logging.run_path, "tensorboard"),
+        policy_kwargs=dict({
+            'activation_fn': torch.nn.ReLU,
+            'net_arch': dict(cfg.rl_algo.net_arch),
+            'n_critics': cfg.rl_algo.n_critics,
+        }),
+        verbose=0,
+        seed=cfg.seed,
+        ### VLM_SAC specific reward (SAC will ignore this)
+        inference_only=False,
         reward_model_config = OmegaConf.to_container(cfg.reward_model, resolve=True, throw_on_missing=True) if use_vlm_for_reward else None,
         n_cpu_workers = cfg.compute.n_cpu_workers,
         n_gpu_workers = cfg.compute.n_gpu_workers,
         episode_length = cfg.env.episode_length,
         render_dim = cfg.env.render_dim,
     )
-
-    ### TODO: a little hacky here
-    if use_vlm_for_reward:
-        model.set_filter_rewards(cfg.reward_model.filter_rewards)
-        model.set_add_to_gt_rewards(cfg.reward_model.add_to_gt_rewards)
 
     model.use_distributed = cfg.compute.distributed
 
@@ -124,7 +110,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
     with wandb.init(
         project=cfg.logging.wandb_project,
         name=cfg.logging.run_name,
-        tags=[],
+        tags=cfg.logging.wandb_tags,
         sync_tensorboard=True,
         config=OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True),
         mode=cfg.logging.wandb_mode,
@@ -146,12 +132,32 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             SubprocVecEnv([make_env_fn], render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3)),
             rollout_save_path=os.path.join(cfg.logging.run_path, "eval"),
             render_freq=cfg.logging.video_save_freq // cfg.compute.n_cpu_workers,
+            seq_name = cfg.reward_model.seq_name if cfg.reward_model.name == "joint_wasserstein" else "",
+            cost_fn_type = cfg.reward_model.cost_fn if cfg.reward_model.name == "joint_wasserstein" else "",
         )
+
+        callback_list = [wandb_callback, video_callback]
+
+        if cfg.reward_model.name == "joint_wasserstein":
+            # Add the OT reward callback if we are using joint_wasserstein as the reward model
+            callback_list.append(OTRewardCallback(
+                                    seq_name = cfg.reward_model.seq_name,
+                                    cost_fn_type = cfg.reward_model.cost_fn,
+                                    scale = cfg.reward_model.scale,
+            ))
+        elif use_vlm_for_reward:
+            # Add the VLM reward callback if we are using VLM as the reward model
+            callback_list.append(VLMRewardCallback(
+                                    scale = cfg.reward_model.scale,
+                                    filter_rewards = cfg.reward_model.filter_rewards,
+                                    add_to_gt_rewards = cfg.reward_model.add_to_gt_rewards,
+            ))
+
 
         model.learn(
             total_timesteps=cfg.total_timesteps, 
             progress_bar=True, 
-            callback=CallbackList([wandb_callback, video_callback])
+            callback=CallbackList(callback_list),
         )
 
         if stop_event is not None:

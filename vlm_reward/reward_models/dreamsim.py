@@ -22,7 +22,7 @@ class DreamSimRewardModel(RewardModel):
         # preprocess is used if we give image paths to RGB images as input
         # TODO: self.model instead of self.embed_module is better. But changed for now to
         # use the same name as in reward_main.dist_worker_compute_reward
-        self.embed_module, self.preprocess = dreamsim(pretrained=True)
+        self.embed_module, self.preprocess = dreamsim(pretrained=True, cache_dir="/share/portal/wph52/CrossQ/models")
         self.source_embedding = None
         self.target_embedding = None
         self.device = 'cpu'

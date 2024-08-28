@@ -21,6 +21,7 @@ logging:
 
   wandb_project: crossQ
   wandb_mode: online
+  wandb_tags: []
 
   run_name: null
   run_path: null
@@ -28,7 +29,7 @@ logging:
 defaults:
   - env: HumanoidSpawnedUpCustom
   - reward_model: hand_engineered
-  - rl_algo: crossq
+  - rl_algo: sb3_sac
   - _self_
 
 hydra:

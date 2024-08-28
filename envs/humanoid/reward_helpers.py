@@ -18,6 +18,38 @@ GEOM_XPOS_NAMING = {0: "floor", 1:"torso", 2:"head", 3:"uwaist", 4:"lwaist", 5:"
                 12:"R_uarm", 13:"R_larm", 14:"R_hand",
                 15:"left_uarm", 16:"L_arm", 17:"L_hand"}
 
+
+def basic_remain_standing_rewards(data, 
+                                    upward_reward_w=1, 
+                                    ctrl_cost_w=1, 
+                                    **kwargs):
+    """Basic reward function for the humanoid to remain standing
+
+    Parameters:
+        data (mujoco data): the data from the mujoco environment
+        upward_reward_w (float): the weight for the upward reward
+        ctrl_cost_w (float): the weight for the control cost
+        **kwargs: additional arguments
+
+    Returns:
+        float: the reward for the humanoid to remain standing (upward reward - control cost)
+    """
+    ctrl_cost = kwargs.get("ctrl_cost", None)
+    ctrl_cost_w = 1
+
+    upward_reward = np.exp(-(data.qpos.flat[2] - 1.3)**2)
+    upward_reward_w = 1
+
+    terms_to_plot = dict(
+        tor=str([f"{data.qpos.flat[:3][i]:.2f}" for i in range(3)]),
+        com=str([f"{data.xipos[1][i]:.2f}" for i in range(3)]),
+        uph_r= f"{upward_reward:.2f}",
+        ctrl_c= f"{ctrl_cost:.2f}",
+    )
+
+    return upward_reward_w * upward_reward - ctrl_cost_w * ctrl_cost, terms_to_plot
+
+
 def smooth_abs_norm(x, alpha=1.0):
     # on page 3 of the paper (https://ieeexplore-ieee-org.proxy.library.cornell.edu/stamp/stamp.jsp?tp=&arnumber=6386025), mentioned starting alpha=1 then slowly decreasing
     return np.sqrt(x**2 + alpha**2) - alpha
