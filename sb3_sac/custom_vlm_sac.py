@@ -140,7 +140,7 @@ class CustomVLMSAC(SAC):
 
         self.filter_rewards = False # whether or not to gaussian filter the rewards after computing
 
-        self.add_to_gt_rewards = add_to_gt_rewards
+        self._add_to_gt_rewards = add_to_gt_rewards
 
         if _init_setup_model:
             self._setup_model()
@@ -218,9 +218,7 @@ class CustomVLMSAC(SAC):
         print(f"Start calculating rewards: frames.shape={frames.shape}")
 
         frames = rearrange(frames, "n_steps n_envs ... -> (n_steps n_envs) ...")
-
-        print(f"self.distributed: {self.use_distributed}")
-        
+ 
         ### Compute rewards
         # NOTE: distributed will be off if dist is False
         rewards = compute_rewards(
@@ -233,9 +231,16 @@ class CustomVLMSAC(SAC):
             dist=self.use_distributed
         )
 
+        # rewards = rearrange(
+        #     rewards,
+        #     "(n_steps n_envs) ... -> (n_envs n_steps) ...",
+        #     n_envs=self.env.num_envs,
+        # )
+
+        # TODO: this assumes 1D (DreamSim). Potentially to adapt for other reward models (using above)
         rewards = rearrange(
             rewards,
-            "(n_steps n_envs) ... -> (n_envs n_steps) ...",
+            "(n_steps n_envs) -> n_steps n_envs",
             n_envs=self.env.num_envs,
         )
 
@@ -249,20 +254,24 @@ class CustomVLMSAC(SAC):
         self.replay_buffer.clear_render_arrays()
 
         ### Update the rewards
+        # import pdb; pdb.set_trace()
         if self._add_to_gt_rewards:
             print("Adding VLM rewards to GT rewards")
+            # Convert rewards tensor to np array for compatibility with self.replay_buffer.rewards
+            rewards_np = rewards.cpu().numpy()
+
             # Add the VLM reward to existing rewards
             if replay_buffer_pos - env_episode_timesteps >= 0:
                 self.replay_buffer.rewards[
                     replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
-                ] += rewards[:, :]
+                ] += rewards_np[:, :]
             else:
                 # Split reward assignment (circular buffer)
                 self.replay_buffer.rewards[
                     -(env_episode_timesteps - replay_buffer_pos) :, :
-                ] += rewards[: env_episode_timesteps - replay_buffer_pos, :]
+                ] += rewards_np[: env_episode_timesteps - replay_buffer_pos, :]
 
-                self.replay_buffer.rewards[:replay_buffer_pos, :] += rewards[
+                self.replay_buffer.rewards[:replay_buffer_pos, :] += rewards_np[
                     env_episode_timesteps - replay_buffer_pos :, :
                 ]
         else:
@@ -271,24 +280,27 @@ class CustomVLMSAC(SAC):
             if replay_buffer_pos - env_episode_timesteps >= 0:
                 self.replay_buffer.rewards[
                     replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
-                ] = rewards[:, :]
+                ] = rewards_np[:, :]
             else:
                 # Split reward assignment (circular buffer)
                 self.replay_buffer.rewards[
                     -(env_episode_timesteps - replay_buffer_pos) :, :
-                ] = rewards[: env_episode_timesteps - replay_buffer_pos, :]
+                ] = rewards_np[: env_episode_timesteps - replay_buffer_pos, :]
 
-                self.replay_buffer.rewards[:replay_buffer_pos, :] = rewards[
+                self.replay_buffer.rewards[:replay_buffer_pos, :] = rewards_np[
                     env_episode_timesteps - replay_buffer_pos :, :
                 ]
 
         ### Logging the rewards 
+        # TODO: compatibility with torch vs numpy, for now it assumes rewards is a Tensor
         rewards = rearrange(rewards, "n_steps n_envs -> n_envs n_steps")
+        if isinstance(rewards, torch.Tensor):
+            rewards_np = rewards.cpu().numpy()
         for env_idx in range(self.env.num_envs):
             # Compute sum of rewards per episode
             rewards_per_episode = np.sum(
                 np.reshape(
-                    rewards[env_idx], (env_episodes, self.episode_length)
+                    rewards_np[env_idx], (env_episodes, self.episode_length)
                 ),
                 axis=1,
             )
