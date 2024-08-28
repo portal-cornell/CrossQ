@@ -138,7 +138,8 @@ class VideoRecorderCallback(BaseCallback):
         n_eval_episodes: int = 1,
         deterministic: bool = True,
         seq_name: str = "",
-        cost_fn_type="cosine"
+        cost_fn_type="cosine",
+        scale=1,
     ):
         """
         Records a video of an agent's trajectory traversing ``eval_env`` and logs it to
@@ -166,6 +167,7 @@ class VideoRecorderCallback(BaseCallback):
             self._calc_ot_reward = True
             self._ref_seq = custom_ot.load_reference_seq(seq_name)
             self._cost_fn = custom_ot.COST_FN_DICT[cost_fn_type]
+            self._scale = scale
         else:
             self._calc_ot_reward = False
 
@@ -214,10 +216,14 @@ class VideoRecorderCallback(BaseCallback):
             rewards = np.concatenate(rewards)
 
             if self._calc_ot_reward:
-                ot_reward, _ = custom_ot.compute_ot_reward(np.array(states)[:, :22], self._ref_seq, self._cost_fn)
+                ot_reward, _ = custom_ot.compute_ot_reward(np.array(states)[:, :22], self._ref_seq, self._cost_fn, self._scale)
 
-                self.logger.record("rollout/avg_ot_reward", 
-                                np.mean(ot_reward), 
+                self.logger.record("rollout/avg_ot_reward_unscaled", 
+                                np.mean(ot_reward)/self._scale, 
+                                exclude=("stdout", "log", "json", "csv"))
+                
+                self.logger.record("rollout/avg_total_reward_unscaled", 
+                                np.mean(ot_reward/self._scale + rewards), 
                                 exclude=("stdout", "log", "json", "csv"))
                 
                 self.logger.record("rollout/avg_total_reward", 

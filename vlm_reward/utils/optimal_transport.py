@@ -47,9 +47,9 @@ def compute_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1) -> np.
     ot_cost = np.sum(cost_matrix * T, axis=1)  # size: (train_freq,)
 
     info = dict(
-        T=T,
-        M=cost_matrix,
-        wasserstein=ot_cost,
+        assignment=T,
+        cost_matrix=cost_matrix,
+        transported_cost=ot_cost,
     )
 
     return - scale * ot_cost, info
@@ -68,6 +68,9 @@ def plot_ot_plan(T: np.ndarray, fp: str):
 
     plt.savefig(fp)
 
+    plt.clf()
+    plt.close()
+
 
 def cosine_distance(x, y):
     distance = np.dot(x, y.T) / np.linalg.norm(x, axis=1, keepdims=True) / np.linalg.norm(y.T, axis=0, keepdims=True) # Transpose B to match dimensions
@@ -79,7 +82,11 @@ def cosine_distance(x, y):
 def euclidean_distance(x, y):
     return cdist(x, y, metric="euclidean")
 
+def squared_euclidean_distance(x, y):
+    return cdist(x, y, metric="euclidean") ** 2
+
 COST_FN_DICT = {
     "cosine": cosine_distance,
     "euclidean": euclidean_distance,
+    "squared_euclidean": squared_euclidean_distance,
 }
