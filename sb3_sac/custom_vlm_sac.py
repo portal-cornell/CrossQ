@@ -321,10 +321,10 @@ class CustomVLMSAC(SAC):
         super().train(*args, **kwargs)
 
         # Log the VLM reward information
-        if len(self.ep_info_buffer) > 0 and len(self.ep_info_buffer[0]) > 0:
+        if len(self.ep_vlm_info_buffer) > 0 and len(self.ep_vlm_info_buffer[0]) > 0:
             self.logger.record(
                 "rollout/ep_vlm_rew_mean",
-                safe_mean([ep_reward for ep_reward in self.ep_clip_info_buffer]),
+                safe_mean([ep_reward for ep_reward in self.ep_vlm_info_buffer]),
             )
     
     def get_episode_num(self):
