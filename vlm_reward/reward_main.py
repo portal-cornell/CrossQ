@@ -82,7 +82,7 @@ def compute_rewards(
     # TODO: very ugly hack to prevent 'DreamSimRewardModel' object has no attribute 'eval'
     # To be fixed once we refactor the code to inherit from RewardModel
     if isinstance(model, DreamSimRewardModel):
-        model = model.embed_module.eval()
+        model.embed_module.eval()
     else:
         model = model.eval()
 
@@ -271,7 +271,10 @@ def compute_reward_nodist(frames, reward_model):
 
     with torch.no_grad():
         start_event.record()
-        embeddings = reward_model.embed_module(frames, reward_model.source_mask_thresh)
+        if isinstance(reward_model, DreamSimRewardModel):
+            embeddings = reward_model.set_source_embeddings(frames.permute(0, 3, 1, 2))
+        else:
+            embeddings = reward_model.embed_module(frames, reward_model.source_mask_thresh)
         end_event.record()
         
         ### timing
@@ -281,7 +284,10 @@ def compute_reward_nodist(frames, reward_model):
         ####
 
         start_event.record()
-        rewards = reward_model(embeddings)
+        if isinstance(reward_model, DreamSimRewardModel):
+            rewards = reward_model.predict()
+        else:
+            rewards = reward_model(embeddings)
         end_event.record()
         torch.cuda.synchronize()
         execution_time = start_event.elapsed_time(end_event)

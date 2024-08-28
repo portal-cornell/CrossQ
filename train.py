@@ -96,6 +96,8 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         n_gpu_workers = cfg.compute.n_gpu_workers,
         episode_length = cfg.env.episode_length,
         render_dim = cfg.env.render_dim,
+        add_to_gt_rewards = cfg.reward_model.add_to_gt_rewards,
+        
     )
 
     model.use_distributed = cfg.compute.distributed
@@ -145,13 +147,13 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
                                     cost_fn_type = cfg.reward_model.cost_fn,
                                     scale = cfg.reward_model.scale,
             ))
-        elif use_vlm_for_reward:
-            # Add the VLM reward callback if we are using VLM as the reward model
-            callback_list.append(VLMRewardCallback(
-                                    scale = cfg.reward_model.scale,
-                                    filter_rewards = cfg.reward_model.filter_rewards,
-                                    add_to_gt_rewards = cfg.reward_model.add_to_gt_rewards,
-            ))
+        # elif use_vlm_for_reward:
+        #     # Add the VLM reward callback if we are using VLM as the reward model
+        #     callback_list.append(VLMRewardCallback(
+        #                             scale = cfg.reward_model.scale,
+        #                             filter_rewards = cfg.reward_model.filter_rewards,
+        #                             add_to_gt_rewards = cfg.reward_model.add_to_gt_rewards,
+        #     ))
 
 
         model.learn(

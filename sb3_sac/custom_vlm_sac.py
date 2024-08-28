@@ -6,6 +6,9 @@ from loguru import logger
 
 #### From stable_baselines3/sac/sac.py ####
 from typing import Any, ClassVar, Dict, Optional, Tuple, Type, TypeVar, Union
+import time
+from einops import rearrange
+import numpy as np
 
 import warnings
 
@@ -22,7 +25,8 @@ from stable_baselines3.sac.policies import SACPolicy
 
 from vlm_reward.vlm_buffer import VLMReplayBuffer
 from vlm_reward.reward_main import load_reward_model
-
+from vlm_reward.reward_main import compute_rewards
+from vlm_reward.reward_transforms import half_gaussian_filter_1d
 
 class CustomVLMSAC(SAC):
     """
@@ -64,6 +68,7 @@ class CustomVLMSAC(SAC):
         n_gpu_workers: int = 1,
         episode_length: int = 120,
         render_dim: Tuple[int, int] = (480, 480),
+        add_to_gt_rewards: bool = True,
     ):
         # TODO: Add a parameter to point to the dataset relevant to the task
         # train_freq[0] because we are assuming that the train_freq is a tuple
@@ -135,6 +140,8 @@ class CustomVLMSAC(SAC):
 
         self.filter_rewards = False # whether or not to gaussian filter the rewards after computing
 
+        self.add_to_gt_rewards = add_to_gt_rewards
+
         if _init_setup_model:
             self._setup_model()
 
@@ -186,11 +193,109 @@ class CustomVLMSAC(SAC):
 
     def collect_rollouts(self, *args, **kwargs):
         rollout = super().collect_rollouts(*args, **kwargs)
-
-        self.previous_num_timesteps = self.num_timesteps
-        self.previous_num_episodes = self._episode_num
+        if not self.inference_only:
+            self._compute_vlm_rewards()
+            self.previous_num_timesteps = self.num_timesteps
+            self.previous_num_episodes = self._episode_num
 
         return rollout
+    
+    def _compute_vlm_rewards(self):
+        """from VLMRewardCallback.on_rollout_end
+        """
+        # Time this function
+        start_time = time.time()
+
+        replay_buffer_pos = self.replay_buffer.pos
+        total_timesteps = self.num_timesteps - self.previous_num_timesteps  # Total number of timesteps that we have collected
+        env_episode_timesteps = total_timesteps // self.env.num_envs  # Number of timesteps that we have collected per environment
+        total_episodes = self.get_episode_num() - self.previous_num_episodes
+        env_episodes = total_episodes // self.env.num_envs
+
+        ### Prepare the frame to be processed
+        frames = torch.from_numpy(np.array(self.replay_buffer.render_arrays))
+
+        print(f"Start calculating rewards: frames.shape={frames.shape}")
+
+        frames = rearrange(frames, "n_steps n_envs ... -> (n_steps n_envs) ...")
+
+        print(f"self.distributed: {self.use_distributed}")
+        
+        ### Compute rewards
+        # NOTE: distributed will be off if dist is False
+        rewards = compute_rewards(
+            model=self.reward_model,
+            frames=frames,
+            rank0_batch_size_pct=self.reward_model_config["rank0_batch_size_pct"],
+            batch_size=self.reward_model_config["reward_batch_size"],  # This is the total batch size
+            num_workers=self.n_gpu_workers,
+            worker_frames_tensor=self.worker_frames_tensor,
+            dist=self.use_distributed
+        )
+
+        rewards = rearrange(
+            rewards,
+            "(n_steps n_envs) ... -> (n_envs n_steps) ...",
+            n_envs=self.env.num_envs,
+        )
+
+        # TODO: Add _filter_rewards for models other than the perceptual ones
+        # # Filter the rewards
+        # if self._filter_rewards:
+        #     print("Filtering rewards")
+        #     rewards = half_gaussian_filter_1d(rewards, sigma=4, smooth_last_N=True) 
+            
+        # Clear the rendered images in the ReplayBuffer
+        self.replay_buffer.clear_render_arrays()
+
+        ### Update the rewards
+        if self._add_to_gt_rewards:
+            print("Adding VLM rewards to GT rewards")
+            # Add the VLM reward to existing rewards
+            if replay_buffer_pos - env_episode_timesteps >= 0:
+                self.replay_buffer.rewards[
+                    replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
+                ] += rewards[:, :]
+            else:
+                # Split reward assignment (circular buffer)
+                self.replay_buffer.rewards[
+                    -(env_episode_timesteps - replay_buffer_pos) :, :
+                ] += rewards[: env_episode_timesteps - replay_buffer_pos, :]
+
+                self.replay_buffer.rewards[:replay_buffer_pos, :] += rewards[
+                    env_episode_timesteps - replay_buffer_pos :, :
+                ]
+        else:
+            print("Overwriting GT rewards with VLM rewards")
+            # Overwrite the rewards with VLM rewards
+            if replay_buffer_pos - env_episode_timesteps >= 0:
+                self.replay_buffer.rewards[
+                    replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
+                ] = rewards[:, :]
+            else:
+                # Split reward assignment (circular buffer)
+                self.replay_buffer.rewards[
+                    -(env_episode_timesteps - replay_buffer_pos) :, :
+                ] = rewards[: env_episode_timesteps - replay_buffer_pos, :]
+
+                self.replay_buffer.rewards[:replay_buffer_pos, :] = rewards[
+                    env_episode_timesteps - replay_buffer_pos :, :
+                ]
+
+        ### Logging the rewards 
+        rewards = rearrange(rewards, "n_steps n_envs -> n_envs n_steps")
+        for env_idx in range(self.env.num_envs):
+            # Compute sum of rewards per episode
+            rewards_per_episode = np.sum(
+                np.reshape(
+                    rewards[env_idx], (env_episodes, self.episode_length)
+                ),
+                axis=1,
+            )
+            self.ep_vlm_info_buffer.extend([rewards_per_episode.tolist()])
+
+        print(f"VLMRewardCallback took {time.time() - start_time} seconds")
+
     
     def learn(self, *args, **kwargs):
         self.previous_num_timesteps = 0
