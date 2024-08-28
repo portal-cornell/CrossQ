@@ -20,22 +20,27 @@ from numbers import Number
 from loguru import logger
 
 import vlm_reward.utils.optimal_transport as custom_ot
+import time
 
 class OTRewardCallback(BaseCallback):
     """
     Custom callback for calculating Optimal Transport (OT) rewards after rollouts are collected.
     """
-    def __init__(self, seq_name, cost_fn_type="cosine", verbose=0):
+    def __init__(self, seq_name, cost_fn_type="cosine", scale=1, verbose=0):
         super(OTRewardCallback, self).__init__(verbose)
 
         self._ref_seq = custom_ot.load_reference_seq(seq_name)
         self._cost_fn = custom_ot.COST_FN_DICT[cost_fn_type]
+        self._scale = scale
 
     def on_rollout_end(self) -> None:
         """
         This method is called after the rollout ends.
         You can access and modify the rewards in the ReplayBuffer here.
         """
+        # Time this function
+        start_time = time.time()
+
         replay_buffer_pos = self.model.replay_buffer.pos
         total_timesteps = self.model.num_timesteps - self.model.previous_num_timesteps  # Total number of timesteps that we have collected
         env_episode_timesteps = total_timesteps // self.model.env.num_envs  # Number of timesteps that we have collected per environment
@@ -59,7 +64,7 @@ class OTRewardCallback(BaseCallback):
         for env_i in range(self.model.env.num_envs):
             # TODO: A hard-coded value (22 is matching qpos of the environment)
             obs = obs_to_process[:, env_i, :22]  # size: (train_freq, 22)
-            ot_reward = custom_ot.compute_ot_reward(obs, self._ref_seq, self._cost_fn)  # size: (train_freq,)
+            ot_reward, _ = custom_ot.compute_ot_reward(obs, self._ref_seq, self._cost_fn, self._scale)  # size: (train_freq,)
             # logger.debug(f"ot_reward={ot_reward.shape}")
             ot_reward_list.append(ot_reward)
 
@@ -79,6 +84,8 @@ class OTRewardCallback(BaseCallback):
             self.model.replay_buffer.rewards[:replay_buffer_pos, :] += rewards[
                 env_episode_timesteps - replay_buffer_pos :, :
             ]
+
+        print(f"OTRewardCallback took {time.time() - start_time} seconds")
 
 
     def _on_step(self) -> bool:
@@ -207,7 +214,7 @@ class VideoRecorderCallback(BaseCallback):
             rewards = np.concatenate(rewards)
 
             if self._calc_ot_reward:
-                ot_reward = custom_ot.compute_ot_reward(np.array(states)[:, :22], self._ref_seq, self._cost_fn)
+                ot_reward, _ = custom_ot.compute_ot_reward(np.array(states)[:, :22], self._ref_seq, self._cost_fn)
 
                 self.logger.record("rollout/avg_ot_reward", 
                                 np.mean(ot_reward), 

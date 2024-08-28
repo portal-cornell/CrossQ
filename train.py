@@ -18,7 +18,7 @@ import jax
 from stable_baselines3.common.callbacks import CallbackList
 
 # import regular stable_baseline3 sac
-from stable_baselines3 import SAC
+from sb3_sac.custom_sac import CustomSAC as SAC
 from stable_baselines3.sac.policies import MultiInputPolicy
 
 from sbx.common.make_vec_env import make_vec_env
@@ -70,6 +70,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
     # Train a model from scatch
 
     # TODO: Write the stablebaseline3 SAC model for VLM reward
+    assert cfg.rl_algo.name == "sb3_sac", "Only StableBaseline3 SAC is supported for now"
     model = SAC(
         MultiInputPolicy if isinstance(training_env.observation_space, gym.spaces.Dict) else "MlpPolicy",
         training_env,
@@ -80,7 +81,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         tau=cfg.rl_algo.tau,
         gamma=0.99,
         train_freq=(cfg.env.episode_length, "step"),
-        gradient_steps=cfg.rl_algo.utd,
+        gradient_steps=cfg.env.episode_length,
         stats_window_size=1,  # don't smooth the episode return stats over time
         tensorboard_log=os.path.join(cfg.logging.run_path, "tensorboard"),
         policy_kwargs=dict({
@@ -135,6 +136,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             callback_list.append(OTRewardCallback(
                                     seq_name = cfg.reward_model.seq_name,
                                     cost_fn_type = cfg.reward_model.cost_fn,
+                                    scale = cfg.reward_model.scale,
             ))
 
         model.learn(

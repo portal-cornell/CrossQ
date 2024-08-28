@@ -28,7 +28,7 @@ logging:
 defaults:
   - env: HumanoidSpawnedUpCustom
   - reward_model: hand_engineered
-  - rl_algo: crossq
+  - rl_algo: sb3_sac
   - _self_
 
 hydra:

@@ -3,16 +3,18 @@ import ot
 from scipy.spatial.distance import cdist
 from constants import SEQ_DICT
 
-def load_reference_seq(seq_name: str) -> np.ndarray:
-        """
-        Load the reference sequence for the given sequence name
-        """
-        ref_seq = []
-        for joint in SEQ_DICT[seq_name]:
-            ref_seq.append(np.load(joint))
-        return np.stack(ref_seq)
+import matplotlib.pyplot as plt
 
-def compute_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn) -> np.ndarray:
+def load_reference_seq(seq_name: str) -> np.ndarray:
+    """
+    Load the reference sequence for the given sequence name
+    """
+    ref_seq = []
+    for joint in SEQ_DICT[seq_name]:
+        ref_seq.append(np.load(joint))
+    return np.stack(ref_seq)
+
+def compute_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1) -> np.ndarray:
     """
     Compute the Optimal Transport (OT) reward between the reference sequence and the observed sequence
 
@@ -28,6 +30,8 @@ def compute_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn) -> np.ndarray:
                 22 is the observation size that we want to calculate
         cost_fn: function
             Options: cosine_distance, euclidean_distance
+        scale: float
+            The scaling factor for the OT reward
     """
     # Calculate the cost matrix between the reference sequence and the observed sequence
     #   size: (train_freq, ref_seq_len)
@@ -42,7 +46,28 @@ def compute_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn) -> np.ndarray:
     #   sum by row of (cost matrix * OT plan)
     ot_cost = np.sum(cost_matrix * T, axis=1)  # size: (train_freq,)
 
-    return - ot_cost
+    info = dict(
+        T=T,
+        M=cost_matrix,
+        wasserstein=ot_cost,
+    )
+
+    return - scale * ot_cost, info
+
+def plot_ot_plan(T: np.ndarray, fp: str):
+    """
+    Plot the Optimal Transport (OT) plan
+    """
+    # Because there are way less reference frames than observed frames, we need to copy the values and pad the reference frames for visualization
+    padded_T = np.repeat(T, 10, axis=1)
+    
+    plt.imshow(padded_T, cmap='hot', interpolation='nearest')
+    plt.title("Optimal Transport Plan")
+    plt.colorbar()
+    plt.show()
+
+    plt.savefig(fp)
+
 
 def cosine_distance(x, y):
     distance = np.dot(x, y.T) / np.linalg.norm(x, axis=1, keepdims=True) / np.linalg.norm(y.T, axis=0, keepdims=True) # Transpose B to match dimensions

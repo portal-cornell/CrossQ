@@ -1,3 +1,4 @@
 name: joint_wasserstein
 cost_fn: euclidean  # Options: euclidean, cosine. What function to use to build the cost matrix
+scale: 1
 seq_name: arms_up_then_down  # Ideally, the name should match the name of reward in humanoid_spawned_up.py
