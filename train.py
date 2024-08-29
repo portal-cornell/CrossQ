@@ -13,12 +13,9 @@ import torch
 from torch import multiprocessing
 import torch.distributed as dist
 
-import jax
-
 from stable_baselines3.common.callbacks import CallbackList
 
-# import regular stable_baseline3 sac
-from sb3_sac.custom_sac import CustomSAC as SAC
+from sb3_sac import SAC, VLM_SAC
 from stable_baselines3.sac.policies import MultiInputPolicy
 
 from sbx.common.make_vec_env import make_vec_env
@@ -50,6 +47,8 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
     # Initialize the environment
     use_vlm_for_reward = utils.use_vlm_for_reward(cfg)
 
+    logger.info(f"using_vlm_for_reward={use_vlm_for_reward}")
+
     make_env_kwargs = utils.get_make_env_kwargs(cfg)
 
     logger.info(f"Creating environment={cfg.env.name} instances with {make_env_kwargs=}")
@@ -64,14 +63,12 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         vec_env_kwargs=dict(render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3)),
     )
 
-    import optax
-
     logger.info("Creating the learner...")
-    # Train a model from scatch
 
-    # TODO: Write the stablebaseline3 SAC model for VLM reward
     assert cfg.rl_algo.name == "sb3_sac", "Only StableBaseline3 SAC is supported for now"
-    model = SAC(
+    # Train a model from scatch
+    sac_class = VLM_SAC if use_vlm_for_reward else SAC
+    model = sac_class(
         MultiInputPolicy if isinstance(training_env.observation_space, gym.spaces.Dict) else "MlpPolicy",
         training_env,
         learning_rate=cfg.rl_algo.lr,
@@ -91,6 +88,14 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         }),
         verbose=0,
         seed=cfg.seed,
+        ### VLM_SAC specific reward (SAC will ignore this)
+        inference_only=False,
+        reward_model_config = OmegaConf.to_container(cfg.reward_model, resolve=True, throw_on_missing=True) if use_vlm_for_reward else None,
+        n_cpu_workers = cfg.compute.n_cpu_workers,
+        n_gpu_workers = cfg.compute.n_gpu_workers,
+        episode_length = cfg.env.episode_length,
+        render_dim = cfg.env.render_dim,
+        add_to_gt_rewards = cfg.reward_model.add_to_gt_rewards,
     )
 
     # TODO: Not sure if .load() is better than .set_parameters()
@@ -179,7 +184,15 @@ def vlm_inference_worker(rank: int, cfg: DictConfig, stop_event: multiprocessing
     reward_model = load_reward_model(rank, 
                                         worker_actual_batch_size=worker_batch_size,  # Note that this is different size compared to rank 0's reward model when rank0_batch_size_pct < 1.0
                                         model_name=cfg.reward_model.vlm_model, 
-                                        model_config_dict=OmegaConf.to_container(cfg.reward_model, resolve=True, throw_on_missing=True)).eval().cuda(rank)
+                                        model_config_dict=OmegaConf.to_container(cfg.reward_model, resolve=True, throw_on_missing=True))
+    
+    # TODO: A temporary hack, because DreamSimRewardModel inherited from RewardModel
+    if "dreamsim" in cfg.reward_model.vlm_model.lower():
+        reward_model.embed_module.eval()
+    else:
+        reward_model.eval()
+    reward_model.cuda(rank)
+    
     logger.debug(f"Loaded the reward model at rank={rank}: allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
 
     worker_frames_tensor = torch.zeros(

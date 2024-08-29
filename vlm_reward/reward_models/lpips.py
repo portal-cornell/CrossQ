@@ -99,7 +99,6 @@ class LPIPSRewardModel(RewardModel):
         processed_images = [self.transform(image).unsqueeze(dim=0) for image in images] # list of (1, 3, 224, 224)
         return torch.cat(processed_images, dim=0) # (B, 3, 224, 224)
 
-
 # # Example of use
 # image_paths = ["axis_exp/humanoid_kneeling_ref.png", "axis_exp/humanoid_kneeling_ref.png"]
 

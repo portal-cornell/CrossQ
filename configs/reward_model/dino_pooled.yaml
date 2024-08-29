@@ -11,3 +11,5 @@ pos_image_path:
   - /share/portal/wph52/CrossQ/vlm_reward/eval/target_images/humanoid_kneeling_ref.png
 neg_image_path: []
 rank0_batch_size_pct: 0.0  # Determine how many percentage of the batch the main worker (rank = 0) need to process when doing reward calculation
+filter_rewards: True
+add_to_gt_rewards: False

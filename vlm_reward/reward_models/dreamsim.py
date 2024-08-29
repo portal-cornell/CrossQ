@@ -20,7 +20,9 @@ class DreamSimRewardModel(RewardModel):
     def __init__(self):
         # Config: https://github.com/ssundaram21/dreamsim/blob/main/dreamsim/config.py
         # preprocess is used if we give image paths to RGB images as input
-        self.model, self.preprocess = dreamsim(pretrained=True)
+        # TODO: self.model instead of self.embed_module is better. But changed for now to
+        # use the same name as in reward_main.dist_worker_compute_reward
+        self.embed_module, self.preprocess = dreamsim(pretrained=True, cache_dir="/share/portal/wph52/CrossQ/models")
         self.source_embedding = None
         self.target_embedding = None
         self.device = 'cpu'
@@ -30,7 +32,7 @@ class DreamSimRewardModel(RewardModel):
         Calculates the DreamSim distance between the source and target embeddings.
         Assumes the embeddings are preprocessed images ready for the model.
 
-        Note: another way would just be calling: self.model(img_a, img_b)
+        Note: another way would just be calling: self.embed_module(img_a, img_b)
 
         Returns:
             torch.Tensor: DreamSim distance score.
@@ -53,12 +55,12 @@ class DreamSimRewardModel(RewardModel):
             image_batch (torch.Tensor): Batch of images. RGB images passed as 
             a (B, 3, 224, 224) tensor with values [0, 1] (preprocessed with get_tensor_from_image).
         """
-        if image_batch.device != self.model.device:
-            image_batch = image_batch.to(self.model.device)
+        if image_batch.device != self.embed_module.device:
+            image_batch = image_batch.to(self.embed_module.device)
         if image_batch.dtype == torch.uint8:
             image_batch = image_batch.float() / 255.0
         
-        self.source_embedding = self.model.embed(image_batch)
+        self.source_embedding = self.embed_module.embed(image_batch)
 
     def set_target_embedding(self, target_image: torch.Tensor) -> None:
         """
@@ -69,8 +71,8 @@ class DreamSimRewardModel(RewardModel):
             target_image (torch.Tensor): Target image. An RGB image passed as a (1, 3, 224, 224) 
             tensor with values [0, 1] (preprocessed with get_tensor_from_image).
         """
-        if target_image.device != self.model.device:
-            target_image = target_image.to(self.model.device)
+        if target_image.device != self.embed_module.device:
+            target_image = target_image.to(self.embed_module.device)
 
         if target_image.dtype == torch.uint8:
             target_image = target_image.float() / 255.0
@@ -78,7 +80,7 @@ class DreamSimRewardModel(RewardModel):
         if len(target_image.shape) == 3:
             target_image = target_image[None]
 
-        self.target_embedding = self.model.embed(target_image)[0]
+        self.target_embedding = self.embed_module.embed(target_image)[0]
 
     def to(self, device: str) -> None:
         """
@@ -87,7 +89,7 @@ class DreamSimRewardModel(RewardModel):
         Args:
             device (str): The device to send the model to.
         """
-        self.model = self.model.to(device)
+        self.embed_module = self.embed_module.to(device)
         if self.source_embedding is not None:
             self.source_embedding = self.source_embedding.to(device)
         if self.target_embedding is not None:
@@ -102,7 +104,7 @@ class DreamSimRewardModel(RewardModel):
         """
         cuda_device = f'cuda:{rank}'
         self.device = cuda_device
-        self.model.to(self.device)
+        self.embed_module.to(self.device)
     
     def get_tensor_from_image(self, image_paths: List[str]) -> torch.Tensor:
         images = [Image.open(image_path).convert("RGB") for image_path in image_paths]

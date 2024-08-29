@@ -23,6 +23,9 @@ import vlm_reward.utils.optimal_transport as custom_ot
 import vlm_reward.utils.soft_dtw as custom_sdtw
 import time
 
+from vlm_reward.reward_main import compute_rewards
+from vlm_reward.reward_transforms import half_gaussian_filter_1d
+
 class JointBasedSeqRewardCallback(BaseCallback):
     """
     Custom callback for calculating joint based sequence matching rewards after rollouts are collected.
@@ -110,7 +113,124 @@ class JointBasedSeqRewardCallback(BaseCallback):
         """
         return True
 
+class VLMRewardCallback(BaseCallback):
+    """
+    Custom callback for calculating Optimal Transport (OT) rewards after rollouts are collected.
+    """
+    def __init__(self, scale=1, filter_rewards=False, add_to_gt_rewards=True, verbose=0):
+        super(VLMRewardCallback, self).__init__(verbose)
 
+        self._scale = scale
+        self._filter_rewards = filter_rewards
+        self._add_to_gt_rewards = add_to_gt_rewards
+
+    def on_rollout_end(self) -> None:
+        """
+        This method is called after the rollout ends.
+        You can access and modify the rewards in the ReplayBuffer here.
+        """
+        # Time this function
+        start_time = time.time()
+
+        replay_buffer_pos = self.model.replay_buffer.pos
+        total_timesteps = self.model.num_timesteps - self.model.previous_num_timesteps  # Total number of timesteps that we have collected
+        env_episode_timesteps = total_timesteps // self.model.env.num_envs  # Number of timesteps that we have collected per environment
+        total_episodes = self.model.get_episode_num() - self.model.previous_num_episodes
+        env_episodes = total_episodes // self.model.env.num_envs
+
+        ### Prepare the frame to be processed
+        frames = torch.from_numpy(np.array(self.model.replay_buffer.render_arrays))
+
+        print(f"Start calculating rewards: frames.shape={frames.shape}")
+
+        frames = rearrange(frames, "n_steps n_envs ... -> (n_steps n_envs) ...")
+        
+        ### Compute rewards
+        # NOTE: distributed will be off if dist is False
+        rewards = compute_rewards(
+            model=self.model.reward_model,
+            frames=frames,
+            rank0_batch_size_pct=self.model.reward_model_config["rank0_batch_size_pct"],
+            batch_size=self.model.reward_model_config["reward_batch_size"],  # This is the total batch size
+            num_workers=self.model.n_gpu_workers,
+            worker_frames_tensor=self.model.worker_frames_tensor,
+            dist=self.model.use_distributed
+        )
+        
+        rewards = rearrange(
+            rewards,
+            "(n_steps n_envs) ... -> (n_envs n_steps) ...",
+            n_envs=self.model.env.num_envs,
+        )
+
+        # Scale the rewards
+        rewards = rewards * self._scale
+
+        # Filter the rewards
+        if self._filter_rewards:
+            print("Filtering rewards")
+            rewards = half_gaussian_filter_1d(rewards, sigma=4, smooth_last_N=True) 
+            
+        # Clear the rendered images in the ReplayBuffer
+        self.model.replay_buffer.clear_render_arrays()
+
+        ### Update the rewards
+        if self._add_to_gt_rewards:
+            print("Adding VLM rewards to GT rewards")
+            # Add the VLM reward to exisiting rewards
+            if replay_buffer_pos - env_episode_timesteps >= 0:
+                self.model.replay_buffer.rewards[
+                    replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
+                ] += rewards[:, :]
+            else:
+                # Split reward assignment (circular buffer)
+                self.model.replay_buffer.rewards[
+                    -(env_episode_timesteps - replay_buffer_pos) :, :
+                ] += rewards[: env_episode_timesteps - replay_buffer_pos, :]
+
+                self.model.replay_buffer.rewards[:replay_buffer_pos, :] += rewards[
+                    env_episode_timesteps - replay_buffer_pos :, :
+                ]
+        else:
+            print("Overwriting GT rewards with VLM rewards")
+            # Overwrite the rewards with VLM rewards
+            if replay_buffer_pos - env_episode_timesteps >= 0:
+                self.model.replay_buffer.rewards[
+                    replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
+                ] = rewards[:, :]
+            else:
+                # Split reward assignment (circular buffer)
+                self.model.replay_buffer.rewards[
+                    -(env_episode_timesteps - replay_buffer_pos) :, :
+                ] = rewards[: env_episode_timesteps - replay_buffer_pos, :]
+
+                self.model.replay_buffer.rewards[:replay_buffer_pos, :] = rewards[
+                    env_episode_timesteps - replay_buffer_pos :, :
+                ]
+
+        ### Logging the rewards 
+        rewards = rearrange(rewards, "n_steps n_envs -> n_envs n_steps")
+        for env_idx in range(self.model.env.num_envs):
+            # Compute sum of rewards per episode
+            rewards_per_episode = np.sum(
+                np.reshape(
+                    rewards[env_idx], (env_episodes, self.model.episode_length)
+                ),
+                axis=1,
+            )
+            self.model.ep_vlm_info_buffer.extend([rewards_per_episode.tolist()])
+
+        print(f"VLMRewardCallback took {time.time() - start_time} seconds")
+
+
+    def _on_step(self) -> bool:
+        """
+        Just need to define this method to avoid NotImplementedError
+
+        Return: 
+            If the callback returns False, training is aborted early.
+        """
+        return True
 def plot_info_on_frame(pil_image, info, font_size=20):
     """
     Parameters:
@@ -304,4 +424,3 @@ class WandbCallback(SB3WandbCallback):
         self.model_save_path, f"model_{self.model.num_timesteps}_steps.zip"
         )
         self.model.save(model_path)
-

@@ -1,7 +1,10 @@
 name: dreamsim
 vlm_model: dreamsim  # The VLM used to embed the image
 pos_image_path: 
-  - /share/portal/wph52/CrossQ/vlm_reward/eval/target_images/humanoid_kneeling_ref.png
+  - /share/portal/wph52/CrossQ/create_demo/demos/both-arms-out.png
+filter_rewards: False
+add_to_gt_rewards: True
+scale: 1 # Scale the reward before it's added to the ground-truth reward
 
 ### USELESS FOR DREAMSIM
 cost_fn: cosine # Options: euclidean, cosine. What function to use to build the cost matrix

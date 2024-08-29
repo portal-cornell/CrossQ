@@ -22,6 +22,7 @@ git_rewrite_commit_history.sh
 /dist/
 /build
 keys/
+models/
 
 # Virtualenv
 /env

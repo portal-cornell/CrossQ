@@ -2,7 +2,9 @@ name: lpips
 vlm_model: lpips  # The VLM used to embed the image
 pos_image_path: 
   - /share/portal/wph52/CrossQ/vlm_reward/eval/target_images/humanoid_kneeling_ref.png
-  
+filter_rewards: False
+add_to_gt_rewards: False
+
 ### USELESS FOR LPIPS
 cost_fn: cosine # Options: euclidean, cosine. What function to use to build the cost matrix
 reward_batch_size: 16  # Batch size sent to the VLM reward model

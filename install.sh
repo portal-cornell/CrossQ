@@ -1,4 +1,5 @@
 conda create -n crossq python=3.11.5
+conda activate crossq
 conda install -c nvidia cuda-nvcc
 
 python -m pip install -e .
