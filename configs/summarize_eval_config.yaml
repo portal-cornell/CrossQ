@@ -1,0 +1,24 @@
+run_notes: overall
+model_inference_paths:
+  goal_only: /share/portal/hw575/CrossQ/inference_logs/2024-08-29-132453_sb3_sac_envr=both_arms_out_goal_only_euclidean_rm=hand_engineered_s=9_nt=goal-only
+  intermediate_and_goal: /share/portal/hw575/CrossQ/inference_logs/2024-08-29-132342_sb3_sac_envr=both_arms_out_goal_only_euclidean_rm=hand_engineered_s=9_nt=None
+  ot: /share/portal/hw575/CrossQ/inference_logs/2024-08-29-131707_sb3_sac_envr=both_arms_out_goal_only_euclidean_rm=joint_wasserstein_s=9_nt=None
+  sdtw: /share/portal/hw575/CrossQ/inference_logs/2024-08-29-131337_sb3_sac_envr=both_arms_out_goal_only_euclidean_rm=joint_soft_dtw_s=9_nt=None
+  dreamsim: /share/portal/hw575/CrossQ/inference_logs/2024-08-29-131700_sb3_sac_envr=both_arms_out_goal_only_euclidean_rm=dreamsim_s=9_nt=None
+
+defaults:
+  - env: HumanoidSpawnedUpCustom
+  - _self_
+
+hydra:
+  run:
+    dir: ./inference_logs/${now:%Y-%m-%d-%H%M%S}_summarized_envr=${env.reward_type}_nt=${run_notes}
+
+# If you want to specify a specific reward function used in the env, you can uncomment and overwrite reward_type
+# env:
+#   reward_type: both_arms_out_goal_only_euclidean
+
+# If you are using patch wasserstein as reward, you can uncomment and overwrite pos_image_path, neg_image_path in the dino_patch_wasserstein.yaml
+# reward_model:
+#   pos_image_path:
+#     - axis_exp/humanoid_kneeling_ref.png

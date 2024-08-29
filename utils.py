@@ -36,7 +36,7 @@ def get_output_path() -> str:
     return hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
 
 def use_vlm_for_reward(cfg: DictConfig) -> bool:
-    return "hand_engineered" not in cfg.reward_model.name.lower() and "joint_wasserstein" not in cfg.reward_model.name.lower()
+    return "hand_engineered" not in cfg.reward_model.name.lower() and "joint_wasserstein" not in cfg.reward_model.name.lower() and "joint_soft_dtw" not in cfg.reward_model.name.lower()
 
 def set_os_vars() -> None:
     os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
