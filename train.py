@@ -25,11 +25,10 @@ import gymnasium as gym
 
 from loguru import logger
 
-import utils
 import multiprocess
 from envs.base import get_make_env
 from vlm_reward.reward_main import load_reward_model, dist_worker_compute_reward
-from sbx.common.callbacks import VideoRecorderCallback, WandbCallback, OTRewardCallback, VLMRewardCallback
+from sbx.common.callbacks import VideoRecorderCallback, WandbCallback, JointBasedSeqRewardCallback
     
 
 def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] = None):
@@ -97,10 +96,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         episode_length = cfg.env.episode_length,
         render_dim = cfg.env.render_dim,
         add_to_gt_rewards = cfg.reward_model.add_to_gt_rewards,
-        
     )
-
-    model.use_distributed = cfg.compute.distributed
 
     # TODO: Not sure if .load() is better than .set_parameters()
     if cfg.model_base_path:
@@ -134,27 +130,18 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             SubprocVecEnv([make_env_fn], render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3)),
             rollout_save_path=os.path.join(cfg.logging.run_path, "eval"),
             render_freq=cfg.logging.video_save_freq // cfg.compute.n_cpu_workers,
-            seq_name = cfg.reward_model.seq_name if cfg.reward_model.name == "joint_wasserstein" else "",
-            cost_fn_type = cfg.reward_model.cost_fn if cfg.reward_model.name == "joint_wasserstein" else "",
+            seq_name = cfg.reward_model.seq_name if cfg.reward_model.name == "joint_wasserstein" or cfg.reward_model.name == "joint_soft_dtw" else "",
+            matching_fn_cfg = dict(cfg.reward_model) if cfg.reward_model.name == "joint_wasserstein" or cfg.reward_model.name == "joint_soft_dtw" else {},
         )
 
         callback_list = [wandb_callback, video_callback]
 
-        if cfg.reward_model.name == "joint_wasserstein":
+        if cfg.reward_model.name == "joint_wasserstein" or cfg.reward_model.name == "joint_soft_dtw":
             # Add the OT reward callback if we are using joint_wasserstein as the reward model
-            callback_list.append(OTRewardCallback(
+            callback_list.append(JointBasedSeqRewardCallback(
                                     seq_name = cfg.reward_model.seq_name,
-                                    cost_fn_type = cfg.reward_model.cost_fn,
-                                    scale = cfg.reward_model.scale,
+                                    matching_fn_cfg = dict(cfg.reward_model),
             ))
-        # elif use_vlm_for_reward:
-        #     # Add the VLM reward callback if we are using VLM as the reward model
-        #     callback_list.append(VLMRewardCallback(
-        #                             scale = cfg.reward_model.scale,
-        #                             filter_rewards = cfg.reward_model.filter_rewards,
-        #                             add_to_gt_rewards = cfg.reward_model.add_to_gt_rewards,
-        #     ))
-
 
         model.learn(
             total_timesteps=cfg.total_timesteps, 

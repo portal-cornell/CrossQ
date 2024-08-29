@@ -17,6 +17,7 @@ from sbx.common.off_policy_algorithm import OffPolicyAlgorithmJax
 from sbx.common.type_aliases import ReplayBufferSamplesNp, RLTrainState, ActorTrainState
 from sbx.sac.policies import SACPolicy
 
+from loguru import logger
 
 class EntropyCoef(nn.Module):
     ent_coef_init: float = 1.0
@@ -184,6 +185,8 @@ class SAC(OffPolicyAlgorithmJax):
         reset_num_timesteps: bool = True,
         progress_bar: bool = False,
     ):
+        self.previous_num_timesteps = 0
+        self.previous_num_episodes = 0
         return super().learn(
             total_timesteps=total_timesteps,
             callback=callback,
@@ -246,6 +249,14 @@ class SAC(OffPolicyAlgorithmJax):
         self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
         for k,v in log_metrics.items():
             self.logger.record(f"train/{k}", v.item())
+
+    def collect_rollouts(self, *args, **kwargs):
+        rollout = super().collect_rollouts(*args, **kwargs)
+
+        self.previous_num_timesteps = self.num_timesteps
+        self.previous_num_episodes = self._episode_num
+
+        return rollout
     
     @staticmethod
     @partial(jax.jit, static_argnames=["crossq_style", "td3_mode", "use_bnstats_from_live_net"])

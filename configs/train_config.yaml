@@ -15,7 +15,6 @@ compute:
 
 logging:
   log_freq: 300  # How many times to log during training
-  eval_freq: 300  # How many times to evaluate during training
   video_save_freq: 10000 # Frequency to save the video
   model_save_freq: 100000  # Frequency to save the model
 

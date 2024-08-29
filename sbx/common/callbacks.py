@@ -20,13 +20,98 @@ from numbers import Number
 from loguru import logger
 
 import vlm_reward.utils.optimal_transport as custom_ot
+import vlm_reward.utils.soft_dtw as custom_sdtw
 import time
-
-import torch
-from einops import rearrange
 
 from vlm_reward.reward_main import compute_rewards
 from vlm_reward.reward_transforms import half_gaussian_filter_1d
+
+class JointBasedSeqRewardCallback(BaseCallback):
+    """
+    Custom callback for calculating joint based sequence matching rewards after rollouts are collected.
+    """
+    def __init__(self, seq_name, matching_fn_cfg, verbose=0):
+        super(JointBasedSeqRewardCallback, self).__init__(verbose)
+
+        self._ref_seq = custom_ot.load_reference_seq(seq_name)
+        self._scale = matching_fn_cfg['scale']
+
+        self.set_matching_fn(matching_fn_cfg)
+
+    def set_matching_fn(self, matching_fn_cfg):
+        assert "joint_wasserstein" == matching_fn_cfg["name"] or "joint_soft_dtw", f"Currently only supporting joint_wasserstein or joint soft dynamic time warping, got {matching_fn_cfg['name']}"
+        matching_fn_name = matching_fn_cfg["name"]
+
+        if matching_fn_name == "joint_wasserstein":
+            self._matching_fn = lambda rollout, ref: custom_ot.compute_ot_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], self._scale)
+        elif matching_fn_name == "joint_soft_dtw":
+            self._matching_fn = lambda rollout, ref: custom_sdtw.compute_soft_dtw_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], matching_fn_cfg['gamma'], self._scale)
+
+        logger.info(f"Set matching function to {matching_fn_name} with cost_fn={matching_fn_cfg['cost_fn']} and scale={self._scale}")
+
+    def on_rollout_end(self) -> None:
+        """
+        This method is called after the rollout ends.
+        You can access and modify the rewards in the ReplayBuffer here.
+        """
+        # Time this function
+        start_time = time.time()
+
+        replay_buffer_pos = self.model.replay_buffer.pos
+        total_timesteps = self.model.num_timesteps - self.model.previous_num_timesteps  # Total number of timesteps that we have collected
+        env_episode_timesteps = total_timesteps // self.model.env.num_envs  # Number of timesteps that we have collected per environment
+
+        # logger.debug(f"\nreplay_buffer_pos={replay_buffer_pos}, total_timesteps={total_timesteps}, \nenv_episode_timesteps={env_episode_timesteps}, self.model.num_timesteps={self.model.num_timesteps}")
+
+        # Get the observation from the replay buffer
+        #   size: (train_freq, n_envs, obs_size)
+        #   For OT-based reward, train_freq = episode_length
+        if replay_buffer_pos - env_episode_timesteps >= 0:
+            # logger.debug(f"not circular, check replay buffer: {self.model.replay_buffer.observations[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :].shape}")
+
+            obs_to_process = np.array(self.model.replay_buffer.observations[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :])
+        else:
+            # Split reward assignment (circular buffer)
+            logger.debug(f"\ncircular, part 1={self.model.replay_buffer.observations[-(env_episode_timesteps - replay_buffer_pos) :, :].shape} \n part 2={self.model.replay_buffer.observations[:replay_buffer_pos, :].shape}")
+
+            obs_to_process = np.concatenate((self.model.replay_buffer.observations[-(env_episode_timesteps - replay_buffer_pos) :, :], self.model.replay_buffer.observations[:replay_buffer_pos, :]), axis=0)
+
+        matching_reward_list = []
+        for env_i in range(self.model.env.num_envs):
+            # TODO: A hard-coded value (22 is matching qpos of the environment)
+            obs = obs_to_process[:, env_i, :22]  # size: (train_freq, 22)
+            matching_reward, _ = self._matching_fn(obs, self._ref_seq)  # size: (train_freq,)
+            # logger.debug(f"matching_reward={matching_reward.shape}")
+            matching_reward_list.append(matching_reward)
+
+        rewards = np.stack(matching_reward_list, axis=1)  # size: (train_freq, n_envs)
+
+        # Add the optimal transport reward to exisiting rewards
+        if replay_buffer_pos - env_episode_timesteps >= 0:
+            self.model.replay_buffer.rewards[
+                replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
+            ] += rewards[:, :]
+        else:
+            # Split reward assignment (circular buffer)
+            self.model.replay_buffer.rewards[
+                -(env_episode_timesteps - replay_buffer_pos) :, :
+            ] += rewards[: env_episode_timesteps - replay_buffer_pos, :]
+
+            self.model.replay_buffer.rewards[:replay_buffer_pos, :] += rewards[
+                env_episode_timesteps - replay_buffer_pos :, :
+            ]
+
+        print(f"OTRewardCallback took {time.time() - start_time} seconds")
+
+
+    def _on_step(self) -> bool:
+        """
+        Just need to define this method to avoid NotImplementedError
+
+        Return: 
+            If the callback returns False, training is aborted early.
+        """
+        return True
 
 class VLMRewardCallback(BaseCallback):
     """
@@ -146,96 +231,6 @@ class VLMRewardCallback(BaseCallback):
             If the callback returns False, training is aborted early.
         """
         return True
-
-class OTRewardCallback(BaseCallback):
-    """
-    Custom callback for calculating Optimal Transport (OT) rewards after rollouts are collected.
-    """
-    def __init__(self, seq_name, cost_fn_type="cosine", scale=1, verbose=0):
-        super(OTRewardCallback, self).__init__(verbose)
-
-        self._ref_seq = custom_ot.load_reference_seq(seq_name)
-        self._cost_fn = custom_ot.COST_FN_DICT[cost_fn_type]
-        self._scale = scale
-
-    def on_rollout_end(self) -> None:
-        """
-        This method is called after the rollout ends.
-        You can access and modify the rewards in the ReplayBuffer here.
-        """
-        # Time this function
-        start_time = time.time()
-
-        replay_buffer_pos = self.model.replay_buffer.pos
-        total_timesteps = self.model.num_timesteps - self.model.previous_num_timesteps  # Total number of timesteps that we have collected
-        env_episode_timesteps = total_timesteps // self.model.env.num_envs  # Number of timesteps that we have collected per environment
-
-        # logger.debug(f"\nreplay_buffer_pos={replay_buffer_pos}, total_timesteps={total_timesteps}, \nenv_episode_timesteps={env_episode_timesteps}, self.model.num_timesteps={self.model.num_timesteps}")
-
-        # Get the observation from the replay buffer
-        #   size: (train_freq, n_envs, obs_size)
-        #   For OT-based reward, train_freq = episode_length
-        if replay_buffer_pos - env_episode_timesteps >= 0:
-            # logger.debug(f"not circular, check replay buffer: {self.model.replay_buffer.observations[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :].shape}")
-
-            obs_to_process = np.array(self.model.replay_buffer.observations[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :])
-        else:
-            # Split reward assignment (circular buffer)
-            logger.debug(f"\ncircular, part 1={self.model.replay_buffer.observations[-(env_episode_timesteps - replay_buffer_pos) :, :].shape} \n part 2={self.model.replay_buffer.observations[:replay_buffer_pos, :].shape}")
-
-            obs_to_process = np.concatenate((self.model.replay_buffer.observations[-(env_episode_timesteps - replay_buffer_pos) :, :], self.model.replay_buffer.observations[:replay_buffer_pos, :]), axis=0)
-
-        ot_reward_list = []
-        for env_i in range(self.model.env.num_envs):
-            # TODO: A hard-coded value (22 is matching qpos of the environment)
-            obs = obs_to_process[:, env_i, :22]  # size: (train_freq, 22)
-            ot_reward, _ = custom_ot.compute_ot_reward(obs, self._ref_seq, self._cost_fn, self._scale)  # size: (train_freq,)
-            # logger.debug(f"ot_reward={ot_reward.shape}")
-            ot_reward_list.append(ot_reward)
-
-        rewards = np.stack(ot_reward_list, axis=1)  # size: (train_freq, n_envs)
-
-        # Add the optimal transport reward to exisiting rewards
-        if replay_buffer_pos - env_episode_timesteps >= 0:
-            self.model.replay_buffer.rewards[
-                replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
-            ] += rewards[:, :]
-        else:
-            # Split reward assignment (circular buffer)
-            self.model.replay_buffer.rewards[
-                -(env_episode_timesteps - replay_buffer_pos) :, :
-            ] += rewards[: env_episode_timesteps - replay_buffer_pos, :]
-
-            self.model.replay_buffer.rewards[:replay_buffer_pos, :] += rewards[
-                env_episode_timesteps - replay_buffer_pos :, :
-            ]
-
-        ### Logging the rewards
-        # The total rewards are indexed by environment
-        rewards = rearrange(rewards, "n_steps n_envs -> n_envs n_steps")
-        for env_idx in range(self.model.env.num_envs):
-            # Compute sum of rewards per episode
-            rewards_per_episode = np.sum(
-                np.reshape(
-                    rewards[env_idx], (env_episodes, self.episode_length)
-                ),
-                axis=1,
-            )
-            self.ep_clip_info_buffer.extend([rewards_per_episode.tolist()])     
-
-        print(f"OTRewardCallback took {time.time() - start_time} seconds")
-
-
-    def _on_step(self) -> bool:
-        """
-        Just need to define this method to avoid NotImplementedError
-
-        Return: 
-            If the callback returns False, training is aborted early.
-        """
-        return True
-
-
 def plot_info_on_frame(pil_image, info, font_size=20):
     """
     Parameters:
@@ -276,7 +271,8 @@ class VideoRecorderCallback(BaseCallback):
         n_eval_episodes: int = 1,
         deterministic: bool = True,
         seq_name: str = "",
-        cost_fn_type="cosine"
+        matching_fn_cfg: dict = {}, 
+        verbose=0
     ):
         """
         Records a video of an agent's trajectory traversing ``eval_env`` and logs it to
@@ -293,7 +289,7 @@ class VideoRecorderCallback(BaseCallback):
                 You only need to set this if you want to calculate the OT reward
             cost_fn_type: The type of cost function to use for the OT reward calculation
         """
-        super().__init__()
+        super().__init__(verbose)
         self._eval_env = eval_env
         self._render_freq = render_freq
         self._n_eval_episodes = n_eval_episodes
@@ -301,11 +297,24 @@ class VideoRecorderCallback(BaseCallback):
         self._rollout_save_path = rollout_save_path  # Save the state of the environment
 
         if seq_name:
-            self._calc_ot_reward = True
+            self._calc_matching_reward = True
             self._ref_seq = custom_ot.load_reference_seq(seq_name)
-            self._cost_fn = custom_ot.COST_FN_DICT[cost_fn_type]
+            self._scale = matching_fn_cfg['scale']
+            self.set_matching_fn(matching_fn_cfg)
         else:
-            self._calc_ot_reward = False
+            self._calc_matching_reward = False
+
+    def set_matching_fn(self, matching_fn_cfg):
+        assert "joint_wasserstein" == matching_fn_cfg["name"] or "joint_soft_dtw", f"Currently only supporting joint_wasserstein or joint soft dynamic time warping, got {matching_fn_cfg['name']}"
+        matching_fn_name = matching_fn_cfg["name"]
+
+        if matching_fn_name == "joint_wasserstein":
+            self._matching_fn = lambda rollout, ref: custom_ot.compute_ot_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], self._scale)
+        elif matching_fn_name == "joint_soft_dtw":
+            self._matching_fn = lambda rollout, ref: custom_sdtw.compute_soft_dtw_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], matching_fn_cfg['gamma'], self._scale)
+
+        logger.info(f"Set matching function to {matching_fn_name} with cost_fn={matching_fn_cfg['cost_fn']} and scale={self._scale}")
+
 
     def _on_step(self) -> bool:
         if self.n_calls % self._render_freq == 0:
@@ -351,23 +360,27 @@ class VideoRecorderCallback(BaseCallback):
             states = np.concatenate(states)
             rewards = np.concatenate(rewards)
 
-            if self._calc_ot_reward:
-                ot_reward, _ = custom_ot.compute_ot_reward(np.array(states)[:, :22], self._ref_seq, self._cost_fn)
+            if self._calc_matching_reward:
+                matching_reward, _ = self._matching_fn(np.array(states)[:, :22], self._ref_seq)
 
-                self.logger.record("rollout/avg_ot_reward", 
-                                np.mean(ot_reward), 
+                self.logger.record("rollout/avg_matching_reward_unscaled", 
+                                np.mean(matching_reward)/self._scale, 
+                                exclude=("stdout", "log", "json", "csv"))
+                
+                self.logger.record("rollout/avg_total_reward_unscaled", 
+                                np.mean(matching_reward/self._scale + rewards), 
                                 exclude=("stdout", "log", "json", "csv"))
                 
                 self.logger.record("rollout/avg_total_reward", 
-                                np.mean(ot_reward + rewards), 
+                                np.mean(matching_reward + rewards), 
                                 exclude=("stdout", "log", "json", "csv"))
 
-                # Add the ot_reward to the infos so that we can plot it
+                # Add the matching_reward to the infos so that we can plot it
                 for i in range(len(infos)):
-                    infos[i]["ot_reward"] = f"{ot_reward[i]:.2f}"
+                    infos[i]["matching_reward"] = f"{matching_reward[i]:.2f}"
 
-                # Save the ot_rewards locally    
-                with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_ot_rewards.npy"), "wb") as f:
+                # Save the matching_rewards locally    
+                with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_matching_rewards.npy"), "wb") as f:
                     np.save(f, np.array(states))
 
             # Plot info on the frames  

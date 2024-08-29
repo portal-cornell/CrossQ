@@ -431,6 +431,7 @@ class CustomVLMSAC(SAC):
             inference_only = inference_only,
             device=device,
             _init_setup_model=False,  # type: ignore[call-arg]
+            train_freq=(episode_length, "step"),
             reward_model_config=reward_model_config,
             episode_length=episode_length,
             render_dim=render_dim

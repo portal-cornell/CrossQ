@@ -1,0 +1,2 @@
+name: arms_up_then_down
+sequence_and_reward_dir: /share/portal/hw575/CrossQ/train_logs/2024-08-19-122233_crossq_envr=arms_up_then_down_seq_stage_detector_rm=hand_engineered_s=9_nt=w=1-for-all-comp_stage-threshold=0.5not0.85/eval
