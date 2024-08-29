@@ -252,14 +252,13 @@ class CustomVLMSAC(SAC):
             
         # Clear the rendered images in the ReplayBuffer
         self.replay_buffer.clear_render_arrays()
+        rewards_np = rewards.cpu().numpy()
 
         ### Update the rewards
         # import pdb; pdb.set_trace()
         if self._add_to_gt_rewards:
             print("Adding VLM rewards to GT rewards")
             # Convert rewards tensor to np array for compatibility with self.replay_buffer.rewards
-            rewards_np = rewards.cpu().numpy()
-
             # Add the VLM reward to existing rewards
             if replay_buffer_pos - env_episode_timesteps >= 0:
                 self.replay_buffer.rewards[
