@@ -30,6 +30,9 @@ class HumanoidEnvCustom(GymHumanoidEnv):
         "both_arms_out_goal_only_euclidean": SEQ_DICT["both_arms_out"],
         "both_arms_out_seq_euclidean": SEQ_DICT["both_arms_out_with_intermediate"],
         "both_arms_out_basic_r": SEQ_DICT["both_arms_out_with_intermediate"],
+        "both_arms_up_goal_only_euclidean": SEQ_DICT["both_arms_up"],
+        "both_arms_up_seq_euclidean": SEQ_DICT["both_arms_up_with_intermediate"],
+        "both_arms_up_basic_r": SEQ_DICT["both_arms_up_with_intermediate"],
         "arms_up_then_down_seq_euclidean": SEQ_DICT["arms_up_then_down"],
         "arms_up_then_down_seq_stage_detector": SEQ_DICT["arms_up_then_down"],
         "arms_up_then_down_seq_avg": SEQ_DICT["arms_up_then_down"],
@@ -481,7 +484,7 @@ def reward_splitting(data, **kwargs):
     return reward, terms_to_plot
 
 
-def reward_both_arms_out_goal_only_euclidean(data, **kwargs):
+def reward_goal_only_euclidean(data, **kwargs):
     """Only use the goal joint states to calculate the reward
     - The reward is based on the euclidean distance between the current joint states and the reference joint states
 
@@ -679,9 +682,12 @@ REWARD_FN_MAPPING = dict(
         best_standing_up = best_standing_from_lying_down,
         kneeling = reward_kneeling,
         splitting = reward_splitting,
-        both_arms_out_goal_only_euclidean = reward_both_arms_out_goal_only_euclidean,
+        both_arms_out_goal_only_euclidean = reward_goal_only_euclidean,
         both_arms_out_seq_euclidean = reward_seq_euclidean,
         both_arms_out_basic_r = reward_only_basic_r,
+        both_arms_up_goal_only_euclidean = reward_goal_only_euclidean,
+        both_arms_up_seq_euclidean = reward_seq_euclidean,
+        both_arms_up_basic_r = reward_only_basic_r,
         arms_up_then_down_seq_euclidean = reward_seq_euclidean,
         arms_up_then_down_seq_stage_detector = reward_seq_stage_detector,
         arms_up_then_down_seq_avg = reward_seq_avg,

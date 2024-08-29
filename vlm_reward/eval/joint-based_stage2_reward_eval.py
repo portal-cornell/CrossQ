@@ -4,7 +4,8 @@ from hydra.core.hydra_config import HydraConfig
 
 from typing import Callable, List, Tuple, Dict, Optional
 
-from vlm_reward.utils.optimal_transport import load_reference_seq, compute_ot_reward, plot_ot_plan, euclidean_distance, COST_FN_DICT
+from vlm_reward.utils.optimal_transport import load_reference_seq, compute_ot_reward, plot_ot_plan, COST_FN_DICT
+from vlm_reward.utils.soft_dtw import compute_soft_dtw_reward
 
 from vlm_reward.eval.eval_utils import gt_vs_source_heatmap
 
@@ -55,7 +56,11 @@ def eval_from_config(cfg: DictConfig):
 
     # Define the reward function
     dist_fn = COST_FN_DICT[cfg.reward_model.cost_fn]
-    reward_fn = lambda ref, obs: compute_ot_reward(obs, ref, dist_fn, scale=cfg.reward_model.scale)
+
+    if cfg.reward_model.name == "joint_wasserstein":
+        reward_fn = lambda ref, obs: compute_ot_reward(obs, ref, dist_fn, scale=cfg.reward_model.scale)
+    elif cfg.reward_model.name == "joint_soft_dtw":
+        reward_fn = lambda ref, obs: compute_soft_dtw_reward(obs, ref, dist_fn, gamma=cfg.reward_model.gamma, scale=cfg.reward_model.scale)
 
     # Load the reference joint states
     ref_seq = load_reference_seq(cfg.joint_eval_data.name)

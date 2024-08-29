@@ -20,18 +20,31 @@ from numbers import Number
 from loguru import logger
 
 import vlm_reward.utils.optimal_transport as custom_ot
+import vlm_reward.utils.soft_dtw as custom_sdtw
 import time
 
-class OTRewardCallback(BaseCallback):
+class JointBasedSeqRewardCallback(BaseCallback):
     """
-    Custom callback for calculating Optimal Transport (OT) rewards after rollouts are collected.
+    Custom callback for calculating joint based sequence matching rewards after rollouts are collected.
     """
-    def __init__(self, seq_name, cost_fn_type="cosine", scale=1, verbose=0):
-        super(OTRewardCallback, self).__init__(verbose)
+    def __init__(self, seq_name, matching_fn_cfg, verbose=0):
+        super(JointBasedSeqRewardCallback, self).__init__(verbose)
 
         self._ref_seq = custom_ot.load_reference_seq(seq_name)
-        self._cost_fn = custom_ot.COST_FN_DICT[cost_fn_type]
-        self._scale = scale
+        self._scale = matching_fn_cfg['scale']
+
+        self.set_matching_fn(matching_fn_cfg)
+
+    def set_matching_fn(self, matching_fn_cfg):
+        assert "joint_wasserstein" == matching_fn_cfg["name"] or "joint_soft_dtw", f"Currently only supporting joint_wasserstein or joint soft dynamic time warping, got {matching_fn_cfg['name']}"
+        matching_fn_name = matching_fn_cfg["name"]
+
+        if matching_fn_name == "joint_wasserstein":
+            self._matching_fn = lambda rollout, ref: custom_ot.compute_ot_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], self._scale)
+        elif matching_fn_name == "joint_soft_dtw":
+            self._matching_fn = lambda rollout, ref: custom_sdtw.compute_soft_dtw_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], matching_fn_cfg['gamma'], self._scale)
+
+        logger.info(f"Set matching function to {matching_fn_name} with cost_fn={matching_fn_cfg['cost_fn']} and scale={self._scale}")
 
     def on_rollout_end(self) -> None:
         """
@@ -60,15 +73,15 @@ class OTRewardCallback(BaseCallback):
 
             obs_to_process = np.concatenate((self.model.replay_buffer.observations[-(env_episode_timesteps - replay_buffer_pos) :, :], self.model.replay_buffer.observations[:replay_buffer_pos, :]), axis=0)
 
-        ot_reward_list = []
+        matching_reward_list = []
         for env_i in range(self.model.env.num_envs):
             # TODO: A hard-coded value (22 is matching qpos of the environment)
             obs = obs_to_process[:, env_i, :22]  # size: (train_freq, 22)
-            ot_reward, _ = custom_ot.compute_ot_reward(obs, self._ref_seq, self._cost_fn, self._scale)  # size: (train_freq,)
-            # logger.debug(f"ot_reward={ot_reward.shape}")
-            ot_reward_list.append(ot_reward)
+            matching_reward, _ = self._matching_fn(obs, self._ref_seq)  # size: (train_freq,)
+            # logger.debug(f"matching_reward={matching_reward.shape}")
+            matching_reward_list.append(matching_reward)
 
-        rewards = np.stack(ot_reward_list, axis=1)  # size: (train_freq, n_envs)
+        rewards = np.stack(matching_reward_list, axis=1)  # size: (train_freq, n_envs)
 
         # Add the optimal transport reward to exisiting rewards
         if replay_buffer_pos - env_episode_timesteps >= 0:
@@ -138,8 +151,8 @@ class VideoRecorderCallback(BaseCallback):
         n_eval_episodes: int = 1,
         deterministic: bool = True,
         seq_name: str = "",
-        cost_fn_type="cosine",
-        scale=1,
+        matching_fn_cfg: dict = {}, 
+        verbose=0
     ):
         """
         Records a video of an agent's trajectory traversing ``eval_env`` and logs it to
@@ -156,7 +169,7 @@ class VideoRecorderCallback(BaseCallback):
                 You only need to set this if you want to calculate the OT reward
             cost_fn_type: The type of cost function to use for the OT reward calculation
         """
-        super().__init__()
+        super().__init__(verbose)
         self._eval_env = eval_env
         self._render_freq = render_freq
         self._n_eval_episodes = n_eval_episodes
@@ -164,12 +177,24 @@ class VideoRecorderCallback(BaseCallback):
         self._rollout_save_path = rollout_save_path  # Save the state of the environment
 
         if seq_name:
-            self._calc_ot_reward = True
+            self._calc_matching_reward = True
             self._ref_seq = custom_ot.load_reference_seq(seq_name)
-            self._cost_fn = custom_ot.COST_FN_DICT[cost_fn_type]
-            self._scale = scale
+            self._scale = matching_fn_cfg['scale']
+            self.set_matching_fn(matching_fn_cfg)
         else:
-            self._calc_ot_reward = False
+            self._calc_matching_reward = False
+
+    def set_matching_fn(self, matching_fn_cfg):
+        assert "joint_wasserstein" == matching_fn_cfg["name"] or "joint_soft_dtw", f"Currently only supporting joint_wasserstein or joint soft dynamic time warping, got {matching_fn_cfg['name']}"
+        matching_fn_name = matching_fn_cfg["name"]
+
+        if matching_fn_name == "joint_wasserstein":
+            self._matching_fn = lambda rollout, ref: custom_ot.compute_ot_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], self._scale)
+        elif matching_fn_name == "joint_soft_dtw":
+            self._matching_fn = lambda rollout, ref: custom_sdtw.compute_soft_dtw_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], matching_fn_cfg['gamma'], self._scale)
+
+        logger.info(f"Set matching function to {matching_fn_name} with cost_fn={matching_fn_cfg['cost_fn']} and scale={self._scale}")
+
 
     def _on_step(self) -> bool:
         if self.n_calls % self._render_freq == 0:
@@ -215,27 +240,27 @@ class VideoRecorderCallback(BaseCallback):
             states = np.concatenate(states)
             rewards = np.concatenate(rewards)
 
-            if self._calc_ot_reward:
-                ot_reward, _ = custom_ot.compute_ot_reward(np.array(states)[:, :22], self._ref_seq, self._cost_fn, self._scale)
+            if self._calc_matching_reward:
+                matching_reward, _ = self._matching_fn(np.array(states)[:, :22], self._ref_seq)
 
-                self.logger.record("rollout/avg_ot_reward_unscaled", 
-                                np.mean(ot_reward)/self._scale, 
+                self.logger.record("rollout/avg_matching_reward_unscaled", 
+                                np.mean(matching_reward)/self._scale, 
                                 exclude=("stdout", "log", "json", "csv"))
                 
                 self.logger.record("rollout/avg_total_reward_unscaled", 
-                                np.mean(ot_reward/self._scale + rewards), 
+                                np.mean(matching_reward/self._scale + rewards), 
                                 exclude=("stdout", "log", "json", "csv"))
                 
                 self.logger.record("rollout/avg_total_reward", 
-                                np.mean(ot_reward + rewards), 
+                                np.mean(matching_reward + rewards), 
                                 exclude=("stdout", "log", "json", "csv"))
 
-                # Add the ot_reward to the infos so that we can plot it
+                # Add the matching_reward to the infos so that we can plot it
                 for i in range(len(infos)):
-                    infos[i]["ot_reward"] = f"{ot_reward[i]:.2f}"
+                    infos[i]["matching_reward"] = f"{matching_reward[i]:.2f}"
 
-                # Save the ot_rewards locally    
-                with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_ot_rewards.npy"), "wb") as f:
+                # Save the matching_rewards locally    
+                with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_matching_rewards.npy"), "wb") as f:
                     np.save(f, np.array(states))
 
             # Plot info on the frames  

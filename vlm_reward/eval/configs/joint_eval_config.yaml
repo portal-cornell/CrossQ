@@ -1,4 +1,5 @@
 skip_gifs: 10
+run_notes: null
 
 defaults:
   - reward_model: joint_wasserstein
@@ -9,5 +10,5 @@ hydra:
   searchpath:
     - file://../../configs
   run:
-    dir: ./joint_eval_logs/${now:%Y-%m-%d-%H%M%S}_rm=${reward_model.name}_src=${joint_eval_data.name}
+    dir: ./joint_eval_logs/${now:%Y-%m-%d-%H%M%S}_rm=${reward_model.name}_src=${joint_eval_data.name}_nt=${run_notes}
 
