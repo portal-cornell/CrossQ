@@ -479,8 +479,6 @@ def reward_goal_only_euclidean(data, **kwargs):
 
     This task is a goal-reaching task (i.e. doesn't matter how you get to the goal, as long as you get to the goal)
     """
-    original_mujoco_reward, _ = reward_original(data, **kwargs)
-
     basic_standing_reward, terms_to_plot = basic_remain_standing_rewards(data, 
                                                             upward_reward_w=1, 
                                                             ctrl_cost_w=1, 
@@ -499,11 +497,10 @@ def reward_goal_only_euclidean(data, **kwargs):
     pose_matching_reward = np.exp(-np.linalg.norm(curr_qpos - ref_joint_states[0]))
     pose_matching_reward_w = 1
     
-    reward = basic_standing_reward + pose_matching_reward_w
+    reward = basic_standing_reward + pose_matching_reward_w * pose_matching_reward
 
     terms_to_plot["pose_r"] = f"{pose_matching_reward:.2f}"
     terms_to_plot["r"] = f"{reward:.2f}"
-    terms_to_plot["og_r"] = f"{original_mujoco_reward:.2f}"
     terms_to_plot["steps"] = kwargs.get("num_steps", 0)
 
     return reward, terms_to_plot
@@ -514,8 +511,6 @@ def reward_seq_euclidean(data, **kwargs):
 
     This task is a goal-reaching task (i.e. doesn't matter how you get to the goal, as long as you get to the goal)
     """
-    original_mujoco_reward, _ = reward_original(data, **kwargs)
-
     basic_standing_reward, terms_to_plot = basic_remain_standing_rewards(data, 
                                                             upward_reward_w=1, 
                                                             ctrl_cost_w=1, 
@@ -539,7 +534,6 @@ def reward_seq_euclidean(data, **kwargs):
     terms_to_plot["pose_r_l"] = str([f"{unweighted_reward_for_each_ref[i]:.2f}" for i in range(num_ref_joint_states)])
     terms_to_plot["pose_r"] = f"{pose_matching_reward:.2f}"
     terms_to_plot["r"] = f"{reward:.2f}"
-    terms_to_plot["og_r"] = f"{original_mujoco_reward:.2f}"
     terms_to_plot["steps"] = kwargs.get("num_steps", 0)
     
     return reward, terms_to_plot
@@ -679,6 +673,9 @@ REWARD_FN_MAPPING = dict(
         arms_bracket_down_goal_only_euclidean = reward_goal_only_euclidean,
         arms_bracket_down_basic_r = reward_only_basic_r,
 
+        left_arm_extend_wave_higher_goal_only_euclidean = reward_goal_only_euclidean,
+        left_arm_extend_wave_higher_basic_r = reward_only_basic_r,
+
         both_arms_out_goal_only_euclidean = reward_goal_only_euclidean,
         both_arms_out_seq_euclidean = reward_seq_euclidean,
         both_arms_out_basic_r = reward_only_basic_r,
@@ -686,7 +683,7 @@ REWARD_FN_MAPPING = dict(
         both_arms_up_goal_only_euclidean = reward_goal_only_euclidean,
         both_arms_up_seq_euclidean = reward_seq_euclidean,
         both_arms_up_basic_r = reward_only_basic_r,
-        
+
         arms_up_then_down_seq_euclidean = reward_seq_euclidean,
         arms_up_then_down_seq_stage_detector = reward_seq_stage_detector,
         arms_up_then_down_seq_avg = reward_seq_avg,
