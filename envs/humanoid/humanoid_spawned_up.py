@@ -10,7 +10,7 @@ from numpy.typing import NDArray
 
 from envs.humanoid.reward_helpers import *
 
-from constants import SEQ_DICT
+from constants import DEMOS_DICT
 
 def mass_center(model, data):
     mass = np.expand_dims(model.body_mass, axis=1)
@@ -26,19 +26,6 @@ DEFAULT_CAMERA_CONFIG = {
 }
 
 class HumanoidEnvCustom(GymHumanoidEnv):
-    DEMOS_DICT = {
-        "both_arms_out_goal_only_euclidean": SEQ_DICT["both_arms_out"],
-        "both_arms_out_seq_euclidean": SEQ_DICT["both_arms_out_with_intermediate"],
-        "both_arms_out_basic_r": SEQ_DICT["both_arms_out_with_intermediate"],
-        "both_arms_up_goal_only_euclidean": SEQ_DICT["both_arms_up"],
-        "both_arms_up_seq_euclidean": SEQ_DICT["both_arms_up_with_intermediate"],
-        "both_arms_up_basic_r": SEQ_DICT["both_arms_up_with_intermediate"],
-        "arms_up_then_down_seq_euclidean": SEQ_DICT["arms_up_then_down"],
-        "arms_up_then_down_seq_stage_detector": SEQ_DICT["arms_up_then_down"],
-        "arms_up_then_down_seq_avg": SEQ_DICT["arms_up_then_down"],
-        "arms_up_then_down_basic_r": SEQ_DICT["arms_up_then_down"],
-    }
-
     def __init__(
         self,
         episode_length=240,
@@ -114,8 +101,8 @@ class HumanoidEnvCustom(GymHumanoidEnv):
 
         self._ref_joint_states = np.array([])
 
-        if reward_type in self.DEMOS_DICT:
-            self._load_reference_joint_states(self.DEMOS_DICT[reward_type])
+        if reward_type in DEMOS_DICT:
+            self._load_reference_joint_states(DEMOS_DICT[reward_type])
         else:
             logger.info(f"Warning: {reward_type} is not in the DEMOS_DICT. No reference joint states loaded.")
 
@@ -679,15 +666,27 @@ REWARD_FN_MAPPING = dict(
         simple_remain_standing = reward_simple_remain_standing,
         simple_remain_standing_exp_dist = reward_simple_remain_standing_exp_dist,
         remain_standing = reward_remain_standing,
+
         best_standing_up = best_standing_from_lying_down,
+
         kneeling = reward_kneeling,
+
         splitting = reward_splitting,
+
+        arms_bracket_right_goal_only_euclidean = reward_goal_only_euclidean,
+        arms_bracket_right_basic_r = reward_only_basic_r,
+
+        arms_bracket_down_goal_only_euclidean = reward_goal_only_euclidean,
+        arms_bracket_down_basic_r = reward_only_basic_r,
+
         both_arms_out_goal_only_euclidean = reward_goal_only_euclidean,
         both_arms_out_seq_euclidean = reward_seq_euclidean,
         both_arms_out_basic_r = reward_only_basic_r,
+
         both_arms_up_goal_only_euclidean = reward_goal_only_euclidean,
         both_arms_up_seq_euclidean = reward_seq_euclidean,
         both_arms_up_basic_r = reward_only_basic_r,
+        
         arms_up_then_down_seq_euclidean = reward_seq_euclidean,
         arms_up_then_down_seq_stage_detector = reward_seq_stage_detector,
         arms_up_then_down_seq_avg = reward_seq_avg,

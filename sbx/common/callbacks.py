@@ -270,6 +270,7 @@ class VideoRecorderCallback(BaseCallback):
         render_freq: int,
         n_eval_episodes: int = 1,
         deterministic: bool = True,
+        goal_seq_name: str = "",
         seq_name: str = "",
         matching_fn_cfg: dict = {}, 
         verbose=0
@@ -285,9 +286,10 @@ class VideoRecorderCallback(BaseCallback):
             render_freq: Render the agent's trajectory every eval_freq call of the callback.
             n_eval_episodes: Number of episodes to render
             deterministic: Whether to use deterministic or stochastic policy
+            goal_seq_name: The name of the reference sequence to compare with (This defines the unifying metric that all approaches attempting to solve the same task gets compared against)
             seq_name: The name of the reference sequence to compare with
                 You only need to set this if you want to calculate the OT reward
-            cost_fn_type: The type of cost function to use for the OT reward calculation
+            matching_fn_cfg: The configuration for the matching function
         """
         super().__init__(verbose)
         self._eval_env = eval_env
@@ -296,13 +298,37 @@ class VideoRecorderCallback(BaseCallback):
         self._deterministic = deterministic
         self._rollout_save_path = rollout_save_path  # Save the state of the environment
 
-        if seq_name:
-            self._calc_matching_reward = True
+        # TODO: Figure out how to calculate the joint matching reward for sequence following tasks
+        #   For now, we will just support calculating the ground-truth reward for matching the goal joint state
+        self._goal_ref_seq = custom_ot.load_reference_seq(goal_seq_name)
+        self.set_ground_truth_goal_matching_fn(goal_seq_name)
+
+        if matching_fn_cfg != {}:
             self._ref_seq = custom_ot.load_reference_seq(seq_name)
+            self._calc_matching_reward = True
             self._scale = matching_fn_cfg['scale']
             self.set_matching_fn(matching_fn_cfg)
         else:
             self._calc_matching_reward = False
+
+        # TODO: We can potentially also do VLM reward calculation
+
+    def set_ground_truth_goal_matching_fn(self, goal_seq_name):
+        """Set the ground-truth goal matching function based on the goal_seq_name.
+
+        This will be unifying metric that we measure the performance of different methods against.
+
+        The function will return an reward array of size (n_timesteps,) where each element is the reward for the corresponding timestep.
+        """
+        if "final_only" in goal_seq_name:
+            logger.info(f"The ground-truth reward will be calculated based on the final joint state only: {goal_seq_name}")
+
+            assert len(self._goal_ref_seq) == 1, f"Expected only 1 reference sequence, got {len(self._goal_ref_seq)}"
+            
+            self._gt_goal_matching_fn = lambda rollout: np.exp(-np.linalg.norm(rollout - self._goal_ref_seq, axis=1))
+        else:
+            # TODO: There's a minor bug with how we specify goal_seq_name. Because "both_arms_up_seq_euclidean" is using a sequence of 2, it will trigger this case. The best thing to do is to directly specify the task: is it goal reaching or sequence following?
+            assert False, f"Currently only supporting final_only, got {goal_seq_name}"
 
     def set_matching_fn(self, matching_fn_cfg):
         assert "joint_wasserstein" == matching_fn_cfg["name"] or "joint_soft_dtw", f"Currently only supporting joint_wasserstein or joint soft dynamic time warping, got {matching_fn_cfg['name']}"
@@ -360,6 +386,18 @@ class VideoRecorderCallback(BaseCallback):
             states = np.concatenate(states)
             rewards = np.concatenate(rewards)
 
+            # Calculate the goal matching reward
+            goal_matching_reward = self._gt_goal_matching_fn(np.array(states)[:, :22])
+            for i in range(len(infos)):
+                infos[i]["gt_joint_match_r"] = f"{goal_matching_reward[i]:.4f}"
+
+            with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_goal_matching_reward.npy"), "wb") as f:
+                np.save(f, np.array(goal_matching_reward))
+            self.logger.record("rollout/sum_total_reward_per_epsisode", 
+                                np.sum(goal_matching_reward), 
+                                exclude=("stdout", "log", "json", "csv"))
+
+            # TODO: We can potentially also do VLM reward calculation
             if self._calc_matching_reward:
                 matching_reward, _ = self._matching_fn(np.array(states)[:, :22], self._ref_seq)
 

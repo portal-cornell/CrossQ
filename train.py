@@ -23,13 +23,14 @@ from sbx.common.subproc_vec_env import SubprocVecEnv
 
 import gymnasium as gym
 
+
 from loguru import logger
 
 import multiprocess
 from envs.base import get_make_env
 from vlm_reward.reward_main import load_reward_model, dist_worker_compute_reward
 from sbx.common.callbacks import VideoRecorderCallback, WandbCallback, JointBasedSeqRewardCallback
-    
+from constants import REWARDS_TO_ENTRY_IN_SEQ
 
 def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] = None):
     """
@@ -95,7 +96,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         n_gpu_workers = cfg.compute.n_gpu_workers,
         episode_length = cfg.env.episode_length,
         render_dim = cfg.env.render_dim,
-        add_to_gt_rewards = cfg.reward_model.add_to_gt_rewards,
+        add_to_gt_rewards = cfg.reward_model.add_to_gt_rewards if use_vlm_for_reward else False,
     )
 
     # TODO: Not sure if .load() is better than .set_parameters()
@@ -130,8 +131,10 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             SubprocVecEnv([make_env_fn], render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3)),
             rollout_save_path=os.path.join(cfg.logging.run_path, "eval"),
             render_freq=cfg.logging.video_save_freq // cfg.compute.n_cpu_workers,
-            seq_name = cfg.reward_model.seq_name if cfg.reward_model.name == "joint_wasserstein" or cfg.reward_model.name == "joint_soft_dtw" else "",
-            matching_fn_cfg = dict(cfg.reward_model) if cfg.reward_model.name == "joint_wasserstein" or cfg.reward_model.name == "joint_soft_dtw" else {},
+            goal_seq_name=REWARDS_TO_ENTRY_IN_SEQ[cfg.env.reward_type] if "reward_type" in cfg.env else "",
+            # For joint based reward
+            seq_name=cfg.reward_model.seq_name if cfg.reward_model.name == "joint_wasserstein" or cfg.reward_model.name == "joint_soft_dtw" else "",
+            matching_fn_cfg=dict(cfg.reward_model) if cfg.reward_model.name == "joint_wasserstein" or cfg.reward_model.name == "joint_soft_dtw" else {},
         )
 
         callback_list = [wandb_callback, video_callback]
