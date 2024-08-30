@@ -261,9 +261,9 @@ def main(cfg: DictConfig):
             logger.info("Running RL for ground truth.")
             primary_worker(cfg)
 
-    if cfg.compute.distributed:
+    if cfg.compute.n_gpu_workers > 1:
         _train()
-    else:
+    else: # If only 1 worker, no need to spawn process on each worker 
         primary_worker(cfg)
 
 

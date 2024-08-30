@@ -68,11 +68,21 @@ def compute_rewards(
     model,
     frames: torch.Tensor,
     rank0_batch_size_pct: float,
-    batch_size: int, # Used to determine how the frames need to get splited up
+    batch_size: int, # Used to determine how the frames need to get splitted up
     num_workers: int,
     worker_frames_tensor=None,
-    dist=True,
 ) -> torch.Tensor:
+    """
+    Compute rewards using the given model
+
+    model: a RewardModel
+    frames: the source frames to compute the reward against
+    batch_size: the size of the batches to run on each iteration (for each worker) TODO: is this true???
+    num_workers: the number of gpus to run training on (>0)
+    worker_frames_tensor: a tensor of the shape of the desired frames to compute per worker.
+        if this is None, it will be inferred from the shape of frames. i.e., (worker_batch_size, *render_dim)
+    """
+
     assert frames.device == torch.device("cpu")
     assert batch_size % num_workers == 0
 
@@ -86,8 +96,8 @@ def compute_rewards(
     else:
         model = model.eval()
 
-    if not dist:
-
+    if num_workers == 1: 
+        # do not use torch distributed if only 1 gpu is available
         for i in range(0, n_samples, batch_size):
             frames_batch = frames[i : i + batch_size]
             rewards_batch = compute_reward_nodist(frames_batch, model)
@@ -175,7 +185,7 @@ def dist_worker_compute_reward(
         if frames is None:
             raise ValueError("Must pass render result on rank=0")
         
-        elif rank0_batch_size_pct < 1.0:
+        if rank0_batch_size_pct < 1.0:
             rank_0_chunk_size = int(rank0_batch_size_pct * total_batch_size) # .2 * 60 = 12 0 * 60 = 0
 
             remaining_size = total_batch_size - rank_0_chunk_size # 48  60
@@ -186,7 +196,6 @@ def dist_worker_compute_reward(
             ## only scatter if rank 0 (otherwise, tensors have already been scattered)
             scatter_list = [t.cuda(rank) for t in torch.split(frames, split_size_or_sections=chunk_list, dim=0)]
             
-
             rank_0_pad_size = remaining_chunk_size - rank_0_chunk_size # 48-12=26 60-0 = 60
             # Pad the left of the batch so all the chunks have the same size
             scatter_list[0] = F.pad(scatter_list[0], (0, 0, 0, 0, 0, 0, rank_0_pad_size, 0),

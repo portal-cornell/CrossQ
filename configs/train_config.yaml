@@ -11,8 +11,6 @@ compute:
   n_gpu_workers: 2
   n_cpu_workers: 8  # One gym env per cpu
 
-  distributed: True
-
 logging:
   log_freq: 300  # How many times to log during training
   video_save_freq: 10000 # Frequency to save the video

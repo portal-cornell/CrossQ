@@ -146,16 +146,15 @@ class VLMRewardCallback(BaseCallback):
         frames = rearrange(frames, "n_steps n_envs ... -> (n_steps n_envs) ...")
         
         ### Compute rewards
-        # NOTE: distributed will be off if dist is False
+        # NOTE: distributed will be off if num_workers == 1
         rewards = compute_rewards(
             model=self.model.reward_model,
             frames=frames,
             rank0_batch_size_pct=self.model.reward_model_config["rank0_batch_size_pct"],
             batch_size=self.model.reward_model_config["reward_batch_size"],  # This is the total batch size
             num_workers=self.model.n_gpu_workers,
-            worker_frames_tensor=self.model.worker_frames_tensor,
-            dist=self.model.use_distributed
-        )
+            worker_frames_tensor=self.model.worker_frames_tensor
+            )
         
         rewards = rearrange(
             rewards,

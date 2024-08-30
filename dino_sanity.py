@@ -56,8 +56,7 @@ def rewards_from_gifs(gif_paths, reward_config_dict, reward_model_name, batch_si
             frames=frames,
             rank0_batch_size_pct=1,
             batch_size=batch_size,  # This is the total batch size
-            num_workers=1,
-            dist=False
+            num_workers=1            
             )
 
         best_match_list = [np.argmax(ot_plan, axis=1) for ot_plan in reward_model.saved_ot_plan]

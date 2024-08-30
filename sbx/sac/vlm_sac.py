@@ -271,9 +271,8 @@ class VLM_SAC(OffPolicyAlgorithmJax):
             rank0_batch_size_pct=self.reward_model_config["rank0_batch_size_pct"],
             batch_size=self.reward_model_config["reward_batch_size"],  # This is the total batch size
             num_workers=self.n_gpu_workers,
-            worker_frames_tensor=self.worker_frames_tensor,
-            dist=self.use_distributed
-        )
+            worker_frames_tensor=self.worker_frames_tensor        
+            )
 
         rewards = rearrange(
             rewards,
