@@ -73,26 +73,6 @@ def plot_sequence_rewards_ranking_permutation(x_sequence_rewards, y_sequence_rew
 
     plot_permutation_diagram(x_average_ranking, y_average_ranking, fp, sequence_labels=sequence_labels)
 
-
-def eval_sequence(model: RewardModel, 
-        source_images: Float[torch.Tensor, "frames c h w"],
-        target_image: Float[torch.Tensor, "c h w"],
-        ground_truth_rewards: Float[torch.Tensor, "frames"],
-        evaluation_metric:  Callable[[List[Float[torch.Tensor, "frames"]], List[Float[torch.Tensor, "frames"]]], float]):
-    """
-    Evaluate a single sequence of rewards against the ground truth
-    
-    TODO: use KL or mse
-    """
-    model.set_target_embedding(target_image)
-    model.set_source_embeddings(source_images)
-
-    model_rewards = model.predict()
-
-    performance = evaluation_metric(ground_truth_rewards, model_rewards)
-    return performance
-
-
 def eval_from_paths(
         model: RewardModel,
         target_image_path: str,
@@ -117,18 +97,13 @@ def eval_from_paths(
     start = torch.cuda.Event(enable_timing=True)
     end = torch.cuda.Event(enable_timing=True)
 
-    target_image_raw = load_image_from_path(target_image_path, output_type="torch")
-    target_image = image_transform(target_image_raw[None])[0] # image transform takes in batched input
-    
-    model.set_target_embedding(target_image)
-
     source_rewards = []
     ground_truth_rewards = []
     within_sequence_performances = []
     times = []
     data_save_dir = HydraConfig.get().runtime.output_dir
 
-    for source_gif_path, ground_truth_rewards_path in sources_and_rewards:
+    for source_gif_path, ground_truth_rewards_path in sources_and_rewards[:2]:
         # cut off the last frame and reward for all sequences, because it often has weird stuff
         # (ex. text on the screen, reset robot position)
         # TODO: this is pretty hacky rn
@@ -207,11 +182,12 @@ def eval_from_config(config: DictConfig):
                                     worker_actual_batch_size=config.reward_model.reward_batch_size,  
                                     model_name=config.reward_model.name, 
                                     model_config_dict=model_config_dict)
+    reward_model.eval()
 
     target_path = config.reward_model.pos_image_path[0] # assume just 1 target image path for now
     
     image_transform = lambda image: F.interpolate(image, size=(224,224), mode="bilinear")
-        
+    
     # don't use spearman within sequence, because we are more concerned with the large changes across phases
     # in the sequence, not small changes that may occur to the order (due to the models being less stable within the sequence)
     within_sequence_evaluation_metric = z_score_l2 

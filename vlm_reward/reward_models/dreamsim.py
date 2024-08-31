@@ -94,6 +94,7 @@ class DreamSimRewardModel(RewardModel):
             self.source_embedding = self.source_embedding.to(device)
         if self.target_embedding is not None:
             self.target_embedding = self.target_embedding.to(device)
+        return self
 
     def cuda(self, rank: int) -> None:
         """
@@ -105,7 +106,12 @@ class DreamSimRewardModel(RewardModel):
         cuda_device = f'cuda:{rank}'
         self.device = cuda_device
         self.embed_module.to(self.device)
-    
+        return self
+
+    def eval(self):
+        self.embed_module.eval()
+        return self
+
     def get_tensor_from_image(self, image_paths: List[str]) -> torch.Tensor:
         images = [Image.open(image_path).convert("RGB") for image_path in image_paths]
         processed_images = [self.preprocess(image) for image in images] # list of (1, 3, 224, 224)

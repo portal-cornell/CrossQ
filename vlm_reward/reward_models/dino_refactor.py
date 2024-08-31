@@ -10,8 +10,7 @@ from jaxtyping import Float
 from typing import Tuple, NewType, Any
 
 
-def load_dino_wasserstein_reward_model(
-    rank: int, batch_size: int, model_name: str, image_size: int,
+def load_dino_wasserstein_reward_model(rank: int, batch_size: int, model_name: str, image_size: int,
     human_seg_model_path: str, source_mask_thresh: str, target_mask_thresh: str,
     ):  
     feature_extractor = Dino2FeatureExtractor(model_name=model_name, edge_size=image_size)
@@ -30,7 +29,7 @@ def load_dino_wasserstein_reward_model(
                                     source_mask_thresh=source_mask_thresh,
                                     target_mask_thresh=target_mask_thresh)    
 
-    return dino_interface.cuda(rank) # eval model should always be on gpu                        
+    return dino_interface # eval model should always be on gpu                        
 
 def load_dino_pooled_reward_model(rank: int, batch_size: int, model_name: str, image_size: int, human_seg_model_path: str):  
     feature_extractor = Dino2FeatureExtractor(model_name=model_name, edge_size=image_size)
@@ -47,7 +46,7 @@ def load_dino_pooled_reward_model(rank: int, batch_size: int, model_name: str, i
                                     rank=rank,
                                     batch_size=batch_size)    
 
-    return dino_interface.cuda(rank) # eval model should always be on gpu                        
+    return dino_interface # eval model should always be on gpu                        
 
 class DinoWassersteinRewardModel(RewardModel):
     """
@@ -55,13 +54,17 @@ class DinoWassersteinRewardModel(RewardModel):
     Currently supports just 1 target image
     """
     def __init__(self, dino_metric_model, rank, batch_size, 
-            source_mask_thresh, target_mask_thresh):
+            source_mask_thresh, target_mask_thresh, 
+            cost_fn='cosine', return_ot_plan=False):
         self.reward_model = dino_metric_model
         self.device = f"cuda:{rank}"
         self.batch_size = batch_size
 
         self.source_mask_thresh = source_mask_thresh
         self.target_mask_thresh = target_mask_thresh   
+
+        self.cost_fn = cost_fn
+        self.return_ot_plan = return_ot_plan
 
     def set_target_embedding(self, target_image: Float[torch.Tensor, "c h w"]) -> None:
         """
@@ -121,11 +124,18 @@ class DinoWassersteinRewardModel(RewardModel):
                 raw_output_dict = self.reward_model.compute_distance_parallel(source_features=source_embedding_batch,
                                                                         source_masks=source_mask_batch,
                                                                         target_features=target_embedding_repeat,
-                                                                        target_masks=target_mask_repeat
+                                                                        target_masks=target_mask_repeat,
+                                                                        cost_fn=self.cost_fn,
+                                                                        return_ot_plan=self.return_ot_plan
                                                                         )
-                distance = torch.Tensor(raw_output_dict["wasser"]).to(self.device)
                 
+                distance = torch.Tensor(raw_output_dict["wasser"]).to(self.device)
                 all_ds.append(distance)
+
+                if self.return_ot_plan:
+                    self.saved_ot_plan.extend(raw_output_dict.get("T", None))
+                    self.saved_costs.extend(raw_output_dict.get("C", None))
+                
 
         all_ds = torch.cat(all_ds)
 

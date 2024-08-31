@@ -24,7 +24,7 @@ from stable_baselines3.sac.policies import SACPolicy
 #### From stable_baselines3/sac/sac.py ####
 
 from vlm_reward.vlm_buffer import VLMReplayBuffer
-from vlm_reward.reward_main import load_reward_model
+from vlm_reward.reward_models.model_factory import load_reward_model
 from vlm_reward.reward_main import compute_rewards
 from vlm_reward.reward_transforms import half_gaussian_filter_1d
 
@@ -160,15 +160,10 @@ class CustomVLMSAC(SAC):
 
         reward_model = load_reward_model(rank=0,            
                                         worker_actual_batch_size=rank0_worker_batch,
-                                         model_name=self.reward_model_config["vlm_model"],
+                                         model_name=self.reward_model_config["name"],
                                          model_config_dict=self.reward_model_config)
         
-        # TODO: A temporary hack, because DreamSimRewardModel inherited from RewardModel
-        if "dreamsim" in self.reward_model_config["vlm_model"].lower():
-            reward_model.embed_module.eval()
-            reward_model.cuda(0)
-        else:
-            reward_model.eval().cuda(0)
+        reward_model.eval().cuda(0)
         
         self.reward_model = reward_model
 

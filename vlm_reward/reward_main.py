@@ -12,58 +12,6 @@ from vlm_reward.reward_models.dino_models import load_dino_reward_model
 from vlm_reward.reward_models.clip_models import load_clip_reward_model
 from vlm_reward.reward_models.dreamsim import load_dreamsim_reward_model, DreamSimRewardModel
 
-
-
-def load_reward_model(
-                    rank,
-                    worker_actual_batch_size,
-                    model_name, 
-                    model_config_dict):
-    assert any([model_base_name in model_name.lower() for model_base_name in ["vit", "dino", "dreamsim"]])
-
-    print(model_config_dict)
-    print(model_name)
-
-    if "dino" in model_name.lower():
-        reward_model = load_dino_reward_model(rank=rank,
-                                                batch_size=worker_actual_batch_size,
-                                                model_name=model_name,
-                                                image_metric="wasserstein",
-                                                image_size=model_config_dict["image_size"],
-                                                human_seg_model_path=model_config_dict["human_seg_model_path"],
-                                                pos_image_path_list=model_config_dict["pos_image_path"],
-                                                neg_image_path_list=model_config_dict.get("neg_image_path", []),
-                                                source_mask_thresh=model_config_dict["source_mask_thresh"],
-                                                target_mask_thresh=model_config_dict["target_mask_thresh"],
-                                                baseline_image_path=model_config_dict.get("baseline_image_path", None),
-                                                baseline_mask_thresh=model_config_dict.get("baseline_mask_thresh", None),
-                                                cost_fn=model_config_dict["cost_fn"],
-                                                return_ot_plan=model_config_dict.get("return_ot_plan", False))
-
-        logger.debug(f"Loaded DINO reward model. model_name={model_name}, pos_image={model_config_dict['pos_image_path']}, neg_image={model_config_dict.get('neg_image_path', [])}")
-
-    if (not ("dino" in model_name.lower())) and ("vit" in model_name.lower()):
-        reward_model = load_clip_reward_model(model_name=model_name,
-                                                target_prompts=model_config_dict["target_prompts"],
-                                                baseline_prompts=model_config_dict["baseline_prompts"],
-                                                alpha=model_config_dict["alpha"],
-                                                cache_dir=model_config_dict["cache_dir"])
-
-        logger.debug(f"Loaded CLIP reward model. model_name={model_name}, target_prompts={model_config_dict['target_prompts']}")
-    
-    if "dreamsim" in model_name.lower():
-        reward_model = load_dreamsim_reward_model()
-        logger.debug(f"Loaded DREAMSIM reward model. model_name={model_name}, pos_image={model_config_dict['pos_image_path']}")
-
-        # TODO: refactor
-        target_image_path = model_config_dict["pos_image_path"]
-        print(f"target_image_path: {target_image_path}")
-        target_image_tensor = reward_model.get_tensor_from_image(target_image_path)
-        reward_model.set_target_embedding(target_image_tensor)
-
-    return reward_model
-
-
 def compute_rewards(
     model,
     frames: torch.Tensor,
@@ -91,10 +39,8 @@ def compute_rewards(
     rewards = torch.zeros(n_samples, device=torch.device("cpu"))
     # TODO: very ugly hack to prevent 'DreamSimRewardModel' object has no attribute 'eval'
     # To be fixed once we refactor the code to inherit from RewardModel
-    if isinstance(model, DreamSimRewardModel):
-        model.embed_module.eval()
-    else:
-        model = model.eval()
+
+    model.eval()
 
     if num_workers == 1: 
         # do not use torch distributed if only 1 gpu is available
@@ -229,11 +175,9 @@ def dist_worker_compute_reward(
             start_event.record()
             # logger.debug(f"[Worker {rank}] {worker_frames_to_compute.size()=} allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
             # TODO: ugly hack to be fixed once we refactor the code to inherit from RewardModel
-            if isinstance(reward_model, DreamSimRewardModel):
-                embeddings = reward_model.set_source_embeddings(worker_frames_to_compute.permute(0, 3, 1, 2))
-            else:
-                embeddings = reward_model.embed_module(worker_frames_to_compute, reward_model.source_mask_thresh)
-            end_event.record()
+            
+            embeddings = reward_model.set_source_embeddings(worker_frames_to_compute.permute(0, 3, 1, 2))
+
             # if type(embeddings) == tuple:
             #     logger.debug(f"[Worker {rank}] {embeddings[0].size()= } allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
             # else:
@@ -247,10 +191,8 @@ def dist_worker_compute_reward(
 
             start_event.record()
             # TODO: ugly hack to be fixed once we refactor the code to inherit from RewardModel
-            if isinstance(reward_model, DreamSimRewardModel):
-                rewards = reward_model.predict()
-            else:
-                rewards = reward_model(embeddings)
+            rewards = reward_model.predict()
+
             end_event.record()
             # logger.debug(f"[Worker {rank}] {rewards.size()=} allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
 
@@ -280,10 +222,7 @@ def compute_reward_nodist(frames, reward_model):
 
     with torch.no_grad():
         start_event.record()
-        if isinstance(reward_model, DreamSimRewardModel):
-            embeddings = reward_model.set_source_embeddings(frames.permute(0, 3, 1, 2))
-        else:
-            embeddings = reward_model.embed_module(frames, reward_model.source_mask_thresh)
+        embeddings = reward_model.set_source_embeddings(frames.permute(0, 3, 1, 2))
         end_event.record()
         
         ### timing
@@ -293,10 +232,9 @@ def compute_reward_nodist(frames, reward_model):
         ####
 
         start_event.record()
-        if isinstance(reward_model, DreamSimRewardModel):
-            rewards = reward_model.predict()
-        else:
-            rewards = reward_model(embeddings)
+
+        rewards = reward_model.predict()
+        
         end_event.record()
         torch.cuda.synchronize()
         execution_time = start_event.elapsed_time(end_event)

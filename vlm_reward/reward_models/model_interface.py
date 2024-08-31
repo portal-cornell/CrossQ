@@ -2,7 +2,7 @@
 import torch 
 from torch import Tensor
 from jaxtyping import Float
-from typing import Tuple, NewType, Any
+from typing import Tuple, NewType, Any, Self
 
 from abc import abstractmethod, ABC
 
@@ -49,15 +49,23 @@ class RewardModel(ABC):
         pass
 
     @abstractmethod    
-    def to(self, device: str) -> None:
+    def to(self, device: str) -> Self:
         """
-        Send the model to device
+        Send the model to device and return the model
         """
         pass
 
     @abstractmethod
-    def cuda(self, rank: int) -> None:
+    def cuda(self, rank: int) -> Self:
         """
-        Send the model to cuda
+        Send the model to cuda and return the model
         """
         pass
+
+    @abstractmethod
+    def eval(self) -> Self:
+        """
+        Put the model in eval mode (turn off gradients) and return the model
+        """
+        pass
+

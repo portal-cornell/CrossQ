@@ -35,7 +35,6 @@ def override_tasks_and_model(target_images, target_image_type):
 
     eval_data_configs = ['crossq_arms_out', 'crossq_kneeling', 'crossq_splits']
 
-
     models = ["lpips", "dreamsim", "dino_pooled", "dino_patch_wasserstein"]    
     
     for eval_cfg, trg in zip(eval_data_configs, target_images):
@@ -72,4 +71,4 @@ def human_goal_image_exp():
     override_tasks_and_model(target_images, run_type)
 
 if __name__=="__main__":
-    override_tasks_and_model()
+    mujoco_goal_image_exp()
