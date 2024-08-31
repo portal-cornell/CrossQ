@@ -6,14 +6,10 @@ import torch.nn.functional as F
 from torchvision.utils import save_image
 
 from loguru import logger
-
-# TODO: finish all the imports needed here
-from vlm_reward.reward_models.dino_models import load_dino_reward_model
-from vlm_reward.reward_models.clip_models import load_clip_reward_model
-from vlm_reward.reward_models.dreamsim import load_dreamsim_reward_model, DreamSimRewardModel
+from vlm_reward.reward_models.model_interface import RewardModel
 
 def compute_rewards(
-    model,
+    model: RewardModel,
     frames: torch.Tensor,
     rank0_batch_size_pct: float,
     batch_size: int, # Used to determine how the frames need to get splitted up
@@ -37,9 +33,6 @@ def compute_rewards(
     n_samples = len(frames)
     logger.debug(f"compute_rewards: {n_samples=}, {batch_size=}")
     rewards = torch.zeros(n_samples, device=torch.device("cpu"))
-    # TODO: very ugly hack to prevent 'DreamSimRewardModel' object has no attribute 'eval'
-    # To be fixed once we refactor the code to inherit from RewardModel
-
     model.eval()
 
     if num_workers == 1: 
@@ -119,7 +112,7 @@ def dist_worker_compute_reward(
 def dist_worker_compute_reward(
     rank: int,
     rank0_batch_size_pct: float,
-    reward_model,
+    reward_model: RewardModel,
     render_dim: Tuple[int, int, int],
     total_batch_size: int,
     num_workers: int,
@@ -150,7 +143,7 @@ def dist_worker_compute_reward(
             # Split evenly
             scatter_list = [t.cuda(rank) for t in torch.chunk(frames, num_workers, dim=0)]
     else:
-        scatter_list = []
+        scatter_list = None
 
     start_event = torch.cuda.Event(enable_timing=True)
     end_event = torch.cuda.Event(enable_timing=True)
@@ -161,7 +154,7 @@ def dist_worker_compute_reward(
         remaining_chunk_size = total_batch_size 
 
     worker_frames = worker_frames_tensor if worker_frames_tensor is not None else torch.zeros((remaining_chunk_size, *render_dim), dtype=torch.uint8).cuda(rank)
-    logger.debug(f"[Worker {rank}] {worker_frames.size()=}, scatter_list={[x.size() for x in scatter_list]}")
+    
     dist.scatter(worker_frames, scatter_list=scatter_list, src=0) # this is where they get sent to other gpus
     with torch.no_grad():
         if rank == 0 and rank0_batch_size_pct == 0: # don't compute anything for device 0 if rank0 batch size is 0
@@ -184,10 +177,12 @@ def dist_worker_compute_reward(
             #     logger.debug(f"[Worker {rank}] {embeddings.size()= } allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
             
             ### timing
+            end_event.record()
+
             torch.cuda.synchronize()
             execution_time = start_event.elapsed_time(end_event)
-            logger.info(f"Worker #{rank} - Image Embedding time: {execution_time / 1000} seconds")
-            ####
+            logger.info(f"Worker #{rank} - Image shape: {worker_frames_to_compute.size()}, Image Embedding time: {execution_time / 1000} seconds")
+            ###
 
             start_event.record()
             # TODO: ugly hack to be fixed once we refactor the code to inherit from RewardModel
@@ -207,15 +202,30 @@ def dist_worker_compute_reward(
     def zero_t():
         return torch.zeros_like(rewards)
 
-    recv_rewards = [zero_t() for _ in range(num_workers)] if rank == 0 else []
-    dist.gather(rewards, gather_list=recv_rewards, dst=0)
-
     if rank == 0:
+        recv_rewards = [torch.randn_like(rewards).cuda(rank)*(i+1) for i in range(num_workers)]
+    else:
+        recv_rewards = None
+    
+    dist.gather(rewards, gather_list = recv_rewards, dst = 0)
+    
+    if rank == 0:
+        logger.info("consolidating tensors")
         consolidated_tensors = torch.cat(recv_rewards, dim=0).cuda(rank)
-        return torch.cat(recv_rewards, dim=0).cuda(rank)
+        logger.info(f"returning rewards")
+        return consolidated_tensors
+    #     return torch.cat(recv_rewards, dim=0).cuda(rank)
+        
+    
+   # dist.gather(rewards, gather_list=recv_rewards, dst=0)
+    
+    # if rank == 0:
+    #     logger.info(f"Returning rewards of shape {recv_rewards.size()}")
+    #     consolidated_tensors = torch.cat(recv_rewards, dim=0).cuda(rank)
+    #     return torch.cat(recv_rewards, dim=0).cuda(rank)
+        
 
-
-def compute_reward_nodist(frames, reward_model):
+def compute_reward_nodist(frames: torch.Tensor, reward_model: RewardModel):
 
     start_event = torch.cuda.Event(enable_timing=True)
     end_event = torch.cuda.Event(enable_timing=True)
@@ -241,3 +251,7 @@ def compute_reward_nodist(frames, reward_model):
         logger.info(f"Worker - Reward Calculation time: {execution_time / 1000} seconds")
 
     return rewards
+
+
+
+

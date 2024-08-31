@@ -39,6 +39,7 @@ def use_vlm_for_reward(cfg: DictConfig) -> bool:
     return "hand_engineered" not in cfg.reward_model.name.lower() and "joint_wasserstein" not in cfg.reward_model.name.lower() and "joint_soft_dtw" not in cfg.reward_model.name.lower()
 
 def set_os_vars() -> None:
+
     os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
     # Get egl (mujoco) rendering to work on cluster
     os.environ["NVIDIA_VISIBLE_DEVICES"] = "all"

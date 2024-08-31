@@ -227,6 +227,8 @@ def init_process(
     # if backend == "nccl":
     # TODO: come back to this after fixing the kube setup
     # os.environ["NCCL_SHM_DISABLE"] = "1"
+    torch.cuda.set_device(rank)
+
     dist.init_process_group(backend, rank=rank, world_size=cfg.compute.n_gpu_workers)
     if rank == 0:
         primary_worker(cfg, stop_event)
