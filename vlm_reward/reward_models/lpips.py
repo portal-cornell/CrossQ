@@ -13,7 +13,7 @@ def load_lpips_reward_model():
     return LPIPSRewardModel()
 
 class LPIPSRewardModel(RewardModel):
-    def __init__(self, net_type: str = 'alex'):
+    def __init__(self, rank: int = 0, net_type: str = 'alex'):
         """
         Initialize the LPIPS model with the specified network type.
         
@@ -39,6 +39,7 @@ class LPIPSRewardModel(RewardModel):
         """
         if self.source_embedding is None or self.target_embedding is None:
             raise ValueError("Source and target embeddings must be set before prediction.")
+        
         distance = self.model(self.source_embedding, self.target_embedding).squeeze() # (B, 1, 1, 1) -> (B,)
         similarity = 1.0 / (1.0 + distance)
         return similarity # reward
@@ -55,6 +56,7 @@ class LPIPSRewardModel(RewardModel):
         if image_batch.dtype == torch.uint8:
             image_batch = image_batch.float() / 255.0
         
+        # LPIPS embeds the images at prediction time
         self.source_embedding = image_batch
 
     def set_target_embedding(self, target_image: Tensor) -> None:
@@ -82,6 +84,8 @@ class LPIPSRewardModel(RewardModel):
             self.source_embedding = self.source_embedding.to(device)
         if self.target_embedding is not None:
             self.target_embedding = self.target_embedding.to(device)
+        return self
+
 
     def cuda(self, rank: int = 0) -> None:
         """
@@ -92,7 +96,13 @@ class LPIPSRewardModel(RewardModel):
         cuda_device = f'cuda:{rank}'
         self.device = cuda_device
         self.model.to(cuda_device)
-    
+        return self
+
+
+    def eval(self):
+        self.model.eval()
+        return self
+
     def get_tensor_from_image(self, image_paths: List[str]) -> torch.Tensor:
         images = [Image.open(image_path).convert("RGB") for image_path in image_paths]
         # needs unsqueeze to get (3, 224, 224) to (1, 3, 224, 224)

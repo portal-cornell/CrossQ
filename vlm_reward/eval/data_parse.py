@@ -71,4 +71,4 @@ def get_matched_source_and_reward_files(source_sequence_dir, reward_dir) -> List
     return zip(source_paths, reward_paths)
 
 if __name__=="__main__":
-    consolidate_experiment_metrics("eval_logs/", "experiment_outputs.csv")
+    consolidate_experiment_metrics("eval_logs/human-goal/", "human_experiment_outputs.csv")

@@ -6,88 +6,37 @@ import torch.nn.functional as F
 from torchvision.utils import save_image
 
 from loguru import logger
-
-# TODO: finish all the imports needed here
-from vlm_reward.reward_models.dino_models import load_dino_reward_model
-from vlm_reward.reward_models.clip_models import load_clip_reward_model
-from vlm_reward.reward_models.dreamsim import load_dreamsim_reward_model, DreamSimRewardModel
-
-
-
-def load_reward_model(
-                    rank,
-                    worker_actual_batch_size,
-                    model_name, 
-                    model_config_dict):
-    assert any([model_base_name in model_name.lower() for model_base_name in ["vit", "dino", "dreamsim"]])
-
-    print(model_config_dict)
-    print(model_name)
-
-    if "dino" in model_name.lower():
-        reward_model = load_dino_reward_model(rank=rank,
-                                                batch_size=worker_actual_batch_size,
-                                                model_name=model_name,
-                                                image_metric="wasserstein",
-                                                image_size=model_config_dict["image_size"],
-                                                human_seg_model_path=model_config_dict["human_seg_model_path"],
-                                                pos_image_path_list=model_config_dict["pos_image_path"],
-                                                neg_image_path_list=model_config_dict.get("neg_image_path", []),
-                                                source_mask_thresh=model_config_dict["source_mask_thresh"],
-                                                target_mask_thresh=model_config_dict["target_mask_thresh"],
-                                                baseline_image_path=model_config_dict.get("baseline_image_path", None),
-                                                baseline_mask_thresh=model_config_dict.get("baseline_mask_thresh", None),
-                                                cost_fn=model_config_dict["cost_fn"],
-                                                return_ot_plan=model_config_dict.get("return_ot_plan", False))
-
-        logger.debug(f"Loaded DINO reward model. model_name={model_name}, pos_image={model_config_dict['pos_image_path']}, neg_image={model_config_dict.get('neg_image_path', [])}")
-
-    if (not ("dino" in model_name.lower())) and ("vit" in model_name.lower()):
-        reward_model = load_clip_reward_model(model_name=model_name,
-                                                target_prompts=model_config_dict["target_prompts"],
-                                                baseline_prompts=model_config_dict["baseline_prompts"],
-                                                alpha=model_config_dict["alpha"],
-                                                cache_dir=model_config_dict["cache_dir"])
-
-        logger.debug(f"Loaded CLIP reward model. model_name={model_name}, target_prompts={model_config_dict['target_prompts']}")
-    
-    if "dreamsim" in model_name.lower():
-        reward_model = load_dreamsim_reward_model()
-        logger.debug(f"Loaded DREAMSIM reward model. model_name={model_name}, pos_image={model_config_dict['pos_image_path']}")
-
-        # TODO: refactor
-        target_image_path = model_config_dict["pos_image_path"]
-        print(f"target_image_path: {target_image_path}")
-        target_image_tensor = reward_model.get_tensor_from_image(target_image_path)
-        reward_model.set_target_embedding(target_image_tensor)
-
-    return reward_model
-
+from vlm_reward.reward_models.model_interface import RewardModel
 
 def compute_rewards(
-    model,
+    model: RewardModel,
     frames: torch.Tensor,
     rank0_batch_size_pct: float,
-    batch_size: int, # Used to determine how the frames need to get splited up
+    batch_size: int, # Used to determine how the frames need to get splitted up
     num_workers: int,
     worker_frames_tensor=None,
-    dist=True,
 ) -> torch.Tensor:
+    """
+    Compute rewards using the given model
+
+    model: a RewardModel
+    frames: the source frames to compute the reward against
+    batch_size: the size of the batches to run on each iteration (for each worker) TODO: is this true???
+    num_workers: the number of gpus to run training on (>0)
+    worker_frames_tensor: a tensor of the shape of the desired frames to compute per worker.
+        if this is None, it will be inferred from the shape of frames. i.e., (worker_batch_size, *render_dim)
+    """
+
     assert frames.device == torch.device("cpu")
     assert batch_size % num_workers == 0
 
     n_samples = len(frames)
     logger.debug(f"compute_rewards: {n_samples=}, {batch_size=}")
     rewards = torch.zeros(n_samples, device=torch.device("cpu"))
-    # TODO: very ugly hack to prevent 'DreamSimRewardModel' object has no attribute 'eval'
-    # To be fixed once we refactor the code to inherit from RewardModel
-    if isinstance(model, DreamSimRewardModel):
-        model.embed_module.eval()
-    else:
-        model = model.eval()
+    model.eval()
 
-    if not dist:
-
+    if num_workers == 1: 
+        # do not use torch distributed if only 1 gpu is available
         for i in range(0, n_samples, batch_size):
             frames_batch = frames[i : i + batch_size]
             rewards_batch = compute_reward_nodist(frames_batch, model)
@@ -163,7 +112,7 @@ def dist_worker_compute_reward(
 def dist_worker_compute_reward(
     rank: int,
     rank0_batch_size_pct: float,
-    reward_model,
+    reward_model: RewardModel,
     render_dim: Tuple[int, int, int],
     total_batch_size: int,
     num_workers: int,
@@ -175,7 +124,7 @@ def dist_worker_compute_reward(
         if frames is None:
             raise ValueError("Must pass render result on rank=0")
         
-        elif rank0_batch_size_pct < 1.0:
+        if rank0_batch_size_pct < 1.0:
             rank_0_chunk_size = int(rank0_batch_size_pct * total_batch_size) # .2 * 60 = 12 0 * 60 = 0
 
             remaining_size = total_batch_size - rank_0_chunk_size # 48  60
@@ -186,7 +135,6 @@ def dist_worker_compute_reward(
             ## only scatter if rank 0 (otherwise, tensors have already been scattered)
             scatter_list = [t.cuda(rank) for t in torch.split(frames, split_size_or_sections=chunk_list, dim=0)]
             
-
             rank_0_pad_size = remaining_chunk_size - rank_0_chunk_size # 48-12=26 60-0 = 60
             # Pad the left of the batch so all the chunks have the same size
             scatter_list[0] = F.pad(scatter_list[0], (0, 0, 0, 0, 0, 0, rank_0_pad_size, 0),
@@ -195,7 +143,7 @@ def dist_worker_compute_reward(
             # Split evenly
             scatter_list = [t.cuda(rank) for t in torch.chunk(frames, num_workers, dim=0)]
     else:
-        scatter_list = []
+        scatter_list = None
 
     start_event = torch.cuda.Event(enable_timing=True)
     end_event = torch.cuda.Event(enable_timing=True)
@@ -206,7 +154,7 @@ def dist_worker_compute_reward(
         remaining_chunk_size = total_batch_size 
 
     worker_frames = worker_frames_tensor if worker_frames_tensor is not None else torch.zeros((remaining_chunk_size, *render_dim), dtype=torch.uint8).cuda(rank)
-    logger.debug(f"[Worker {rank}] {worker_frames.size()=}, scatter_list={[x.size() for x in scatter_list]}")
+    
     dist.scatter(worker_frames, scatter_list=scatter_list, src=0) # this is where they get sent to other gpus
     with torch.no_grad():
         if rank == 0 and rank0_batch_size_pct == 0: # don't compute anything for device 0 if rank0 batch size is 0
@@ -220,28 +168,26 @@ def dist_worker_compute_reward(
             start_event.record()
             # logger.debug(f"[Worker {rank}] {worker_frames_to_compute.size()=} allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
             # TODO: ugly hack to be fixed once we refactor the code to inherit from RewardModel
-            if isinstance(reward_model, DreamSimRewardModel):
-                embeddings = reward_model.set_source_embeddings(worker_frames_to_compute.permute(0, 3, 1, 2))
-            else:
-                embeddings = reward_model.embed_module(worker_frames_to_compute, reward_model.source_mask_thresh)
-            end_event.record()
+            
+            embeddings = reward_model.set_source_embeddings(worker_frames_to_compute.permute(0, 3, 1, 2))
+
             # if type(embeddings) == tuple:
             #     logger.debug(f"[Worker {rank}] {embeddings[0].size()= } allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
             # else:
             #     logger.debug(f"[Worker {rank}] {embeddings.size()= } allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
             
             ### timing
+            end_event.record()
+
             torch.cuda.synchronize()
             execution_time = start_event.elapsed_time(end_event)
-            logger.info(f"Worker #{rank} - Image Embedding time: {execution_time / 1000} seconds")
-            ####
+            logger.info(f"Worker #{rank} - Image shape: {worker_frames_to_compute.size()}, Image Embedding time: {execution_time / 1000} seconds")
+            ###
 
             start_event.record()
             # TODO: ugly hack to be fixed once we refactor the code to inherit from RewardModel
-            if isinstance(reward_model, DreamSimRewardModel):
-                rewards = reward_model.predict()
-            else:
-                rewards = reward_model(embeddings)
+            rewards = reward_model.predict()
+
             end_event.record()
             # logger.debug(f"[Worker {rank}] {rewards.size()=} allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
 
@@ -256,25 +202,37 @@ def dist_worker_compute_reward(
     def zero_t():
         return torch.zeros_like(rewards)
 
-    recv_rewards = [zero_t() for _ in range(num_workers)] if rank == 0 else []
-    dist.gather(rewards, gather_list=recv_rewards, dst=0)
-
     if rank == 0:
+        recv_rewards = [torch.randn_like(rewards).cuda(rank)*(i+1) for i in range(num_workers)]
+    else:
+        recv_rewards = None
+    
+    dist.gather(rewards, gather_list = recv_rewards, dst = 0)
+    
+    if rank == 0:
+        logger.info("consolidating tensors")
         consolidated_tensors = torch.cat(recv_rewards, dim=0).cuda(rank)
-        return torch.cat(recv_rewards, dim=0).cuda(rank)
+        logger.info(f"returning rewards")
+        return consolidated_tensors
+    #     return torch.cat(recv_rewards, dim=0).cuda(rank)
+        
+    
+   # dist.gather(rewards, gather_list=recv_rewards, dst=0)
+    
+    # if rank == 0:
+    #     logger.info(f"Returning rewards of shape {recv_rewards.size()}")
+    #     consolidated_tensors = torch.cat(recv_rewards, dim=0).cuda(rank)
+    #     return torch.cat(recv_rewards, dim=0).cuda(rank)
+        
 
-
-def compute_reward_nodist(frames, reward_model):
+def compute_reward_nodist(frames: torch.Tensor, reward_model: RewardModel):
 
     start_event = torch.cuda.Event(enable_timing=True)
     end_event = torch.cuda.Event(enable_timing=True)
 
     with torch.no_grad():
         start_event.record()
-        if isinstance(reward_model, DreamSimRewardModel):
-            embeddings = reward_model.set_source_embeddings(frames.permute(0, 3, 1, 2))
-        else:
-            embeddings = reward_model.embed_module(frames, reward_model.source_mask_thresh)
+        embeddings = reward_model.set_source_embeddings(frames.permute(0, 3, 1, 2))
         end_event.record()
         
         ### timing
@@ -284,13 +242,16 @@ def compute_reward_nodist(frames, reward_model):
         ####
 
         start_event.record()
-        if isinstance(reward_model, DreamSimRewardModel):
-            rewards = reward_model.predict()
-        else:
-            rewards = reward_model(embeddings)
+
+        rewards = reward_model.predict()
+        
         end_event.record()
         torch.cuda.synchronize()
         execution_time = start_event.elapsed_time(end_event)
         logger.info(f"Worker - Reward Calculation time: {execution_time / 1000} seconds")
 
     return rewards
+
+
+
+

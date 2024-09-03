@@ -9,6 +9,7 @@ from vlm_reward.reward_models.model_interface import RewardModel
 from vlm_reward.reward_models.model_factory import load_reward_model
 from vlm_reward.eval.eval_utils import load_gif_frames, load_image_from_path, load_np_or_torch_to_torch, plot_permutation_diagram, gt_vs_source_heatmap,get_filename_from_path, create_empty_file, write_metrics_to_csv
 from vlm_reward.eval.data_parse import parse_mujoco_eval_dir
+from hydra.core.global_hydra import GlobalHydra
 
 from jaxtyping import Float
 from typing import Callable, List, Tuple, Dict, Optional
@@ -73,26 +74,6 @@ def plot_sequence_rewards_ranking_permutation(x_sequence_rewards, y_sequence_rew
 
     plot_permutation_diagram(x_average_ranking, y_average_ranking, fp, sequence_labels=sequence_labels)
 
-
-def eval_sequence(model: RewardModel, 
-        source_images: Float[torch.Tensor, "frames c h w"],
-        target_image: Float[torch.Tensor, "c h w"],
-        ground_truth_rewards: Float[torch.Tensor, "frames"],
-        evaluation_metric:  Callable[[List[Float[torch.Tensor, "frames"]], List[Float[torch.Tensor, "frames"]]], float]):
-    """
-    Evaluate a single sequence of rewards against the ground truth
-    
-    TODO: use KL or mse
-    """
-    model.set_target_embedding(target_image)
-    model.set_source_embeddings(source_images)
-
-    model_rewards = model.predict()
-
-    performance = evaluation_metric(ground_truth_rewards, model_rewards)
-    return performance
-
-
 def eval_from_paths(
         model: RewardModel,
         target_image_path: str,
@@ -116,11 +97,6 @@ def eval_from_paths(
     """
     start = torch.cuda.Event(enable_timing=True)
     end = torch.cuda.Event(enable_timing=True)
-
-    target_image_raw = load_image_from_path(target_image_path, output_type="torch")
-    target_image = image_transform(target_image_raw[None])[0] # image transform takes in batched input
-    
-    model.set_target_embedding(target_image)
 
     source_rewards = []
     ground_truth_rewards = []
@@ -200,18 +176,23 @@ def eval_from_paths(
 
 def eval_from_config(config: DictConfig):
     model_config_dict = OmegaConf.to_container(config.reward_model, resolve=True, throw_on_missing=True)
-    
-    sources_and_rewards = parse_mujoco_eval_dir(config.eval_data.sequence_and_reward_dir, get_every_nth=5)
+
+    # optionally directly specific source and reward paths to override the source and reward dir
+    if "sources" in config["eval_data"] and "rewards" in config["eval_data"]: 
+        sources_and_rewards = list(zip(config.eval_data.sources, config.eval_data.rewards))
+    else:
+        sources_and_rewards = parse_mujoco_eval_dir(config.eval_data.sequence_and_reward_dir, get_every_nth=5)
 
     reward_model = load_reward_model(rank=0, 
                                     worker_actual_batch_size=config.reward_model.reward_batch_size,  
                                     model_name=config.reward_model.name, 
                                     model_config_dict=model_config_dict)
+    reward_model.eval()
 
     target_path = config.reward_model.pos_image_path[0] # assume just 1 target image path for now
     
     image_transform = lambda image: F.interpolate(image, size=(224,224), mode="bilinear")
-        
+    
     # don't use spearman within sequence, because we are more concerned with the large changes across phases
     # in the sequence, not small changes that may occur to the order (due to the models being less stable within the sequence)
     within_sequence_evaluation_metric = z_score_l2 
@@ -233,8 +214,11 @@ def eval_from_config(config: DictConfig):
 
 @hydra.main(version_base=None, config_path="configs", config_name="eval_config")
 def main(cfg: DictConfig):
-
     eval_from_config(cfg)
 
 if __name__=="__main__":
+
+    # solve a weird bug that sometimes occurs with global hydra being already initialized
+    GlobalHydra.instance().clear()
+
     main()

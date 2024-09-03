@@ -14,7 +14,9 @@ from PIL import Image, ImageDraw, ImageFont
 from sb3_sac import SAC, VLM_SAC
 
 from vlm_reward.utils.utils import rewards_matrix_heatmap, rewards_line_plot, pad_to_longest_sequence
-from vlm_reward.reward_main import compute_rewards, load_reward_model
+from vlm_reward.reward_main import compute_rewards
+from vlm_reward.reward_models.model_factory import load_reward_model
+
 from vlm_reward.reward_transforms import half_gaussian_filter_1d
 import utils
 

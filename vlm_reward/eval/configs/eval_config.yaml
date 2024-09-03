@@ -4,6 +4,7 @@
 # - target_image_path: a path to the target image to use
 
 run_notes: null
+run_type: default
 
 defaults:
   - reward_model: dino_patch_wasserstein 
@@ -13,6 +14,7 @@ defaults:
 hydra:
   searchpath:
     - file://../../configs
+    - file://../../configs/additional_hydra_configs # necessary for sam2, because it also uses hydra
   run:
-    dir: ./eval_logs/${now:%Y-%m-%d-%H%M%S}_rm=${reward_model.name}_src=${eval_data.name}_nt=${run_notes}
+    dir: ./eval_logs/${run_type}/${now:%Y-%m-%d-%H%M%S}_rm=${reward_model.name}_src=${eval_data.name}_nt=${run_notes}
 

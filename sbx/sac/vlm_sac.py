@@ -30,7 +30,8 @@ from sbx.common.off_policy_algorithm import OffPolicyAlgorithmJax
 from sbx.common.type_aliases import ReplayBufferSamplesNp, RLTrainState, ActorTrainState
 from sbx.sac.policies import SACPolicy
 
-from vlm_reward.reward_main import compute_rewards, load_reward_model
+from vlm_reward.reward_main import compute_rewards
+from vlm_reward.reward_models.model_factory import load_reward_model
 from vlm_reward.reward_transforms import half_gaussian_filter_1d
 from vlm_reward.vlm_buffer import VLMReplayBuffer
 
@@ -197,12 +198,9 @@ class VLM_SAC(OffPolicyAlgorithmJax):
                                         worker_actual_batch_size=rank0_worker_batch,
                                          model_name=self.reward_model_config["vlm_model"],
                                          model_config_dict=self.reward_model_config)
-        # TODO: A temporary hack, because DreamSimRewardModel inherited from RewardModel
-        if "dreamsim" in self.reward_model_config["vlm_model"].lower():
-            reward_model.embed_module.eval()
-            reward_model.cuda(0)
-        else:
-            reward_model.eval().cuda(0)
+
+        reward_model.eval().cuda(0)
+
         self.reward_model = reward_model
 
         logger.debug(f"Finished loading up VLM reward model: {self.reward_model_config['vlm_model']}")
@@ -271,9 +269,8 @@ class VLM_SAC(OffPolicyAlgorithmJax):
             rank0_batch_size_pct=self.reward_model_config["rank0_batch_size_pct"],
             batch_size=self.reward_model_config["reward_batch_size"],  # This is the total batch size
             num_workers=self.n_gpu_workers,
-            worker_frames_tensor=self.worker_frames_tensor,
-            dist=self.use_distributed
-        )
+            worker_frames_tensor=self.worker_frames_tensor        
+            )
 
         rewards = rearrange(
             rewards,

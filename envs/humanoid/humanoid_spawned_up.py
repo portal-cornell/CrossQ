@@ -10,7 +10,7 @@ from numpy.typing import NDArray
 
 from envs.humanoid.reward_helpers import *
 
-from constants import SEQ_DICT
+from constants import DEMOS_DICT
 
 def mass_center(model, data):
     mass = np.expand_dims(model.body_mass, axis=1)
@@ -26,19 +26,6 @@ DEFAULT_CAMERA_CONFIG = {
 }
 
 class HumanoidEnvCustom(GymHumanoidEnv):
-    DEMOS_DICT = {
-        "both_arms_out_goal_only_euclidean": SEQ_DICT["both_arms_out"],
-        "both_arms_out_seq_euclidean": SEQ_DICT["both_arms_out_with_intermediate"],
-        "both_arms_out_basic_r": SEQ_DICT["both_arms_out_with_intermediate"],
-        "both_arms_up_goal_only_euclidean": SEQ_DICT["both_arms_up"],
-        "both_arms_up_seq_euclidean": SEQ_DICT["both_arms_up_with_intermediate"],
-        "both_arms_up_basic_r": SEQ_DICT["both_arms_up_with_intermediate"],
-        "arms_up_then_down_seq_euclidean": SEQ_DICT["arms_up_then_down"],
-        "arms_up_then_down_seq_stage_detector": SEQ_DICT["arms_up_then_down"],
-        "arms_up_then_down_seq_avg": SEQ_DICT["arms_up_then_down"],
-        "arms_up_then_down_basic_r": SEQ_DICT["arms_up_then_down"],
-    }
-
     def __init__(
         self,
         episode_length=240,
@@ -114,8 +101,8 @@ class HumanoidEnvCustom(GymHumanoidEnv):
 
         self._ref_joint_states = np.array([])
 
-        if reward_type in self.DEMOS_DICT:
-            self._load_reference_joint_states(self.DEMOS_DICT[reward_type])
+        if reward_type in DEMOS_DICT:
+            self._load_reference_joint_states(DEMOS_DICT[reward_type])
         else:
             logger.info(f"Warning: {reward_type} is not in the DEMOS_DICT. No reference joint states loaded.")
 
@@ -492,8 +479,6 @@ def reward_goal_only_euclidean(data, **kwargs):
 
     This task is a goal-reaching task (i.e. doesn't matter how you get to the goal, as long as you get to the goal)
     """
-    original_mujoco_reward, _ = reward_original(data, **kwargs)
-
     basic_standing_reward, terms_to_plot = basic_remain_standing_rewards(data, 
                                                             upward_reward_w=1, 
                                                             ctrl_cost_w=1, 
@@ -512,11 +497,10 @@ def reward_goal_only_euclidean(data, **kwargs):
     pose_matching_reward = np.exp(-np.linalg.norm(curr_qpos - ref_joint_states[0]))
     pose_matching_reward_w = 1
     
-    reward = basic_standing_reward + pose_matching_reward_w
+    reward = basic_standing_reward + pose_matching_reward_w * pose_matching_reward
 
     terms_to_plot["pose_r"] = f"{pose_matching_reward:.2f}"
     terms_to_plot["r"] = f"{reward:.2f}"
-    terms_to_plot["og_r"] = f"{original_mujoco_reward:.2f}"
     terms_to_plot["steps"] = kwargs.get("num_steps", 0)
 
     return reward, terms_to_plot
@@ -527,8 +511,6 @@ def reward_seq_euclidean(data, **kwargs):
 
     This task is a goal-reaching task (i.e. doesn't matter how you get to the goal, as long as you get to the goal)
     """
-    original_mujoco_reward, _ = reward_original(data, **kwargs)
-
     basic_standing_reward, terms_to_plot = basic_remain_standing_rewards(data, 
                                                             upward_reward_w=1, 
                                                             ctrl_cost_w=1, 
@@ -552,7 +534,6 @@ def reward_seq_euclidean(data, **kwargs):
     terms_to_plot["pose_r_l"] = str([f"{unweighted_reward_for_each_ref[i]:.2f}" for i in range(num_ref_joint_states)])
     terms_to_plot["pose_r"] = f"{pose_matching_reward:.2f}"
     terms_to_plot["r"] = f"{reward:.2f}"
-    terms_to_plot["og_r"] = f"{original_mujoco_reward:.2f}"
     terms_to_plot["steps"] = kwargs.get("num_steps", 0)
     
     return reward, terms_to_plot
@@ -679,15 +660,30 @@ REWARD_FN_MAPPING = dict(
         simple_remain_standing = reward_simple_remain_standing,
         simple_remain_standing_exp_dist = reward_simple_remain_standing_exp_dist,
         remain_standing = reward_remain_standing,
+
         best_standing_up = best_standing_from_lying_down,
+
         kneeling = reward_kneeling,
+
         splitting = reward_splitting,
+
+        arms_bracket_right_goal_only_euclidean = reward_goal_only_euclidean,
+        arms_bracket_right_basic_r = reward_only_basic_r,
+
+        arms_bracket_down_goal_only_euclidean = reward_goal_only_euclidean,
+        arms_bracket_down_basic_r = reward_only_basic_r,
+
+        left_arm_extend_wave_higher_goal_only_euclidean = reward_goal_only_euclidean,
+        left_arm_extend_wave_higher_basic_r = reward_only_basic_r,
+
         both_arms_out_goal_only_euclidean = reward_goal_only_euclidean,
         both_arms_out_seq_euclidean = reward_seq_euclidean,
         both_arms_out_basic_r = reward_only_basic_r,
+
         both_arms_up_goal_only_euclidean = reward_goal_only_euclidean,
         both_arms_up_seq_euclidean = reward_seq_euclidean,
         both_arms_up_basic_r = reward_only_basic_r,
+
         arms_up_then_down_seq_euclidean = reward_seq_euclidean,
         arms_up_then_down_seq_stage_detector = reward_seq_stage_detector,
         arms_up_then_down_seq_avg = reward_seq_avg,

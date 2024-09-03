@@ -24,7 +24,7 @@ from stable_baselines3.sac.policies import SACPolicy
 #### From stable_baselines3/sac/sac.py ####
 
 from vlm_reward.vlm_buffer import VLMReplayBuffer
-from vlm_reward.reward_main import load_reward_model
+from vlm_reward.reward_models.model_factory import load_reward_model
 from vlm_reward.reward_main import compute_rewards
 from vlm_reward.reward_transforms import half_gaussian_filter_1d
 
@@ -160,15 +160,10 @@ class CustomVLMSAC(SAC):
 
         reward_model = load_reward_model(rank=0,            
                                         worker_actual_batch_size=rank0_worker_batch,
-                                         model_name=self.reward_model_config["vlm_model"],
+                                         model_name=self.reward_model_config["name"],
                                          model_config_dict=self.reward_model_config)
         
-        # TODO: A temporary hack, because DreamSimRewardModel inherited from RewardModel
-        if "dreamsim" in self.reward_model_config["vlm_model"].lower():
-            reward_model.embed_module.eval()
-            reward_model.cuda(0)
-        else:
-            reward_model.eval().cuda(0)
+        reward_model.eval().cuda(0)
         
         self.reward_model = reward_model
 
@@ -227,9 +222,8 @@ class CustomVLMSAC(SAC):
             rank0_batch_size_pct=self.reward_model_config["rank0_batch_size_pct"],
             batch_size=self.reward_model_config["reward_batch_size"],  # This is the total batch size
             num_workers=self.n_gpu_workers,
-            worker_frames_tensor=self.worker_frames_tensor,
-            dist=self.use_distributed
-        )
+            worker_frames_tensor=self.worker_frames_tensor
+            )
 
         # rewards = rearrange(
         #     rewards,
@@ -252,14 +246,13 @@ class CustomVLMSAC(SAC):
             
         # Clear the rendered images in the ReplayBuffer
         self.replay_buffer.clear_render_arrays()
+        rewards_np = rewards.cpu().numpy()
 
         ### Update the rewards
         # import pdb; pdb.set_trace()
         if self._add_to_gt_rewards:
             print("Adding VLM rewards to GT rewards")
             # Convert rewards tensor to np array for compatibility with self.replay_buffer.rewards
-            rewards_np = rewards.cpu().numpy()
-
             # Add the VLM reward to existing rewards
             if replay_buffer_pos - env_episode_timesteps >= 0:
                 self.replay_buffer.rewards[
