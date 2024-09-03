@@ -56,6 +56,7 @@ class LPIPSRewardModel(RewardModel):
         if image_batch.dtype == torch.uint8:
             image_batch = image_batch.float() / 255.0
         
+        # LPIPS embeds the images at prediction time
         self.source_embedding = image_batch
 
     def set_target_embedding(self, target_image: Tensor) -> None:

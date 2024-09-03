@@ -1,4 +1,4 @@
-from vlm_reward.eval.stage2_reward_eval import main 
+from vlm_reward.eval.stage2_reward_eval import eval_from_config 
 import subprocess
 import os
 
@@ -19,7 +19,7 @@ def override_tasks():
         result = subprocess.run(command)
 
 def override_reward_model():
-    models = ["dino_pooled"]
+    models = ["sam2"]
     
     for model in models:
         command = [
@@ -70,5 +70,29 @@ def human_goal_image_exp():
 
     override_tasks_and_model(target_images, run_type)
 
+def override_sequences():
+    sequence_gifs = [
+        '/share/portal/wph52/CrossQ/train_logs/2024-08-30-014539_sb3_sac_envr=arms_bracket_right_basic_r_rm=dreamsim_s=9_nt=None/eval/980000_rollouts.gif',
+        '/share/portal/wph52/CrossQ/train_logs/2024-08-30-014539_sb3_sac_envr=arms_bracket_right_basic_r_rm=dreamsim_s=9_nt=None/eval/990000_rollouts.gif', 
+        '/share/portal/hw575/CrossQ/train_logs/2024-08-29-222626_sb3_sac_envr=arms_bracket_right_goal_only_euclidean_rm=hand_engineered_s=9_nt=None/eval/1000000_rollouts.gif']
+
+    sequence_rews = [
+        '/share/portal/wph52/CrossQ/train_logs/2024-08-30-014539_sb3_sac_envr=arms_bracket_right_basic_r_rm=dreamsim_s=9_nt=None/eval/980000_rollouts_rewards.npy',
+        '/share/portal/wph52/CrossQ/train_logs/2024-08-30-014539_sb3_sac_envr=arms_bracket_right_basic_r_rm=dreamsim_s=9_nt=None/eval/990000_rollouts_rewards.npy', 
+        '/share/portal/hw575/CrossQ/train_logs/2024-08-29-222626_sb3_sac_envr=arms_bracket_right_goal_only_euclidean_rm=hand_engineered_s=9_nt=None/eval/1000000_rollouts_rewards.npy']
+        
+    goal_image = '/share/portal/wph52/CrossQ/create_demo/demos/arms_bracket_right.png'
+
+    command = [
+        "python",
+        "stage2_reward_eval.py",
+        f"reward_model=dreamsim",
+        f"reward_model.pos_image_path={[goal_image]}",
+        f"+eval_data.sources={sequence_gifs}",
+        f"+eval_data.rewards={sequence_rews}"
+    ]
+    result = subprocess.run(command)
+    
+
 if __name__=="__main__":
-    mujoco_goal_image_exp()
+    override_reward_model()

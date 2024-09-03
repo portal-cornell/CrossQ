@@ -41,9 +41,8 @@ class DreamSimRewardModel(RewardModel):
             raise ValueError("Source and target embeddings must be set before prediction.")
         # From the forward method of DreamSim:
         # https://github.com/ssundaram21/dreamsim/blob/99222ad4cd4512e975721665336fa8c795990ec3/dreamsim/model.py#L72
-        distance = 1 - F.cosine_similarity(self.source_embedding, self.target_embedding, dim=-1)
+        similarity = F.cosine_similarity(self.source_embedding, self.target_embedding, dim=-1)
         # The reward is the inverse of the distance
-        similarity = 1.0 / (1.0 + distance)
         return similarity # reward
 
     def set_source_embeddings(self, image_batch: torch.Tensor) -> None:

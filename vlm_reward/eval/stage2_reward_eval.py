@@ -9,6 +9,7 @@ from vlm_reward.reward_models.model_interface import RewardModel
 from vlm_reward.reward_models.model_factory import load_reward_model
 from vlm_reward.eval.eval_utils import load_gif_frames, load_image_from_path, load_np_or_torch_to_torch, plot_permutation_diagram, gt_vs_source_heatmap,get_filename_from_path, create_empty_file, write_metrics_to_csv
 from vlm_reward.eval.data_parse import parse_mujoco_eval_dir
+from hydra.core.global_hydra import GlobalHydra
 
 from jaxtyping import Float
 from typing import Callable, List, Tuple, Dict, Optional
@@ -103,7 +104,7 @@ def eval_from_paths(
     times = []
     data_save_dir = HydraConfig.get().runtime.output_dir
 
-    for source_gif_path, ground_truth_rewards_path in sources_and_rewards[:2]:
+    for source_gif_path, ground_truth_rewards_path in sources_and_rewards:
         # cut off the last frame and reward for all sequences, because it often has weird stuff
         # (ex. text on the screen, reset robot position)
         # TODO: this is pretty hacky rn
@@ -175,8 +176,12 @@ def eval_from_paths(
 
 def eval_from_config(config: DictConfig):
     model_config_dict = OmegaConf.to_container(config.reward_model, resolve=True, throw_on_missing=True)
-    
-    sources_and_rewards = parse_mujoco_eval_dir(config.eval_data.sequence_and_reward_dir, get_every_nth=5)
+
+    # optionally directly specific source and reward paths to override the source and reward dir
+    if "sources" in config["eval_data"] and "rewards" in config["eval_data"]: 
+        sources_and_rewards = list(zip(config.eval_data.sources, config.eval_data.rewards))
+    else:
+        sources_and_rewards = parse_mujoco_eval_dir(config.eval_data.sequence_and_reward_dir, get_every_nth=5)
 
     reward_model = load_reward_model(rank=0, 
                                     worker_actual_batch_size=config.reward_model.reward_batch_size,  
@@ -209,8 +214,11 @@ def eval_from_config(config: DictConfig):
 
 @hydra.main(version_base=None, config_path="configs", config_name="eval_config")
 def main(cfg: DictConfig):
-
     eval_from_config(cfg)
 
 if __name__=="__main__":
+
+    # solve a weird bug that sometimes occurs with global hydra being already initialized
+    GlobalHydra.instance().clear()
+
     main()
