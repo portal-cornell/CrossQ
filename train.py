@@ -8,6 +8,8 @@ import wandb
 
 from omegaconf import DictConfig, OmegaConf
 import hydra
+from hydra.core.global_hydra import GlobalHydra
+
 
 import torch
 from torch import multiprocessing
@@ -269,4 +271,6 @@ def main(cfg: DictConfig):
 if __name__ == "__main__":
     utils.set_os_vars()
 
+    # solve a weird bug that sometimes occurs with global hydra being already initialized
+    GlobalHydra.instance().clear()
     main()
