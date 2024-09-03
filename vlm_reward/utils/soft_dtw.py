@@ -18,7 +18,7 @@ def compute_soft_dtw_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, gamma=1, 
     info = dict(
         assignment=a,
         cost_matrix=cost_matrix,
-        transported_cost=soft_dtw_cost,
+        transported_cost=cost_matrix * a,
     )
 
     return - scale * soft_dtw_cost, info

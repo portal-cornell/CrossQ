@@ -4,7 +4,7 @@ from hydra.core.hydra_config import HydraConfig
 
 from typing import Callable, List, Tuple, Dict, Optional
 
-from vlm_reward.utils.optimal_transport import load_reference_seq, compute_ot_reward, plot_ot_plan, COST_FN_DICT
+from vlm_reward.utils.optimal_transport import load_reference_seq, compute_ot_reward, plot_matrix_as_heatmap, COST_FN_DICT
 from vlm_reward.utils.soft_dtw import compute_soft_dtw_reward
 
 from vlm_reward.eval.eval_utils import gt_vs_source_heatmap
@@ -48,7 +48,13 @@ def eval_one_traj(
     gt_vs_source_heatmap(gt_reward, pred_reward, os.path.join(eval_result_path, "within_sequence_rewards.png"))
 
     # Plot the OT plan
-    plot_ot_plan(info["assignment"], os.path.join(eval_result_path, "assignment_plan.png"))
+    plot_matrix_as_heatmap(info["assignment"], f"{reward_fn_type} Assignment Matrix", os.path.join(eval_result_path, "assignment_plan.png"))
+
+    # Plot the cost matrix
+    plot_matrix_as_heatmap(info["cost_matrix"], f"{reward_fn_type} Cost Matrix", os.path.join(eval_result_path, "cost_matrix.png"))
+
+    # Plot the transported cost matrix
+    plot_matrix_as_heatmap(info["transported_cost"], f"{reward_fn_type} Transported Cost Matrix (Assignment * Cost)", os.path.join(eval_result_path, "transported_cost_matrix.png"))
         
 
 def eval_from_config(cfg: DictConfig):

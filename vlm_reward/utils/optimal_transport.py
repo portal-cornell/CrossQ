@@ -49,20 +49,20 @@ def compute_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1) -> np.
     info = dict(
         assignment=T,
         cost_matrix=cost_matrix,
-        transported_cost=ot_cost,
+        transported_cost=cost_matrix * T,
     )
 
     return - scale * ot_cost, info
 
-def plot_ot_plan(T: np.ndarray, fp: str):
+def plot_matrix_as_heatmap(matrix: np.ndarray, title: str, fp: str):
     """
-    Plot the Optimal Transport (OT) plan
+    Plot the Assignment Matrix
     """
     # Because there are way less reference frames than observed frames, we need to copy the values and pad the reference frames for visualization
-    padded_T = np.repeat(T, 10, axis=1)
+    padded_matrix = np.repeat(matrix, 10, axis=1)
     
-    plt.imshow(padded_T, cmap='hot', interpolation='nearest')
-    plt.title("Optimal Transport Plan")
+    plt.imshow(padded_matrix, cmap='hot', interpolation='nearest')
+    plt.title(title)
     plt.colorbar()
     plt.show()
 
