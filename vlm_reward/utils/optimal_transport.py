@@ -65,14 +65,14 @@ def compute_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1) -> np.
 
     return - scale * ot_cost, info
 
-def plot_matrix_as_heatmap(matrix: np.ndarray, title: str, fp: str):
+def plot_matrix_as_heatmap(matrix: np.ndarray, title: str, fp: str, cmap: str):
     """
     Plot the Assignment Matrix
     """
     # Because there are way less reference frames than observed frames, we need to copy the values and pad the reference frames for visualization
     padded_matrix = np.repeat(matrix, 10, axis=1)
     
-    plt.imshow(padded_matrix, cmap='hot', interpolation='nearest')
+    plt.imshow(padded_matrix, cmap=cmap, interpolation='nearest')
     plt.title(title)
     plt.colorbar()
     plt.show()
@@ -90,6 +90,24 @@ def cosine_distance(x, y):
     distance_rescaled = (distance + 1) / 2
     return 1 - distance_rescaled
 
+def euclidean_distance_advanced(x, y):
+    """
+    x: (x_batch_size, ...)
+    y: (y_batch_size, ...)
+    """
+    # To allow x and y to have different batch sizes, we will expand the dimensions of x and y
+    #   to allow for broadcasting
+    x_exp = np.expand_dims(x, axis=1)  # (x_batch_size, 1, ...)
+    y_exp = np.expand_dims(y, axis=0)  # (1, y_batch_size, ...)
+    
+    # Calculate the norm along all axes except the batch axis
+    norm_axis = tuple(range(2, len(x.shape)+1))
+
+    return np.linalg.norm(x_exp - y_exp, axis=norm_axis)
+
+def squared_euclidean_distance_advanced(x, y):
+    return euclidean_distance_advanced(x, y) ** 2
+
 def euclidean_distance(x, y):
     return cdist(x, y, metric="euclidean")
 
@@ -98,6 +116,6 @@ def squared_euclidean_distance(x, y):
 
 COST_FN_DICT = {
     "cosine": cosine_distance,
-    "euclidean": euclidean_distance,
-    "squared_euclidean": squared_euclidean_distance,
+    "euclidean": euclidean_distance_advanced,
+    "squared_euclidean": squared_euclidean_distance_advanced,
 }

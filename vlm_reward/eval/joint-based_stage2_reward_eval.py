@@ -48,13 +48,13 @@ def eval_one_traj(
     gt_vs_source_heatmap(gt_reward, pred_reward, os.path.join(eval_result_path, "within_sequence_rewards.png"))
 
     # Plot the OT plan
-    plot_matrix_as_heatmap(info["assignment"], f"{reward_fn_type} Assignment Matrix", os.path.join(eval_result_path, "assignment_plan.png"))
+    plot_matrix_as_heatmap(info["assignment"], f"{reward_fn_type} Assignment Matrix", os.path.join(eval_result_path, "assignment_plan.png"), cmap="hot")
 
     # Plot the cost matrix
-    plot_matrix_as_heatmap(info["cost_matrix"], f"{reward_fn_type} Cost Matrix", os.path.join(eval_result_path, "cost_matrix.png"))
+    plot_matrix_as_heatmap(info["cost_matrix"], f"{reward_fn_type} Cost Matrix", os.path.join(eval_result_path, "cost_matrix.png"), cmap="bone_r")
 
     # Plot the transported cost matrix
-    plot_matrix_as_heatmap(info["transported_cost"], f"{reward_fn_type} Transported Cost Matrix (Assignment * Cost)", os.path.join(eval_result_path, "transported_cost_matrix.png"))
+    plot_matrix_as_heatmap(info["transported_cost"], f"{reward_fn_type} Transported Cost Matrix (Assignment * Cost)", os.path.join(eval_result_path, "transported_cost_matrix.png"), cmap="bone_r")
         
 
 def eval_from_config(cfg: DictConfig):
@@ -85,8 +85,12 @@ def eval_from_config(cfg: DictConfig):
     for f in tqdm(gif_files):
         base_name = str(f).replace(".gif", "")
 
-        states_npy_fp = os.path.join(cfg.joint_eval_data.sequence_and_reward_dir, base_name + "_states.npy")
-        rewards_npy_fp = os.path.join(cfg.joint_eval_data.sequence_and_reward_dir, base_name + "_rewards.npy")
+        if cfg.use_geom_xpos:
+            states_npy_fp = os.path.join(cfg.joint_eval_data.sequence_and_reward_dir, base_name + "_geom_xpos_states.npy")
+        else:
+            states_npy_fp = os.path.join(cfg.joint_eval_data.sequence_and_reward_dir, base_name + "_states.npy")
+
+        rewards_npy_fp = os.path.join(cfg.joint_eval_data.sequence_and_reward_dir, base_name.replace("_rollouts", "") + "_goal_matching_reward.npy")
 
         eval_one_traj(
             ref_seq=ref_seq,
