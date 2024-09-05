@@ -215,7 +215,12 @@ class SAM2RewardModelBase(RewardModel):
             multi_object_mode=multi_object_mode
         )
 
-        self.target_embedding = target_embeddings[0]
+        embeddings_downsize = self.embed_pooling(target_embeddings)
+        masks_downsize = self.mask_pooling(masks.unsqueeze(1)).squeeze(1) # create artificial channel dim and convert to float tensor for interpolate, then convert back
+        binary_masks_downsize = masks_downsize > self.mask_threshold
+
+        masked_embeddings = self._index_embeddings(embeddings_downsize, binary_masks_downsize)
+        self.target_embedding = masked_embeddings[0]
 
         # first frame embeddings are precomputed here as well, because the target image has been set, so the model knows what image dim to expect
         self.first_frame_sparse_embeddings, self.first_frame_dense_embeddings, self.first_frame_multi_object_mode = self.model.get_point_embeddings(
