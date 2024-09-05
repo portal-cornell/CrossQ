@@ -10,7 +10,7 @@ from vlm_reward.reward_models.model_interface import RewardModel
 from vlm_reward.reward_models.dino import load_dino_wasserstein_reward_model, load_dino_pooled_reward_model
 from vlm_reward.reward_models.lpips import load_lpips_reward_model
 from vlm_reward.reward_models.dreamsim import load_dreamsim_reward_model
-from vlm_reward.reward_models.sam2 import load_sam2_reward_model
+from vlm_reward.reward_models.sam2 import load_sam2_mean_feature_reward_model
 
 def load_reward_model(
                     rank: int,
@@ -58,7 +58,7 @@ def load_reward_model(
         reward_model.cuda(rank)
         logger.debug(f"Loaded dreamsim reward model")
     elif "sam2" in model_name.lower():
-        reward_model = load_sam2_reward_model(
+        reward_model = load_sam2_mean_feature_reward_model(
                                     rank, 
                                     sam2_model_id=model_config_dict['sam2_model_id'],
                                     sam2_cfg_path=model_config_dict['sam2_cfg_path'],

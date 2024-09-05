@@ -108,9 +108,9 @@ def eval_from_paths(
         # cut off the last frame and reward for all sequences, because it often has weird stuff
         # (ex. text on the screen, reset robot position)
         # TODO: this is pretty hacky rn
-
         source_frames_raw = load_gif_frames(source_gif_path, output_type="torch")[:-1]
         source_frames = image_transform(source_frames_raw)
+        
         sequence_ground_truth_rewards = load_np_or_torch_to_torch(ground_truth_rewards_path)[:-1]
 
         start.record()
@@ -140,8 +140,15 @@ def eval_from_paths(
             within_sequence_performances.append(within_sequence_performance)
 
         # plot within the sequence
+        flip = False # todo: hacky way to compare flipped images
         if within_sequence_plotter is not None:
-            within_sequence_plotter(sequence_ground_truth_rewards, sequence_rewards, f"{sequence_dir}/within_sequence_rewards.png")
+            if flip:
+                source_frames_flipped = torch.flip(source_frames, dims=(3,)) # flip along vertical axis
+                model.set_source_embeddings(source_frames_flipped)
+                sequence_rewards_flipped = model.predict() 
+                within_sequence_plotter(sequence_rewards, sequence_rewards_flipped, f"{sequence_dir}/within_sequence_rewards_flipped.png")
+            else: 
+                within_sequence_plotter(sequence_ground_truth_rewards, sequence_rewards, f"{sequence_dir}/within_sequence_rewards.png")
 
         # save a tensor of rewards and ground truth rewards
         torch.save(sequence_rewards, f"{sequence_dir}/model_rewards.pt")

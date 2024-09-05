@@ -25,9 +25,9 @@ def override_reward_model():
         command = [
             "python",
             "stage2_reward_eval.py",
-            f"eval_data=crossq_splits",
+            f"eval_data=crossq_kneeling",
             f"reward_model={model}",
-            f"reward_model.pos_image_path={['/share/portal/wph52/CrossQ/vlm_reward/eval/target_images/splits_f_frame_0300.png']}"
+            f"reward_model.pos_image_path={['/share/portal/wph52/CrossQ/vlm_reward/eval/target_images/humanoid_kneeling_ref.png']}"
         ]
         result = subprocess.run(command)
 
@@ -72,16 +72,16 @@ def human_goal_image_exp():
 
 def override_sequences():
     sequence_gifs = [
-        '/share/portal/wph52/CrossQ/train_logs/2024-08-30-014539_sb3_sac_envr=arms_bracket_right_basic_r_rm=dreamsim_s=9_nt=None/eval/980000_rollouts.gif',
-        '/share/portal/wph52/CrossQ/train_logs/2024-08-30-014539_sb3_sac_envr=arms_bracket_right_basic_r_rm=dreamsim_s=9_nt=None/eval/990000_rollouts.gif', 
-        '/share/portal/hw575/CrossQ/train_logs/2024-08-29-222626_sb3_sac_envr=arms_bracket_right_goal_only_euclidean_rm=hand_engineered_s=9_nt=None/eval/1000000_rollouts.gif']
+        '/share/portal/wph52/CrossQ/train_logs/2024-08-30-013910_sb3_sac_envr=left_arm_extend_wave_higher_basic_r_rm=dreamsim_s=9_nt=None/eval/970000_rollouts.gif',
+        '/share/portal/wph52/CrossQ/train_logs/2024-08-30-013910_sb3_sac_envr=left_arm_extend_wave_higher_basic_r_rm=dreamsim_s=9_nt=None/eval/980000_rollouts.gif',
+        '/share/portal/wph52/CrossQ/train_logs/2024-08-30-013910_sb3_sac_envr=left_arm_extend_wave_higher_basic_r_rm=dreamsim_s=9_nt=None/eval/1000000_rollouts.gif']
 
     sequence_rews = [
-        '/share/portal/wph52/CrossQ/train_logs/2024-08-30-014539_sb3_sac_envr=arms_bracket_right_basic_r_rm=dreamsim_s=9_nt=None/eval/980000_rollouts_rewards.npy',
-        '/share/portal/wph52/CrossQ/train_logs/2024-08-30-014539_sb3_sac_envr=arms_bracket_right_basic_r_rm=dreamsim_s=9_nt=None/eval/990000_rollouts_rewards.npy', 
-        '/share/portal/hw575/CrossQ/train_logs/2024-08-29-222626_sb3_sac_envr=arms_bracket_right_goal_only_euclidean_rm=hand_engineered_s=9_nt=None/eval/1000000_rollouts_rewards.npy']
+        '/share/portal/wph52/CrossQ/train_logs/2024-08-30-013910_sb3_sac_envr=left_arm_extend_wave_higher_basic_r_rm=dreamsim_s=9_nt=None/eval/970000_rollouts_rewards.npy',
+        '/share/portal/wph52/CrossQ/train_logs/2024-08-30-013910_sb3_sac_envr=left_arm_extend_wave_higher_basic_r_rm=dreamsim_s=9_nt=None/eval/980000_rollouts_rewards.npy',
+        '/share/portal/wph52/CrossQ/train_logs/2024-08-30-013910_sb3_sac_envr=left_arm_extend_wave_higher_basic_r_rm=dreamsim_s=9_nt=None/eval/1000000_rollouts_rewards.npy']
         
-    goal_image = '/share/portal/wph52/CrossQ/create_demo/demos/arms_bracket_right.png'
+    goal_image = '/share/portal/wph52/CrossQ/create_demo/demos/left-arm-extend-wave-higher.png'
 
     command = [
         "python",
