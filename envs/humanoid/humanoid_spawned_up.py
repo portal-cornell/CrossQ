@@ -9,7 +9,7 @@ from gymnasium.spaces import Box
 from numpy.typing import NDArray
 import copy
 
-from vlm_reward.utils.optimal_transport import load_reference_seq 
+from vlm_reward.utils.optimal_transport import load_reference_seq, euclidean_distance_advanced
 
 from envs.humanoid.reward_helpers import *
 
@@ -679,9 +679,39 @@ def reward_only_basic_r(data, **kwargs):
 
     curr_qpos = data.qpos.flat.copy()[2:]
 
-    unweighted_reward_for_each_ref = np.exp(-np.linalg.norm(curr_qpos - ref_joint_states, axis=1))
+    unweighted_reward_for_each_ref = np.exp(-euclidean_distance_advanced(curr_qpos, ref_joint_states))
 
     terms_to_plot["pose_r_l"] = str([f"{unweighted_reward_for_each_ref[i]:.2f}" for i in range(num_ref_joint_states)])
+    terms_to_plot["r"] = f"{reward:.2f}"
+    terms_to_plot["steps"] = kwargs.get("num_steps", 0)
+    
+    return reward, terms_to_plot
+
+
+def reward_only_basic_r_geom_xpos(data, **kwargs):
+    """Only provide basic reward to remain standing and control cost
+    """
+    basic_standing_reward, terms_to_plot = basic_remain_standing_rewards(data, 
+                                                            upward_reward_w=1, 
+                                                            ctrl_cost_w=1, 
+                                                            **kwargs)
+    
+    reward = basic_standing_reward
+
+    # Still calculating the pose matching reward (to individual poses) to show in the terms_to_plot
+    assert "ref_joint_states" in kwargs, "ref_joint_states must be passed in as part of the kwargs"
+    ref_joint_states = kwargs.get('ref_joint_states', None)
+
+    num_ref_joint_states = ref_joint_states.shape[0]
+
+    curr_geom_xpos = copy.deepcopy(data.geom_xpos)  # (n, 3)
+    # Normalize the current pose by the torso's position (which is at index 1)
+    curr_geom_xpos = curr_geom_xpos - curr_geom_xpos[1]
+    curr_geom_xpos = curr_geom_xpos.reshape(1, *curr_geom_xpos.shape)
+
+    unweighted_reward_for_each_ref = np.exp(-euclidean_distance_advanced(curr_geom_xpos, ref_joint_states))
+
+    terms_to_plot["pose_r_l"] = str([f"{unweighted_reward_for_each_ref[0][i]:.2f}" for i in range(num_ref_joint_states)])
     terms_to_plot["r"] = f"{reward:.2f}"
     terms_to_plot["steps"] = kwargs.get("num_steps", 0)
     
@@ -716,6 +746,7 @@ REWARD_FN_MAPPING = dict(
         both_arms_out_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
         both_arms_out_seq_euclidean = reward_seq_euclidean,
         both_arms_out_basic_r = reward_only_basic_r,
+        both_arms_out_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
 
         both_arms_up_goal_only_euclidean = reward_goal_only_euclidean,
         both_arms_up_seq_euclidean = reward_seq_euclidean,

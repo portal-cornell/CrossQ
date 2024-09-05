@@ -129,12 +129,23 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             model_save_freq=cfg.logging.model_save_freq // cfg.compute.n_cpu_workers,
             verbose=2,
         )
+        
+        goal_seq_name = REWARDS_TO_ENTRY_IN_SEQ[cfg.env.reward_type] if "reward_type" in cfg.env else ""
+
+        # If it's a goal reaching task
+        # For non-goal reaching reward, we should set the goal sequence name to be the final imag only
+        if not ("goal_only" in cfg.env.reward_type):
+            if "basic_r" in cfg.env.reward_type:
+                goal_seq_name = REWARDS_TO_ENTRY_IN_SEQ[cfg.env.reward_type.replace("_basic_r", "_goal_only_euclidean")]
+            elif "seq" in cfg.env.reward_type:
+                base_name = cfg.env.reward_type.split("_seq")[0]
+                goal_seq_name = REWARDS_TO_ENTRY_IN_SEQ[base_name + "_goal_only_euclidean"]
 
         video_callback = VideoRecorderCallback(
             SubprocVecEnv([make_env_fn], render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3)),
             rollout_save_path=os.path.join(cfg.logging.run_path, "eval"),
             render_freq=cfg.logging.video_save_freq // cfg.compute.n_cpu_workers,
-            goal_seq_name=REWARDS_TO_ENTRY_IN_SEQ[cfg.env.reward_type] if "reward_type" in cfg.env else "",
+            goal_seq_name=goal_seq_name,
             use_geom_xpos="geom_xpos" in cfg.env.reward_type if "reward_type" in cfg.env else False,
             # For joint based reward
             seq_name=cfg.reward_model.seq_name if cfg.reward_model.name == "joint_wasserstein" or cfg.reward_model.name == "joint_soft_dtw" else "",

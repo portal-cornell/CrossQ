@@ -34,7 +34,9 @@ REWARDS_TO_ENTRY_IN_SEQ = {
     "both_arms_out_goal_only_euclidean": "both_arms_out_final_only",
     "both_arms_out_goal_only_euclidean_geom_xpos": "both_arms_out_final_only",
     "both_arms_out_seq_euclidean": "both_arms_out_with_intermediate",
+    
     "both_arms_out_basic_r": "both_arms_out_with_intermediate",
+    "both_arms_out_basic_r_geom_xpos": "both_arms_out_with_intermediate",
 
     "both_arms_up_goal_only_euclidean": "both_arms_up_final_only",
     "both_arms_up_seq_euclidean": "both_arms_up_with_intermediate",
@@ -44,4 +46,5 @@ REWARDS_TO_ENTRY_IN_SEQ = {
     "arms_up_then_down_seq_stage_detector": "arms_up_then_down",
     "arms_up_then_down_seq_avg": "arms_up_then_down",
     "arms_up_then_down_basic_r": "arms_up_then_down",
+    "arms_up_then_down_basic_r_geom_xpos": "arms_up_then_down",
 }

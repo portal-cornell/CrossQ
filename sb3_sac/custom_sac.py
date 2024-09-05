@@ -12,6 +12,8 @@ from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedul
 from stable_baselines3.common.utils import get_parameters_by_name, polyak_update
 from stable_baselines3.sac.policies import Actor, CnnPolicy, MlpPolicy, MultiInputPolicy, SACPolicy
 
+from vlm_reward.vlm_buffer import GeomXposReplayBuffer
+
 class CustomSAC(SAC):
     """
     StableBaselines3 SAC with added data class to store previous number of timesteps and episodes (used for reward calculation)
@@ -28,7 +30,7 @@ class CustomSAC(SAC):
                     train_freq: Union[int, Tuple[int, str]] = 1,
                     gradient_steps: int = 1,
                     action_noise: Optional[ActionNoise] = None,
-                    replay_buffer_class: Optional[Type[ReplayBuffer]] = None,
+                    replay_buffer_class: Optional[Type[ReplayBuffer]] = GeomXposReplayBuffer,  # A hack to use the custom replay buffer to log geom-xpos
                     replay_buffer_kwargs: Optional[Dict[str, Any]] = None,
                     optimize_memory_usage: bool = False,
                     ent_coef: Union[str, float] = "auto",

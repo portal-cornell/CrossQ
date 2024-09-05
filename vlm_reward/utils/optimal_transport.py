@@ -108,14 +108,13 @@ def euclidean_distance_advanced(x, y):
 def squared_euclidean_distance_advanced(x, y):
     return euclidean_distance_advanced(x, y) ** 2
 
-def euclidean_distance(x, y):
-    return cdist(x, y, metric="euclidean")
-
-def squared_euclidean_distance(x, y):
-    return cdist(x, y, metric="euclidean") ** 2
+def sigmoid_euclidean_distance(x, y):
+    # Since euclidean is positive, we can scale the positive values of sigmoid to be between 0 and 1
+    return 2 / (1 + np.exp(-euclidean_distance_advanced(x, y))) - 1
 
 COST_FN_DICT = {
     "cosine": cosine_distance,
     "euclidean": euclidean_distance_advanced,
     "squared_euclidean": squared_euclidean_distance_advanced,
+    "sigmoid_euclidean": sigmoid_euclidean_distance,
 }

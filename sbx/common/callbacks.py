@@ -18,6 +18,7 @@ from PIL import Image, ImageDraw, ImageFont
 from numbers import Number
 
 from loguru import logger
+from einops import rearrange
 
 import vlm_reward.utils.optimal_transport as custom_ot
 import vlm_reward.utils.soft_dtw as custom_sdtw
@@ -37,14 +38,13 @@ class JointBasedSeqRewardCallback(BaseCallback):
         logger.info(f"[JointBasedSeqRewardCallback] Loaded reference sequence. seq_name={seq_name}, use_geom_xpos={use_geom_xpos}")
 
         self._scale = matching_fn_cfg['scale']
+        self._use_geom_xpos = use_geom_xpos
 
         self.set_matching_fn(matching_fn_cfg)
 
     def set_matching_fn(self, matching_fn_cfg):
         assert "joint_wasserstein" == matching_fn_cfg["name"] or "joint_soft_dtw", f"Currently only supporting joint_wasserstein or joint soft dynamic time warping, got {matching_fn_cfg['name']}"
         matching_fn_name = matching_fn_cfg["name"]
-
-        assert False, "have not verified this code yet"
 
         if matching_fn_name == "joint_wasserstein":
             self._matching_fn = lambda rollout, ref: custom_ot.compute_ot_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], self._scale)
@@ -70,20 +70,27 @@ class JointBasedSeqRewardCallback(BaseCallback):
         # Get the observation from the replay buffer
         #   size: (train_freq, n_envs, obs_size)
         #   For OT-based reward, train_freq = episode_length
-        if replay_buffer_pos - env_episode_timesteps >= 0:
-            # logger.debug(f"not circular, check replay buffer: {self.model.replay_buffer.observations[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :].shape}")
-
-            obs_to_process = np.array(self.model.replay_buffer.observations[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :])
+        if self._use_geom_xpos:
+            obs_to_process = np.array(self.model.replay_buffer.geom_xpos)
         else:
-            # Split reward assignment (circular buffer)
-            logger.debug(f"\ncircular, part 1={self.model.replay_buffer.observations[-(env_episode_timesteps - replay_buffer_pos) :, :].shape} \n part 2={self.model.replay_buffer.observations[:replay_buffer_pos, :].shape}")
+            if replay_buffer_pos - env_episode_timesteps >= 0:
+                # logger.debug(f"not circular, check replay buffer: {self.model.replay_buffer.observations[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :].shape}")
+                
+                obs_to_process = np.array(self.model.replay_buffer.observations[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :])
+            else:
+                # Split reward assignment (circular buffer)
+                # logger.debug(f"\ncircular, part 1={self.model.replay_buffer.observations[-(env_episode_timesteps - replay_buffer_pos) :, :].shape} \n part 2={self.model.replay_buffer.observations[:replay_buffer_pos, :].shape}")
 
-            obs_to_process = np.concatenate((self.model.replay_buffer.observations[-(env_episode_timesteps - replay_buffer_pos) :, :], self.model.replay_buffer.observations[:replay_buffer_pos, :]), axis=0)
+                obs_to_process = np.concatenate((self.model.replay_buffer.observations[-(env_episode_timesteps - replay_buffer_pos) :, :], self.model.replay_buffer.observations[:replay_buffer_pos, :]), axis=0)
 
         matching_reward_list = []
         for env_i in range(self.model.env.num_envs):
             # TODO: A hard-coded value (22 is matching qpos of the environment)
-            obs = obs_to_process[:, env_i, :22]  # size: (train_freq, 22)
+            if self._use_geom_xpos:
+                obs = obs_to_process[:, env_i]
+            else:
+                obs = obs_to_process[:, env_i, :22]  # size: (train_freq, 22)
+
             matching_reward, _ = self._matching_fn(obs, self._ref_seq)  # size: (train_freq,)
             # logger.debug(f"matching_reward={matching_reward.shape}")
             matching_reward_list.append(matching_reward)
@@ -105,7 +112,9 @@ class JointBasedSeqRewardCallback(BaseCallback):
                 env_episode_timesteps - replay_buffer_pos :, :
             ]
 
-        print(f"OTRewardCallback took {time.time() - start_time} seconds")
+        self.model.replay_buffer.clear_geom_xpos()
+
+        print(f"JointBasedSeqRewardCallback took {time.time() - start_time} seconds")
 
 
     def _on_step(self) -> bool:
@@ -313,7 +322,7 @@ class VideoRecorderCallback(BaseCallback):
         self.set_ground_truth_goal_matching_fn(goal_seq_name, use_geom_xpos)
 
         if matching_fn_cfg != {}:
-            self._ref_seq = custom_ot.load_reference_seq(seq_name)
+            self._ref_seq = custom_ot.load_reference_seq(seq_name, use_geom_xpos)
             self._calc_matching_reward = True
             self._scale = matching_fn_cfg['scale']
             self.set_matching_fn(matching_fn_cfg)
@@ -340,6 +349,11 @@ class VideoRecorderCallback(BaseCallback):
         else:
             # TODO: There's a minor bug with how we specify goal_seq_name. Because "both_arms_up_seq_euclidean" is using a sequence of 2, it will trigger this case. The best thing to do is to directly specify the task: is it goal reaching or sequence following?
             assert False, f"Currently only supporting final_only, got {goal_seq_name}"
+
+            """
+            def seq_matching_fn(rollout, goal_seq_name):
+                
+            """
 
     def set_matching_fn(self, matching_fn_cfg):
         assert "joint_wasserstein" == matching_fn_cfg["name"] or "joint_soft_dtw", f"Currently only supporting joint_wasserstein or joint soft dynamic time warping, got {matching_fn_cfg['name']}"
@@ -420,7 +434,10 @@ class VideoRecorderCallback(BaseCallback):
 
             # TODO: We can potentially also do VLM reward calculation
             if self._calc_matching_reward:
-                matching_reward, _ = self._matching_fn(np.array(states)[:, :22], self._ref_seq)
+                if self._use_geom_xpos:
+                    matching_reward, _ = self._matching_fn(np.array(geom_xposes), self._ref_seq)
+                else:
+                    matching_reward, _ = self._matching_fn(np.array(states)[:, :22], self._ref_seq)
 
                 self.logger.record("rollout/avg_matching_reward_unscaled", 
                                 np.mean(matching_reward)/self._scale, 

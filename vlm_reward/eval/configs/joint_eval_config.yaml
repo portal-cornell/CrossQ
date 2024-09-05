@@ -11,5 +11,5 @@ hydra:
   searchpath:
     - file://../../configs
   run:
-    dir: ./joint_eval_logs/${now:%Y-%m-%d-%H%M%S}_rm=${reward_model.name}_src=${joint_eval_data.name}_nt=${run_notes}
+    dir: ./joint_eval_logs/${now:%Y-%m-%d-%H%M%S}_rm=${reward_model.name}_geom-xpos=${use_geom_xpos}_src=${joint_eval_data.name}_nt=${run_notes}
 
