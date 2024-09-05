@@ -7,10 +7,13 @@ from gymnasium.envs.mujoco import MujocoEnv
 from gymnasium.envs.mujoco.humanoid_v4 import HumanoidEnv as GymHumanoidEnv
 from gymnasium.spaces import Box
 from numpy.typing import NDArray
+import copy
+
+from vlm_reward.utils.optimal_transport import load_reference_seq 
 
 from envs.humanoid.reward_helpers import *
 
-from constants import DEMOS_DICT
+from constants import REWARDS_TO_ENTRY_IN_SEQ
 
 def mass_center(model, data):
     mass = np.expand_dims(model.body_mass, axis=1)
@@ -101,10 +104,14 @@ class HumanoidEnvCustom(GymHumanoidEnv):
 
         self._ref_joint_states = np.array([])
 
-        if reward_type in DEMOS_DICT:
-            self._load_reference_joint_states(DEMOS_DICT[reward_type])
+        if reward_type in REWARDS_TO_ENTRY_IN_SEQ:
+            # If it's using the relative joint states, size (num_of_ref_joint_states, 22)
+            # If it's using the geom_xpos, size (num_of_ref_joint_states, 18, 3)
+            use_geom_xpos = "geom_xpos" in reward_type
+            self._ref_joint_states = load_reference_seq(REWARDS_TO_ENTRY_IN_SEQ[reward_type], use_geom_xpos=use_geom_xpos)
+            logger.info(f"[Env] Loaded reference sequence for {reward_type}. seq_name={REWARDS_TO_ENTRY_IN_SEQ[reward_type]} and use_geom_xpos={use_geom_xpos}")
         else:
-            logger.info(f"Warning: {reward_type} is not in the DEMOS_DICT. No reference joint states loaded.")
+            logger.info(f"[Env] Warning: {reward_type} is not in the REWARDS_TO_ENTRY_IN_SEQ. No reference joint states loaded.")
 
         # Spawned the humanoid not so high
         self.init_qpos[2] = 1.3
@@ -124,6 +131,8 @@ class HumanoidEnvCustom(GymHumanoidEnv):
                                         healthy_reward=self.healthy_reward,
                                         forward_reward_weight=self._forward_reward_weight,
                                         ref_joint_states=self._ref_joint_states)
+        
+        info["geom_xpos"] = copy.deepcopy(self.data.geom_xpos)  # Allows us to access geom_xpos during evaluation
 
         self.num_steps += 1
         self.stage = int(info.get("stage", 0))
@@ -144,20 +153,6 @@ class HumanoidEnvCustom(GymHumanoidEnv):
     def get_obs(self):
         return self._get_obs()
 
-    def _load_reference_joint_states(self, joint_state_fp_list):
-        """
-        Parameters:
-            joint_state_fp_list (list): list of path to the saved reference joint state
-
-        Effects:
-            self._ref_joint_states gets updated
-        """
-        ref_joint_states_list = []
-        for fp in joint_state_fp_list:
-            ref_joint_states_list.append(np.load(fp))
-        self._ref_joint_states = np.stack(ref_joint_states_list)
-
-        # logger.debug(f"Updated self._ref_joint_states: {self._ref_joint_states.shape}\n{self._ref_joint_states}")
 
 def reward_original(data, **kwargs):
     model = kwargs.get("model", None)
@@ -506,6 +501,44 @@ def reward_goal_only_euclidean(data, **kwargs):
     return reward, terms_to_plot
 
 
+def reward_goal_only_euclidean_geom_xpos(data, **kwargs):
+    """Only use the goal joint states to calculate the reward
+    - The reward is based on the euclidean distance between the current joint states and the reference joint states
+
+    Final goal: Both arms out
+
+    This task is a goal-reaching task (i.e. doesn't matter how you get to the goal, as long as you get to the goal)
+    """
+    basic_standing_reward, terms_to_plot = basic_remain_standing_rewards(data, 
+                                                            upward_reward_w=1, 
+                                                            ctrl_cost_w=1, 
+                                                            **kwargs)
+
+    # Calculate the reward based on the euclidean distance between the current joint states and the goal joint states
+    assert "ref_joint_states" in kwargs, "ref_joint_states must be passed in as part of the kwargs"
+    ref_joint_states = kwargs.get('ref_joint_states', None)
+
+    assert ref_joint_states.shape[0] == 1, "there should only be the goal image/joint position"
+
+    # Mimicking how they get the observation
+    # https://github.com/Farama-Foundation/Gymnasium/blob/b6046caeb30c9938789aeeec183147c7ffd1983b/gymnasium/envs/mujoco/humanoid_v4.py#L119
+    # Ignore the 1st joint state, which is the floor
+    curr_geom_xpos = copy.deepcopy(data.geom_xpos)  # (n, 3)
+    # Normalize the current pose by the torso's position (which is at index 1)
+    curr_geom_xpos = curr_geom_xpos - curr_geom_xpos[1]
+
+    pose_matching_reward = np.exp(-np.linalg.norm(curr_geom_xpos - ref_joint_states[0]))
+    pose_matching_reward_w = 1
+    
+    reward = basic_standing_reward + pose_matching_reward_w * pose_matching_reward
+
+    terms_to_plot["pose_r"] = f"{pose_matching_reward:.2f}"
+    terms_to_plot["r"] = f"{reward:.2f}"
+    terms_to_plot["steps"] = kwargs.get("num_steps", 0)
+
+    return reward, terms_to_plot
+
+
 def reward_seq_euclidean(data, **kwargs):
     """Use a sequence of reference joint states to calculate the reward
 
@@ -668,15 +701,19 @@ REWARD_FN_MAPPING = dict(
         splitting = reward_splitting,
 
         arms_bracket_right_goal_only_euclidean = reward_goal_only_euclidean,
+        arms_bracket_right_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
         arms_bracket_right_basic_r = reward_only_basic_r,
 
         arms_bracket_down_goal_only_euclidean = reward_goal_only_euclidean,
+        arms_bracket_down_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
         arms_bracket_down_basic_r = reward_only_basic_r,
 
         left_arm_extend_wave_higher_goal_only_euclidean = reward_goal_only_euclidean,
+        left_arm_extend_wave_higher_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
         left_arm_extend_wave_higher_basic_r = reward_only_basic_r,
 
         both_arms_out_goal_only_euclidean = reward_goal_only_euclidean,
+        both_arms_out_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
         both_arms_out_seq_euclidean = reward_seq_euclidean,
         both_arms_out_basic_r = reward_only_basic_r,
 

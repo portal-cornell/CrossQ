@@ -135,6 +135,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             rollout_save_path=os.path.join(cfg.logging.run_path, "eval"),
             render_freq=cfg.logging.video_save_freq // cfg.compute.n_cpu_workers,
             goal_seq_name=REWARDS_TO_ENTRY_IN_SEQ[cfg.env.reward_type] if "reward_type" in cfg.env else "",
+            use_geom_xpos="geom_xpos" in cfg.env.reward_type if "reward_type" in cfg.env else False,
             # For joint based reward
             seq_name=cfg.reward_model.seq_name if cfg.reward_model.name == "joint_wasserstein" or cfg.reward_model.name == "joint_soft_dtw" else "",
             matching_fn_cfg=dict(cfg.reward_model) if cfg.reward_model.name == "joint_wasserstein" or cfg.reward_model.name == "joint_soft_dtw" else {},
@@ -147,6 +148,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             callback_list.append(JointBasedSeqRewardCallback(
                                     seq_name = cfg.reward_model.seq_name,
                                     matching_fn_cfg = dict(cfg.reward_model),
+                                    use_geom_xpos = "geom_xpos" in cfg.env.reward_type
             ))
 
         model.learn(

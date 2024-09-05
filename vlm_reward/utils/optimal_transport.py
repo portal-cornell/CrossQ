@@ -5,13 +5,24 @@ from constants import SEQ_DICT
 
 import matplotlib.pyplot as plt
 
-def load_reference_seq(seq_name: str) -> np.ndarray:
+def load_reference_seq(seq_name: str, use_geom_xpos: bool) -> np.ndarray:
     """
     Load the reference sequence for the given sequence name
     """
     ref_seq = []
     for joint in SEQ_DICT[seq_name]:
-        ref_seq.append(np.load(joint))
+        if use_geom_xpos:
+            new_fp = str(joint).replace("joint-state", "geom-xpos")
+        else:
+            new_fp = joint
+
+        loaded_joint_states = np.load(new_fp)
+
+        if use_geom_xpos:
+            # Normalize the joint states based on the torso (index 1)
+            loaded_joint_states = loaded_joint_states - loaded_joint_states[1]
+
+        ref_seq.append(loaded_joint_states)
     return np.stack(ref_seq)
 
 def compute_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1) -> np.ndarray:

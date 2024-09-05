@@ -69,7 +69,7 @@ def eval_from_config(cfg: DictConfig):
         reward_fn = lambda ref, obs: compute_soft_dtw_reward(obs, ref, dist_fn, gamma=cfg.reward_model.gamma, scale=cfg.reward_model.scale)
 
     # Load the reference joint states
-    ref_seq = load_reference_seq(cfg.joint_eval_data.name)
+    ref_seq = load_reference_seq(cfg.joint_eval_data.name, cfg.use_geom_xpos)
 
     logger.debug(f"Reference sequence shape: {ref_seq.shape}")
 

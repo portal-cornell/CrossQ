@@ -20,15 +20,19 @@ SEQ_DICT = {
 
 REWARDS_TO_ENTRY_IN_SEQ = {
     "arms_bracket_right_goal_only_euclidean": "arms_bracket_right_final_only",
+    "arms_bracket_right_goal_only_euclidean_geom_xpos": "arms_bracket_right_final_only",
     "arms_bracket_right_basic_r": "arms_bracket_right_final_only",
 
     "arms_bracket_down_goal_only_euclidean": "arms_bracket_down_final_only",
+    "arms_bracket_down_goal_only_euclidean_geom_xpos": "arms_bracket_down_final_only",
     "arms_bracket_down_basic_r": "arms_bracket_down_final_only",
 
     "left_arm_extend_wave_higher_goal_only_euclidean": "left_arm_extend_wave_higher_final_only",
+    "left_arm_extend_wave_higher_goal_only_euclidean_geom_xpos": "left_arm_extend_wave_higher_final_only",
     "left_arm_extend_wave_higher_basic_r": "left_arm_extend_wave_higher_final_only",
 
     "both_arms_out_goal_only_euclidean": "both_arms_out_final_only",
+    "both_arms_out_goal_only_euclidean_geom_xpos": "both_arms_out_final_only",
     "both_arms_out_seq_euclidean": "both_arms_out_with_intermediate",
     "both_arms_out_basic_r": "both_arms_out_with_intermediate",
 
@@ -40,8 +44,4 @@ REWARDS_TO_ENTRY_IN_SEQ = {
     "arms_up_then_down_seq_stage_detector": "arms_up_then_down",
     "arms_up_then_down_seq_avg": "arms_up_then_down",
     "arms_up_then_down_basic_r": "arms_up_then_down",
-}
-
-DEMOS_DICT = {
-    reward_name: SEQ_DICT[seq_name] for reward_name, seq_name in REWARDS_TO_ENTRY_IN_SEQ.items()
 }

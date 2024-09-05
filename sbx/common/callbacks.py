@@ -30,10 +30,12 @@ class JointBasedSeqRewardCallback(BaseCallback):
     """
     Custom callback for calculating joint based sequence matching rewards after rollouts are collected.
     """
-    def __init__(self, seq_name, matching_fn_cfg, verbose=0):
+    def __init__(self, seq_name, matching_fn_cfg, use_geom_xpos, verbose=0):
         super(JointBasedSeqRewardCallback, self).__init__(verbose)
 
-        self._ref_seq = custom_ot.load_reference_seq(seq_name)
+        self._ref_seq = custom_ot.load_reference_seq(seq_name, use_geom_xpos=use_geom_xpos)
+        logger.info(f"[JointBasedSeqRewardCallback] Loaded reference sequence. seq_name={seq_name}, use_geom_xpos={use_geom_xpos}")
+
         self._scale = matching_fn_cfg['scale']
 
         self.set_matching_fn(matching_fn_cfg)
@@ -41,6 +43,8 @@ class JointBasedSeqRewardCallback(BaseCallback):
     def set_matching_fn(self, matching_fn_cfg):
         assert "joint_wasserstein" == matching_fn_cfg["name"] or "joint_soft_dtw", f"Currently only supporting joint_wasserstein or joint soft dynamic time warping, got {matching_fn_cfg['name']}"
         matching_fn_name = matching_fn_cfg["name"]
+
+        assert False, "have not verified this code yet"
 
         if matching_fn_name == "joint_wasserstein":
             self._matching_fn = lambda rollout, ref: custom_ot.compute_ot_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], self._scale)
@@ -230,6 +234,8 @@ class VLMRewardCallback(BaseCallback):
             If the callback returns False, training is aborted early.
         """
         return True
+    
+
 def plot_info_on_frame(pil_image, info, font_size=20):
     """
     Parameters:
@@ -253,7 +259,7 @@ def plot_info_on_frame(pil_image, info, font_size=20):
     i = 0
     for k in info:
         # TODO: This is pretty ugly
-        if not any([text in k for text in ["TimeLimit", "render_array"]]):
+        if not any([text in k for text in ["TimeLimit", "render_array", "geom_xpos"]]):
             reward_text = f"{k}:{info[k]}"
             # Plot the text from bottom to top
             text_position = (x, y - (font_size + 10)*(i+1))
@@ -270,6 +276,7 @@ class VideoRecorderCallback(BaseCallback):
         n_eval_episodes: int = 1,
         deterministic: bool = True,
         goal_seq_name: str = "",
+        use_geom_xpos: bool = False,
         seq_name: str = "",
         matching_fn_cfg: dict = {}, 
         verbose=0
@@ -296,11 +303,14 @@ class VideoRecorderCallback(BaseCallback):
         self._n_eval_episodes = n_eval_episodes
         self._deterministic = deterministic
         self._rollout_save_path = rollout_save_path  # Save the state of the environment
+        self._use_geom_xpos = use_geom_xpos
 
         # TODO: Figure out how to calculate the joint matching reward for sequence following tasks
         #   For now, we will just support calculating the ground-truth reward for matching the goal joint state
-        self._goal_ref_seq = custom_ot.load_reference_seq(goal_seq_name)
-        self.set_ground_truth_goal_matching_fn(goal_seq_name)
+        self._goal_ref_seq = custom_ot.load_reference_seq(goal_seq_name, use_geom_xpos)
+        logger.info(f"[VideoRecorderCallback] Loaded reference sequence. seq_name={seq_name}, use_geom_xpos={use_geom_xpos}")
+
+        self.set_ground_truth_goal_matching_fn(goal_seq_name, use_geom_xpos)
 
         if matching_fn_cfg != {}:
             self._ref_seq = custom_ot.load_reference_seq(seq_name)
@@ -312,7 +322,7 @@ class VideoRecorderCallback(BaseCallback):
 
         # TODO: We can potentially also do VLM reward calculation
 
-    def set_ground_truth_goal_matching_fn(self, goal_seq_name):
+    def set_ground_truth_goal_matching_fn(self, goal_seq_name: str, use_geom_xpos: bool):
         """Set the ground-truth goal matching function based on the goal_seq_name.
 
         This will be unifying metric that we measure the performance of different methods against.
@@ -324,7 +334,9 @@ class VideoRecorderCallback(BaseCallback):
 
             assert len(self._goal_ref_seq) == 1, f"Expected only 1 reference sequence, got {len(self._goal_ref_seq)}"
             
-            self._gt_goal_matching_fn = lambda rollout: np.exp(-np.linalg.norm(rollout - self._goal_ref_seq, axis=1))
+            axis_to_norm = (1,2) if use_geom_xpos else 1
+
+            self._gt_goal_matching_fn = lambda rollout: np.exp(-np.linalg.norm(rollout - self._goal_ref_seq, axis=axis_to_norm))
         else:
             # TODO: There's a minor bug with how we specify goal_seq_name. Because "both_arms_up_seq_euclidean" is using a sequence of 2, it will trigger this case. The best thing to do is to directly specify the task: is it goal reaching or sequence following?
             assert False, f"Currently only supporting final_only, got {goal_seq_name}"
@@ -346,6 +358,7 @@ class VideoRecorderCallback(BaseCallback):
             raw_screens = []
             screens = []
             states = []
+            geom_xposes = []
             infos = []
             rewards = []
 
@@ -369,6 +382,11 @@ class VideoRecorderCallback(BaseCallback):
                 states.append(_locals["observations"])
                 rewards.append(_locals["rewards"])
 
+                geom_xpos = _locals.get('info', {})["geom_xpos"]
+                # Normalize the joint states based on the torso (index 1)
+                geom_xpos = geom_xpos - geom_xpos[1]
+                geom_xposes.append(geom_xpos)
+
             evaluate_policy(
                 self.model,
                 self._eval_env,
@@ -386,7 +404,11 @@ class VideoRecorderCallback(BaseCallback):
             rewards = np.concatenate(rewards)
 
             # Calculate the goal matching reward
-            goal_matching_reward = self._gt_goal_matching_fn(np.array(states)[:, :22])
+            if self._use_geom_xpos:
+                goal_matching_reward = self._gt_goal_matching_fn(np.array(geom_xposes))
+            else:
+                goal_matching_reward = self._gt_goal_matching_fn(np.array(states)[:, :22])
+
             for i in range(len(infos)):
                 infos[i]["gt_joint_match_r"] = f"{goal_matching_reward[i]:.4f}"
 
@@ -436,6 +458,9 @@ class VideoRecorderCallback(BaseCallback):
             # Save the rollouts locally    
             with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_states.npy"), "wb") as f:
                 np.save(f, np.array(states))
+
+            with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_geom_xpos_states.npy"), "wb") as f:
+                np.save(f, np.array(geom_xposes))
             
             with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_rewards.npy"), "wb") as f:
                 np.save(f, np.array(rewards))
