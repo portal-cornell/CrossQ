@@ -44,12 +44,14 @@ class JointBasedSeqRewardCallback(BaseCallback):
 
     def set_matching_fn(self, matching_fn_cfg):
         assert "joint_wasserstein" == matching_fn_cfg["name"] or "joint_soft_dtw", f"Currently only supporting joint_wasserstein or joint soft dynamic time warping, got {matching_fn_cfg['name']}"
+        logger.info(f"[JointBasedSeqRewardCallback] Using the following reward model:\n{matching_fn_cfg}")
+
         matching_fn_name = matching_fn_cfg["name"]
 
         if matching_fn_name == "joint_wasserstein":
-            self._matching_fn = lambda rollout, ref: custom_ot.compute_ot_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], self._scale)
+            self._matching_fn = lambda rollout, ref: custom_ot.compute_ot_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], self._scale, modification_dict=dict(matching_fn_cfg['modification']))
         elif matching_fn_name == "joint_soft_dtw":
-            self._matching_fn = lambda rollout, ref: custom_sdtw.compute_soft_dtw_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], matching_fn_cfg['gamma'], self._scale)
+            self._matching_fn = lambda rollout, ref: custom_sdtw.compute_soft_dtw_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], matching_fn_cfg['gamma'], self._scale, modification_dict=dict(matching_fn_cfg['modification']))
 
         logger.info(f"Set matching function to {matching_fn_name} with cost_fn={matching_fn_cfg['cost_fn']} and scale={self._scale}")
 
@@ -285,6 +287,7 @@ class VideoRecorderCallback(BaseCallback):
         n_eval_episodes: int = 1,
         deterministic: bool = True,
         goal_seq_name: str = "",
+        threshold: float = 0.5,
         use_geom_xpos: bool = False,
         seq_name: str = "",
         matching_fn_cfg: dict = {}, 
@@ -313,6 +316,7 @@ class VideoRecorderCallback(BaseCallback):
         self._deterministic = deterministic
         self._rollout_save_path = rollout_save_path  # Save the state of the environment
         self._use_geom_xpos = use_geom_xpos
+        self._threshold = threshold
 
         # TODO: Figure out how to calculate the joint matching reward for sequence following tasks
         #   For now, we will just support calculating the ground-truth reward for matching the goal joint state
@@ -347,22 +351,50 @@ class VideoRecorderCallback(BaseCallback):
 
             self._gt_goal_matching_fn = lambda rollout: np.exp(-np.linalg.norm(rollout - self._goal_ref_seq, axis=axis_to_norm))
         else:
-            # TODO: There's a minor bug with how we specify goal_seq_name. Because "both_arms_up_seq_euclidean" is using a sequence of 2, it will trigger this case. The best thing to do is to directly specify the task: is it goal reaching or sequence following?
-            assert False, f"Currently only supporting final_only, got {goal_seq_name}"
+            def seq_matching_fn(ref, rollout, threshold):
+                """
+                Calculate the reward based on the sequence matching to the goal_ref_seq
 
-            """
-            def seq_matching_fn(rollout, goal_seq_name):
+                Parameters:
+                    rollout: np.array (rollout_length, ...)
+                        The rollout sequence to calculate the reward
+                """
+                # Calculate reward from the rollout to self.goal_ref_seq
+                reward_matrix = np.exp(-custom_ot.euclidean_distance_advanced(rollout, ref))
+
+                # Detect when a stage is completed (the rollout is close to the goal_ref_seq) (under self._threshold)
+                stage_completed = 0
+                stage_completed_matrix = np.zeros(reward_matrix.shape) # 1 if the stage is completed, 0 otherwise
+                current_stage_matrix = np.zeros(reward_matrix.shape) # 1 if the current stage, 0 otherwise
                 
-            """
+                for i in range(len(reward_matrix)):  # Iterate through the timestep
+                    current_stage_matrix[i, stage_completed] = 1
+                    if reward_matrix[i][stage_completed] > threshold and stage_completed < len(ref) - 1:
+                        stage_completed += 1
+                    stage_completed_matrix[i, :stage_completed] = 1
+
+                # Find the highest reward to each reference sequence
+                highest_reward = np.max(reward_matrix, axis=0)
+
+                # Reward (shape: (rollout)) at each timestep is
+                #   Stage completion reward + Reward at the current stage
+                reward = np.sum(stage_completed_matrix * highest_reward + current_stage_matrix * reward_matrix, axis=1)/len(ref)
+
+                return reward
+            
+            self._gt_goal_matching_fn = lambda rollout: seq_matching_fn(self._goal_ref_seq, rollout, self._threshold)
+
 
     def set_matching_fn(self, matching_fn_cfg):
         assert "joint_wasserstein" == matching_fn_cfg["name"] or "joint_soft_dtw", f"Currently only supporting joint_wasserstein or joint soft dynamic time warping, got {matching_fn_cfg['name']}"
+        logger.info(f"[VideoRecorderCallback] Using the following reward model:\n{matching_fn_cfg}")
+        
         matching_fn_name = matching_fn_cfg["name"]
 
         if matching_fn_name == "joint_wasserstein":
-            self._matching_fn = lambda rollout, ref: custom_ot.compute_ot_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], self._scale)
+            self._matching_fn = lambda rollout, ref: custom_ot.compute_ot_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], self._scale, modification_dict=dict(matching_fn_cfg['modification']))
         elif matching_fn_name == "joint_soft_dtw":
-            self._matching_fn = lambda rollout, ref: custom_sdtw.compute_soft_dtw_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], matching_fn_cfg['gamma'], self._scale)
+            self._matching_fn = lambda rollout, ref: custom_sdtw.compute_soft_dtw_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], matching_fn_cfg['gamma'], self._scale, modification_dict=dict(matching_fn_cfg['modification']))
 
         logger.info(f"Set matching function to {matching_fn_name} with cost_fn={matching_fn_cfg['cost_fn']} and scale={self._scale}")
 

@@ -4,6 +4,7 @@ run_notes: null
 
 defaults:
   - reward_model: joint_wasserstein
+  - reward_model/modification: nothing
   - joint_eval_data: both_arms_out 
   - _self_
 

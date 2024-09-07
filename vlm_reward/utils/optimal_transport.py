@@ -25,7 +25,7 @@ def load_reference_seq(seq_name: str, use_geom_xpos: bool) -> np.ndarray:
         ref_seq.append(loaded_joint_states)
     return np.stack(ref_seq)
 
-def compute_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1) -> np.ndarray:
+def compute_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1, modification_dict={}) -> np.ndarray:
     """
     Compute the Optimal Transport (OT) reward between the reference sequence and the observed sequence
 
@@ -47,6 +47,30 @@ def compute_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1) -> np.
     # Calculate the cost matrix between the reference sequence and the observed sequence
     #   size: (train_freq, ref_seq_len)
     cost_matrix = cost_fn(obs, ref)
+
+    if modification_dict != {}:
+        if modification_dict["method"] == "equal_dist_cost":
+            cost_scale = modification_dict["cost_scale"]
+            scaling_matrix = cost_scale * np.ones_like(cost_matrix)
+
+            n_obs_to_not_scale_per_ref = len(obs) // len(ref)
+
+            i = 0
+            for j in range(len(ref)):
+                if j == len(ref) - 1:
+                    scaling_matrix[i:, j] = 1
+                else:
+                    scaling_matrix[i:i+n_obs_to_not_scale_per_ref, j] = 1
+                i += n_obs_to_not_scale_per_ref
+
+            cost_matrix = cost_matrix * scaling_matrix
+
+            # scale the cost matrix back to between 0 and 1
+            cost_matrix = cost_matrix / cost_scale
+        elif modification_dict["method"] == "nothing":
+            pass
+        else:
+            raise NotImplementedError(f"Unknown method: {modification_dict['method']}")
 
     # Calculate the OT plan between the reference sequence and the observed sequence
     obs_weight = np.ones(obs.shape[0]) / obs.shape[0]

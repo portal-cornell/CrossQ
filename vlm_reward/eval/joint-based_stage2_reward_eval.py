@@ -4,7 +4,7 @@ from hydra.core.hydra_config import HydraConfig
 
 from typing import Callable, List, Tuple, Dict, Optional
 
-from vlm_reward.utils.optimal_transport import load_reference_seq, compute_ot_reward, plot_matrix_as_heatmap, COST_FN_DICT
+from vlm_reward.utils.optimal_transport import load_reference_seq, compute_ot_reward, plot_matrix_as_heatmap, COST_FN_DICT, euclidean_distance_advanced
 from vlm_reward.utils.soft_dtw import compute_soft_dtw_reward
 
 from vlm_reward.eval.eval_utils import gt_vs_source_heatmap
@@ -46,27 +46,61 @@ def eval_one_traj(
 
     # Plot the ground-truth vs predicted reward heat map
     gt_vs_source_heatmap(gt_reward, pred_reward, os.path.join(eval_result_path, "within_sequence_rewards.png"))
+    
+    if info != {}:
+        # Plot the OT plan
+        plot_matrix_as_heatmap(info["assignment"], f"{reward_fn_type} Assignment Matrix", os.path.join(eval_result_path, "assignment_plan.png"), cmap="hot")
 
-    # Plot the OT plan
-    plot_matrix_as_heatmap(info["assignment"], f"{reward_fn_type} Assignment Matrix", os.path.join(eval_result_path, "assignment_plan.png"), cmap="hot")
+        # Plot the cost matrix
+        plot_matrix_as_heatmap(info["cost_matrix"], f"{reward_fn_type} Cost Matrix", os.path.join(eval_result_path, "cost_matrix.png"), cmap="bone_r")
 
-    # Plot the cost matrix
-    plot_matrix_as_heatmap(info["cost_matrix"], f"{reward_fn_type} Cost Matrix", os.path.join(eval_result_path, "cost_matrix.png"), cmap="bone_r")
-
-    # Plot the transported cost matrix
-    plot_matrix_as_heatmap(info["transported_cost"], f"{reward_fn_type} Transported Cost Matrix (Assignment * Cost)", os.path.join(eval_result_path, "transported_cost_matrix.png"), cmap="bone_r")
-        
+        # Plot the transported cost matrix
+        plot_matrix_as_heatmap(info["transported_cost"], f"{reward_fn_type} Transported Cost Matrix (Assignment * Cost)", os.path.join(eval_result_path, "transported_cost_matrix.png"), cmap="bone_r")
+            
 
 def eval_from_config(cfg: DictConfig):
     assert cfg.joint_eval_data.sequence_and_reward_dir is not None, "Please provide the path to the gif folder"
 
-    # Define the reward function
-    dist_fn = COST_FN_DICT[cfg.reward_model.cost_fn]
+    logger.info(f"Using the following reward model:\n{OmegaConf.to_yaml(cfg.reward_model)}")
 
+    # Define the reward function
     if cfg.reward_model.name == "joint_wasserstein":
-        reward_fn = lambda ref, obs: compute_ot_reward(obs, ref, dist_fn, scale=cfg.reward_model.scale)
+        reward_fn = lambda ref, obs: compute_ot_reward(obs, ref, COST_FN_DICT[cfg.reward_model.cost_fn], scale=cfg.reward_model.scale, modification_dict=dict(cfg.reward_model.modification))
     elif cfg.reward_model.name == "joint_soft_dtw":
-        reward_fn = lambda ref, obs: compute_soft_dtw_reward(obs, ref, dist_fn, gamma=cfg.reward_model.gamma, scale=cfg.reward_model.scale)
+        reward_fn = lambda ref, obs: compute_soft_dtw_reward(obs, ref, COST_FN_DICT[cfg.reward_model.cost_fn], gamma=cfg.reward_model.gamma, scale=cfg.reward_model.scale, modification_dict=dict(cfg.reward_model.modification))
+    else:
+        def seq_matching_fn(ref, rollout, threshold=0.2):
+            """
+            Calculate the reward based on the sequence matching to the goal_ref_seq
+
+            Parameters:
+                rollout: np.array (rollout_length, ...)
+                    The rollout sequence to calculate the reward
+            """
+            # Calculate reward from the rollout to self.goal_ref_seq
+            reward_matrix = np.exp(-euclidean_distance_advanced(rollout, ref))
+
+            # Detect when a stage is completed (the rollout is close to the goal_ref_seq) (under self._threshold)
+            stage_completed = 0
+            stage_completed_matrix = np.zeros(reward_matrix.shape) # 1 if the stage is completed, 0 otherwise
+            current_stage_matrix = np.zeros(reward_matrix.shape) # 1 if the current stage, 0 otherwise
+            
+            for i in range(len(reward_matrix)):  # Iterate through the timestep
+                current_stage_matrix[i, stage_completed] = 1
+                if reward_matrix[i][stage_completed] > threshold and stage_completed < len(ref) - 1:
+                    stage_completed += 1
+                stage_completed_matrix[i, :stage_completed] = 1
+
+            # Find the highest reward to each reference sequence
+            highest_reward = np.max(reward_matrix, axis=0)
+
+            # Reward (shape: (rollout)) at each timestep is
+            #   Stage completion reward + Reward at the current stage
+            reward = np.sum(stage_completed_matrix * highest_reward + current_stage_matrix * reward_matrix, axis=1)/len(ref)
+
+            return reward, {}
+
+        reward_fn = seq_matching_fn
 
     # Load the reference joint states
     ref_seq = load_reference_seq(cfg.joint_eval_data.name, cfg.use_geom_xpos)
@@ -75,10 +109,11 @@ def eval_from_config(cfg: DictConfig):
 
     # Prune and get all the gifs in cfg.joint_eval_data.sequence_and_reward_dir
     #   (only get the gif files)
-    gif_files = [f for f in os.listdir(cfg.joint_eval_data.sequence_and_reward_dir) if f.endswith(".gif")]
+    all_gif_files = [f for f in os.listdir(cfg.joint_eval_data.sequence_and_reward_dir) if f.endswith(".gif")]
 
     # Filter the gif_files based on cfg.skip_gifs (how many gifs to skip)
-    gif_files = [gif_files[i] for i in range(0, len(gif_files), cfg.skip_gifs)]
+    gif_files = [all_gif_files[i] for i in range(0, len(all_gif_files), cfg.skip_gifs)]
+    gif_files += [all_gif_files[72]]
 
     data_save_dir = HydraConfig.get().runtime.output_dir
 
@@ -91,6 +126,7 @@ def eval_from_config(cfg: DictConfig):
             states_npy_fp = os.path.join(cfg.joint_eval_data.sequence_and_reward_dir, base_name + "_states.npy")
 
         rewards_npy_fp = os.path.join(cfg.joint_eval_data.sequence_and_reward_dir, base_name.replace("_rollouts", "") + "_goal_matching_reward.npy")
+        # rewards_npy_fp = os.path.join(cfg.joint_eval_data.sequence_and_reward_dir, base_name + "_rewards.npy")
 
         eval_one_traj(
             ref_seq=ref_seq,
