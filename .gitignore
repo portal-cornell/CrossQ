@@ -58,4 +58,5 @@ wandb/
 /checkpoints
 /train_logs
 /inference_logs
-
+/vlm_reward
+/models
