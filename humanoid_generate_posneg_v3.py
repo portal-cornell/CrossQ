@@ -10,6 +10,7 @@ Example commands:
 import gymnasium
 from loguru import logger
 import os
+import copy
 import imageio
 import numpy as np
 import copy
@@ -75,10 +76,15 @@ def save_joint_state(obs, path):
     with open(path, "wb") as fout:
         np.save(fout, obs[:22])
 
-def log_data(curr_log, qpos, npy_path, image_path):
+def save_geom_xpos(env, path):
+    with open(path, "wb") as fout:
+        np.save(fout, copy.deepcopy(env.unwrapped.data.geom_xpos))
+
+def log_data(curr_log, qpos, joint_npy_path, geom_xpos_npy_path, image_path):
     for idx in range(2, len(qpos)):
         curr_log[f"qpos_{idx}"] = qpos[idx]
-    curr_log["npy_path"] = npy_path
+    curr_log["joint_npy_path"] = joint_npy_path
+    curr_log["geom_xpos_npy_path"] = geom_xpos_npy_path
     curr_log["image_path"] = image_path
     return curr_log
 
@@ -95,13 +101,16 @@ def generate_anchor_sample(args, env, iteration, joint_config, init_qpos):
     obs = env.unwrapped.get_obs()
     frame = env.render()
 
-    anchor_npy_path = f"{FOLDER}/anchor/{iteration}_joint_state.npy"
-    save_joint_state(obs, f"{anchor_npy_path}")
+    anchor_joint_npy_path = f"{FOLDER}/anchor/{iteration}_joint_state.npy"
+    save_joint_state(obs, f"{anchor_joint_npy_path}")
+
+    anchor_geom_xpos_npy_path = f"{FOLDER}/anchor/{iteration}_geom_xpos.npy"
+    save_geom_xpos(env, f"{anchor_geom_xpos_npy_path}")
 
     anchor_image_path = f"{FOLDER}/anchor/{iteration}_pose.png"
     save_image(frame, anchor_image_path)
 
-    return log_data(curr_log, new_qpos, anchor_npy_path, anchor_image_path)
+    return log_data(curr_log, new_qpos, anchor_joint_npy_path, anchor_geom_xpos_npy_path, anchor_image_path)
 
 def generate_positive_sample(args, env, iteration, pos_i, joint_config, init_qpos_copy, step_type):
     curr_log = {f"qpos_{i}": 0.0 for i in range(2, 24)}
@@ -126,10 +135,13 @@ def generate_positive_sample(args, env, iteration, pos_i, joint_config, init_qpo
     image_path = f"{FOLDER}/pos/{iteration}_{pos_i}_{step_type}.png"
     save_image(frame, image_path)
 
-    npy_path = f"{FOLDER}/pos/{iteration}_{pos_i}_{step_type}_joint_state.npy"
-    save_joint_state(obs, f"{npy_path}")
+    pos_joint_npy_path = f"{FOLDER}/pos/{iteration}_{pos_i}_{step_type}_joint_state.npy"
+    save_joint_state(obs, f"{pos_joint_npy_path}")
 
-    return log_data(curr_log, new_qpos, npy_path, image_path)
+    pos_geom_xpos_npy_path = f"{FOLDER}/pos/{iteration}_{pos_i}_{step_type}_geom_xpos.npy"
+    save_geom_xpos(env, f"{pos_geom_xpos_npy_path}")
+
+    return log_data(curr_log, new_qpos, pos_joint_npy_path, pos_geom_xpos_npy_path, image_path)
 
 def generate_negative_sample(args, env, iteration, neg_i, joint_config, init_qpos_copy):
     curr_log = {f"qpos_{i}": 0.0 for i in range(2, 24)}
@@ -148,10 +160,13 @@ def generate_negative_sample(args, env, iteration, neg_i, joint_config, init_qpo
     image_path = f"{FOLDER}/neg/{iteration}_{neg_i}_pose.png"
     save_image(frame, image_path)
 
-    npy_path = f"{FOLDER}/neg/{iteration}_{neg_i}_pose_joint_state.npy"
-    save_joint_state(obs, f"{npy_path}")
+    neg_joint_npy_path = f"{FOLDER}/neg/{iteration}_{neg_i}_pose_joint_state.npy"
+    save_joint_state(obs, f"{neg_joint_npy_path}")
 
-    return log_data(curr_log, new_qpos, npy_path, image_path)
+    neg_geom_xpos_npy_path = f"{FOLDER}/neg/{iteration}_{neg_i}_pose_geom_xpos.npy"
+    save_geom_xpos(env, f"{neg_geom_xpos_npy_path}")
+
+    return log_data(curr_log, new_qpos, neg_joint_npy_path, neg_geom_xpos_npy_path, image_path)
 
 
 
