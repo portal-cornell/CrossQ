@@ -48,12 +48,15 @@ env = gymnasium.make(
 env.reset()
 
 init_qpos = env.unwrapped.init_qpos
+init_geom_pos = copy.deepcopy(env.unwrapped.data.geom_xpos)
+
+print(f"env.init_qpos=({init_qpos.shape}), \n{init_qpos}")
+print(f"env.init_geom_pos=({init_geom_pos.shape}), \n{init_geom_pos}")
 
 if args.debug:
     video_writer.append_data(np.uint8(env.render()))
 
     init_qvel = env.unwrapped.init_qvel
-    print(f"env.init_qpos=({init_qpos.shape}), \n{init_qpos}")
     print(f"env.init_qvel=({init_qvel.shape}), \n{init_qvel}")
 
     obs = env.unwrapped.get_obs()
@@ -69,12 +72,18 @@ for idx in joint_config.keys():
 # Set the humanoid joint state to the specified ones, velocity stays at 0
 env.unwrapped.set_state(qpos=new_qpos, qvel=np.zeros((23,)))
 
+
 obs = env.unwrapped.get_obs()
 with open(f"create_demo/demos/{args.pose_name}_joint-state.npy", "wb") as fout:
     print(f"Obs after setting the pose: {obs.shape}\n{obs[:22].shape}\n{obs[:22]}")
     # Based on https://www.gymlibrary.dev/environments/mujoco/humanoid/ and
     #   https://docs.google.com/spreadsheets/d/17xxmlh8oLAh7vLlRGtMz4b79ueb0KwccQIvbBa0m3kk/edit?usp=sharing
     np.save(fout, obs[:22])
+
+with open(f"create_demo/demos/{args.pose_name}_geom-xpos.npy", "wb") as fout:
+    print(f"gemo_xpos after setting the pose: {env.unwrapped.data.geom_xpos.shape}\n{env.unwrapped.data.geom_xpos}")
+    #   https://docs.google.com/spreadsheets/d/17xxmlh8oLAh7vLlRGtMz4b79ueb0KwccQIvbBa0m3kk/edit?usp=sharing
+    np.save(fout, copy.deepcopy(env.unwrapped.data.geom_xpos))
 
 # Render the environment to visualize the pose
 frame = env.render()
@@ -92,41 +101,41 @@ if args.debug:
         video_writer.append_data(np.uint8(env.render()))
 
     # TODO: Remove Below. Temporary debugging to check the reward function
-    for i in range(50):
-        # Test the environment with random action (force-controlled)
-        o, _, _, _, info = env.step(np.random.uniform(-0.4, 0.4, (17,)))
-        frame = env.render()
-        image = Image.fromarray(frame)
-        plot_info_on_frame(image, info)
-        video_writer.append_data(np.uint8(image))
+    # for i in range(50):
+    #     # Test the environment with random action (force-controlled)
+    #     o, _, _, _, info = env.step(np.random.uniform(-0.4, 0.4, (17,)))
+    #     frame = env.render()
+    #     image = Image.fromarray(frame)
+    #     plot_info_on_frame(image, info)
+    #     video_writer.append_data(np.uint8(image))
 
-        obs = env.unwrapped.get_obs()
-        print(f"{i}:")
-        for j in range(len(obs[:22])):
-            print(f"  qpos: {j+2}: {obs[:22][j]:.2f}")
+    #     obs = env.unwrapped.get_obs()
+    #     print(f"{i}:")
+    #     for j in range(len(obs[:22])):
+    #         print(f"  qpos: {j+2}: {obs[:22][j]:.2f}")
 
-    plist = ["both-arms-out", "right-arm-out", "left-arm-out"]
-    for i in range(3):
-        joint_config = pose_config_dict[plist[i]]
+    # plist = ["both-arms-out", "right-arm-out", "left-arm-out"]
+    # for i in range(3):
+    #     joint_config = pose_config_dict[plist[i]]
 
-        new_qpos = copy.deepcopy(init_qpos)
-        for idx in joint_config.keys():
-            new_qpos[int(idx)] = joint_config[int(idx)] # z-coordinate of torso
+    #     new_qpos = copy.deepcopy(init_qpos)
+    #     for idx in joint_config.keys():
+    #         new_qpos[int(idx)] = joint_config[int(idx)] # z-coordinate of torso
 
-        # Set the humanoid joint state to the specified ones, velocity stays at 0
-        env.unwrapped.set_state(qpos=new_qpos, qvel=np.zeros((23,)))
+    #     # Set the humanoid joint state to the specified ones, velocity stays at 0
+    #     env.unwrapped.set_state(qpos=new_qpos, qvel=np.zeros((23,)))
 
-        ref = np.load("create_demo/demos/both-arms-out_joint-state.npy")
-        obs = env.unwrapped.get_obs()
-        print(f"{i}: {np.exp(-np.linalg.norm(obs[:22] - ref[0]))}")
+    #     ref = np.load("create_demo/demos/both-arms-out_joint-state.npy")
+    #     obs = env.unwrapped.get_obs()
+    #     print(f"{i}: {np.exp(-np.linalg.norm(obs[:22] - ref[0]))}")
 
-        for j in range(5):
-            # Test the environment with random action (force-controlled)
-            o, _, _, _, info = env.step(np.zeros((17,)))
-            frame = env.render()
-            image = Image.fromarray(frame)
-            plot_info_on_frame(image, info)
-            video_writer.append_data(np.uint8(image))
+    #     for j in range(5):
+    #         # Test the environment with random action (force-controlled)
+    #         o, _, _, _, info = env.step(np.zeros((17,)))
+    #         frame = env.render()
+    #         image = Image.fromarray(frame)
+    #         plot_info_on_frame(image, info)
+    #         video_writer.append_data(np.uint8(image))
     # TODO: Remove Above. Temporary debugging to check the reward function
                         
     video_writer.close()
