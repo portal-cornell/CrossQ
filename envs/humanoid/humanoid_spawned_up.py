@@ -527,7 +527,12 @@ def reward_goal_only_euclidean_geom_xpos(data, **kwargs):
     # Normalize the current pose by the torso's position (which is at index 1)
     curr_geom_xpos = curr_geom_xpos - curr_geom_xpos[1]
 
-    pose_matching_reward = np.exp(-np.linalg.norm(curr_geom_xpos - ref_joint_states[0]))
+    # Only the arms are relevant
+    curr_geom_xpos_relevant = curr_geom_xpos[12:, :]
+    ref_joint_states_relevant = ref_joint_states[0, 12:, :]
+
+    pose_matching_reward = np.exp(-np.linalg.norm(curr_geom_xpos_relevant - ref_joint_states_relevant))
+    # pose_matching_reward = np.exp(-np.linalg.norm(curr_geom_xpos - ref_joint_states[0]))
     pose_matching_reward_w = 1
     
     reward = basic_standing_reward + pose_matching_reward_w * pose_matching_reward
@@ -730,6 +735,9 @@ REWARD_FN_MAPPING = dict(
 
         splitting = reward_splitting,
 
+        arms_bracket_left_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
+        arms_bracket_left_basic_r = reward_only_basic_r,
+
         arms_bracket_right_goal_only_euclidean = reward_goal_only_euclidean,
         arms_bracket_right_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
         arms_bracket_right_basic_r = reward_only_basic_r,
@@ -738,9 +746,30 @@ REWARD_FN_MAPPING = dict(
         arms_bracket_down_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
         arms_bracket_down_basic_r = reward_only_basic_r,
 
+        arms_bracket_up_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
+        arms_bracket_up_basic_r = reward_only_basic_r,
+
+        arms_crossed_high_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
+        arms_crossed_high_basic_r = reward_only_basic_r,
+
+        left_arm_out_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
+        left_arm_out_basic_r = reward_only_basic_r,
+
+        right_arm_out_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
+        right_arm_out_basic_r = reward_only_basic_r,
+
         left_arm_extend_wave_higher_goal_only_euclidean = reward_goal_only_euclidean,
         left_arm_extend_wave_higher_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
         left_arm_extend_wave_higher_basic_r = reward_only_basic_r,
+
+        left_arm_extend_wave_lower_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
+        left_arm_extend_wave_lower_basic_r = reward_only_basic_r,
+
+        right_arm_extend_wave_higher_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
+        right_arm_extend_wave_higher_basic_r = reward_only_basic_r,
+
+        right_arm_extend_wave_lower_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
+        right_arm_extend_wave_lower_basic_r = reward_only_basic_r,
 
         both_arms_out_goal_only_euclidean = reward_goal_only_euclidean,
         both_arms_out_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
@@ -749,12 +778,17 @@ REWARD_FN_MAPPING = dict(
         both_arms_out_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
 
         both_arms_up_goal_only_euclidean = reward_goal_only_euclidean,
+        both_arms_up_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
         both_arms_up_seq_euclidean = reward_seq_euclidean,
         both_arms_up_basic_r = reward_only_basic_r,
+
+        default_but_arms_up_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
+        default_but_arms_up_basic_r = reward_only_basic_r,
 
         arms_up_then_down_seq_euclidean = reward_seq_euclidean,
         arms_up_then_down_seq_stage_detector = reward_seq_stage_detector,
         arms_up_then_down_seq_avg = reward_seq_avg,
         arms_up_then_down_basic_r = reward_only_basic_r,
+        arms_up_then_down_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
     )
     
