@@ -15,23 +15,40 @@ from utils_data_gen.utils_humanoid_generate import set_seed
 set_seed(1231)
 
 
-IMAGE_TYPE = "v3_seq"
+IMAGE_TYPE = "v3_random_joints" # v3_flipping, v3_seq, v3_random_joints
 
 INPUT_PATH = f"finetuning/data/{IMAGE_TYPE}"
 ANCHOR_PATH = f"finetuning/data/{IMAGE_TYPE}/anchor"
 NEG_PATH = f"finetuning/data/{IMAGE_TYPE}/neg"
 POS_PATH = f"finetuning/data/{IMAGE_TYPE}/pos"
-MANUAL_TEST_PATH = f"finetuning/data/{IMAGE_TYPE}/debug_50_manually_checked/"
+if IMAGE_TYPE == "v3_flipping":
+    # We'll add the 4 with target images
+    MANUAL_TEST_PATH = f"finetuning/data/{IMAGE_TYPE}/debug_46_manually_checked/"
+else:
+    MANUAL_TEST_PATH = f"finetuning/data/{IMAGE_TYPE}/debug_50_manually_checked/"
 
 OUTPUT_PATH = INPUT_PATH
 
 # Get the list of all images in the manual test set
 manual_test_images = [f for f in os.listdir(MANUAL_TEST_PATH) if f.endswith(".png")]
-manual_prefix = [name.split("_eval.png")[0] for name in manual_test_images]
-manual_prefix_to_data = {
-    name.split("_eval.png")[0]: op.join(ANCHOR_PATH, [f for f in os.listdir(ANCHOR_PATH) if f.startswith(name.split("_eval.png")[0]) and f.endswith(".png")][0])
-    for name in manual_test_images
-}
+if IMAGE_TYPE == "v3_flipping":
+    manual_prefix = [name.split("flipping_triplet_")[1].split(".png")[0] for name in manual_test_images]
+    manual_prefix_to_data = {
+        name.split("flipping_triplet_")[1].split(".png")[0]: op.join(ANCHOR_PATH, [f for f in os.listdir(ANCHOR_PATH) if f.startswith(name.split("flipping_triplet_")[1].split(".png")[0]) and f.endswith(".png")][0])
+        for name in manual_test_images
+    }
+elif IMAGE_TYPE == "v3_seq":
+    manual_prefix = [name.split("_eval.png")[0] for name in manual_test_images]
+    manual_prefix_to_data = {
+        name.split("_eval.png")[0]: op.join(ANCHOR_PATH, [f for f in os.listdir(ANCHOR_PATH) if f.startswith(name.split("_eval.png")[0]) and f.endswith(".png")][0])
+        for name in manual_test_images
+    }
+else:
+    manual_prefix = [name.split("samples_")[1].split(".png")[0] for name in manual_test_images]
+    manual_prefix_to_data = {
+        name.split("samples_")[1].split(".png")[0]: op.join(ANCHOR_PATH, [f for f in os.listdir(ANCHOR_PATH) if f.startswith(name.split("samples_")[1].split(".png")[0]) and f.endswith(".png")][0])
+        for name in manual_test_images
+    }
 print(f"Found {len(manual_prefix)} images in the manual test set.")
 
 # Get the list of all anchor images
@@ -58,10 +75,13 @@ def create_split(prefix_list, path_type, prefix_d):
     output = []
     for prefix in tqdm(prefix_list):
         anchor_path = prefix_d[prefix]
-        # import pdb; pdb.set_trace()
-        pos_path = op.join(POS_PATH, [f for f in os.listdir(POS_PATH) if f.startswith(prefix) and f.endswith(".png")][0])
-        neg_path = op.join(NEG_PATH, [f for f in os.listdir(NEG_PATH) if f.startswith(prefix) and f.endswith(".png")][0])
-        
+        if IMAGE_TYPE == "v3_seq":
+            pos_path = op.join(POS_PATH, [f for f in os.listdir(POS_PATH) if f.startswith(prefix) and f.endswith(".png")][0])
+            neg_path = op.join(NEG_PATH, [f for f in os.listdir(NEG_PATH) if f.startswith(prefix) and f.endswith(".png")][0])
+        elif IMAGE_TYPE in ["v3_flipping", "v3_random_joints"]:
+            pos_path = op.join(POS_PATH, [f for f in os.listdir(POS_PATH) if f.startswith(prefix.split("_pose.png")[0]) and f.endswith(".png")][0])
+            neg_path = op.join(NEG_PATH, [f for f in os.listdir(NEG_PATH) if f.startswith(prefix.split("_pose.png")[0]) and f.endswith(".png")][0])
+
         if op.exists(anchor_path) and op.exists(pos_path) and op.exists(neg_path):
             output.append({
                 "anchor": anchor_path,
@@ -75,6 +95,36 @@ def create_split(prefix_list, path_type, prefix_d):
                 raise ValueError(f"Missing pos image for prefix {prefix}")
             if not op.exists(neg_path):
                 raise ValueError(f"Missing neg image for prefix {prefix}")
+    
+    # For flipping we need to include the triplets with the target images
+    # Path: data/v3_flipping/manual_test/anchor
+    # The images for anchor/pos/neg have exactly the same name (so no need of prefix), just that they're in different folders
+    if IMAGE_TYPE == "v3_flipping" and path_type == "manual_test":
+        flipping_output = []
+        flipping_base_path = "finetuning/data/v3_flipping/manual_test"
+        # TODO: to normalize for easier parsing
+        for image_name in [f for f in os.listdir(op.join(flipping_base_path, "anchor")) if f.endswith(".png")]:
+            image_basename = image_name.split("0_pose_")[1]
+            anchor_path = op.join(flipping_base_path, "anchor", image_name)
+            pos_path = op.join(flipping_base_path, "pos", [f for f in os.listdir(op.join(flipping_base_path, "pos")) if image_basename in f and f.endswith(".png")][0])
+            neg_path = op.join(flipping_base_path, "neg", [f for f in os.listdir(op.join(flipping_base_path, "neg")) if image_basename in f and f.endswith(".png")][0])
+            
+            if op.exists(anchor_path) and op.exists(pos_path) and op.exists(neg_path):
+                flipping_output.append({
+                    "anchor": anchor_path,
+                    "pos": pos_path,
+                    "neg": neg_path
+                })
+            else:
+                if not op.exists(anchor_path):
+                    raise ValueError(f"Missing anchor image for prefix {prefix}, {anchor_path}")
+                if not op.exists(pos_path):
+                    raise ValueError(f"Missing pos image for prefix {prefix}, {pos_path}")
+                if not op.exists(neg_path):
+                    raise ValueError(f"Missing neg image for prefix {prefix}, {neg_path}")
+                logger.warning(f"Missing image(s) for {image_name} in v3_flipping manual test set")
+        
+        output.extend(flipping_output)
 
     return output
 
