@@ -186,7 +186,7 @@ def select_random_debug_samples(source_folder, dest_folder, num_samples=200):
 
 if __name__ == "__main__":
     """
-    python humanoid_generate_seq_triplets.py --output_log    # --viz_until 100 --skip-viz
+    python humanoid_generate_seq_triplets.py --output_log   # Used # --viz_until 100 --skip-viz
     python humanoid_generate_seq_triplets.py --debug --output_log --viz_until 10
     """
     parser = argparse.ArgumentParser()

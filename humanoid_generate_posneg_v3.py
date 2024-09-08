@@ -5,7 +5,7 @@ Example commands:
 
 # python humanoid_generate_poses.py -p both-arms-out --debug
 # p humanoid_generate_posneg_v3.py -r -k 10 --output_log --debug --viz_until 5
-# p humanoid_generate_posneg_v3.py -r -k 1000 --output_log --debug
+# p humanoid_generate_posneg_v3.py -r -k 10000 --output_log --debug # Used
 """
 import gymnasium
 from loguru import logger
@@ -38,7 +38,13 @@ os.environ["PYOPENGL_PLATFORM"] = "egl"
 os.environ["EGL_PLATFORM"] = "device"
 
 OUTPUT_ROOT = "finetuning/data/"
-FOLDER = f"{OUTPUT_ROOT}/v3_random_joints_debug"
+FOLDER = f"{OUTPUT_ROOT}/v3_random_joints"
+
+os.makedirs(FOLDER, exist_ok=True)
+os.makedirs(f"{FOLDER}/anchor", exist_ok=True)
+os.makedirs(f"{FOLDER}/pos", exist_ok=True)
+os.makedirs(f"{FOLDER}/neg", exist_ok=True)
+os.makedirs(f"{FOLDER}/debug", exist_ok=True)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-p", "--pose_name",   type=str, help="Name of the demo to generate data for (correspond to create_demo/pose_config.py)")
@@ -198,13 +204,20 @@ for iteration in range(args.k):
     # with open(f"{FOLDER}/anchor/{iteration}_joint_config.json", "w") as fout:
     #     json.dump(joint_config, fout)
 
-    if not args.skip_viz and (args.viz_until == -1 or iteration <= args.viz_until):
-        fig, axes = plt.subplots(3, 3, figsize=(15, 10))
-        frames = []
+    while True:
+        # Generate anchor sample
+        anchor_log, anchor_geom_xpos = generate_anchor_sample(args, env, iteration, joint_config, init_qpos)
+        
+        # Check if rows 2 and 3 contain negative values (no mujoco on the image)
+        if anchor_geom_xpos[2:4, 2].min() >= 0:
+            break
+        else:
+            print(f"Resampling iteration {iteration} due to negative values in rows 2 and 3")
+            if args.pose_name:
+                joint_config = pose_config_dict[args.pose_name]
+            elif args.random_pose:
+                _, joint_config = generate_random_pose_config()
 
-    # Generate anchor sample
-    anchor_log, anchor_geom_xpos = generate_anchor_sample(args, env, iteration, joint_config, init_qpos)
-    
     # Positive samples
     pos_logs = []
     pos_geom_xpos_list = []
@@ -247,8 +260,10 @@ for iteration in range(args.k):
             else:
                 print(f"Warning: Negative sample is closer to the anchor than the positive sample\npos-distance: {np.linalg.norm(anchor_geom_xpos_normalized - pos_geom_xpos_normalized)}\nneg-distance: {np.linalg.norm(anchor_geom_xpos_normalized - neg_geom_xpos_normalized)}")
 
-
     if not args.skip_viz and (args.viz_until == -1 or iteration <= args.viz_until):
+        fig, axes = plt.subplots(3, 3, figsize=(15, 10))
+        frames = []
+
         anchor_frame = plt.imread(anchor_log["image_path"])
         frames.append(anchor_frame)
         axes[0, 0].imshow(anchor_frame)

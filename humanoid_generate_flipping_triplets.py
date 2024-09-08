@@ -159,7 +159,6 @@ def generate_positive_sample(args, env, iteration, pos_i, joint_config, init_qpo
 
     return log_data(curr_log, new_qpos, pos_joint_npy_path, pos_geom_xpos_npy_path, image_path), new_qpos,geom_xpos
 
-
 def mirror_qpos(neg_qpos):
     # Mirror arms
     for left, right in flipping_map_arms.items():
@@ -208,30 +207,31 @@ def generate_flipping_triplets(args, env, seq_name: str, use_geom_xpos: bool, nu
         init_qpos = env.unwrapped.init_qpos
         init_geom_pos = copy.deepcopy(env.unwrapped.data.geom_xpos)
 
-        print(f"env.init_qpos=({init_qpos.shape}), \n{init_qpos}")
-        print(f"env.init_geom_pos=({init_geom_pos.shape}), \n{init_geom_pos}")
-
         # Get anchor pose
-
-        # We only use the poses in SEQ_DICT for test data
-        if seq_name:
-            # Load the reference sequence
-            ref_seq = load_reference_seq(seq_name, use_geom_xpos)
-            if len(ref_seq) == 1:
-                new_qpos = ref_seq[0]
+        while True:
+            if seq_name:
+                # Load the reference sequence
+                ref_seq = load_reference_seq(seq_name, use_geom_xpos)
+                if len(ref_seq) == 1:
+                    new_qpos = ref_seq[0]
+                else:
+                    raise ValueError("Only single sequence is supported for now")
+                anchor_qpos = copy.deepcopy(init_qpos)
+                for idx in range(2, 24):
+                    anchor_qpos[idx] = new_qpos[idx - 2] # because anchor_qpos is (22) while init_qpos is (24)
             else:
-                raise ValueError("Only single sequence is supported for now")
-            anchor_qpos = copy.deepcopy(init_qpos)
-            for idx in range(2, 24):
-                anchor_qpos[idx] = new_qpos[idx - 2] # because anchor_qpos is (22) while init_qpos is (24)
-        else:
-            # Otherwise, random pose = anchor pose
-            _, joint_config = generate_random_pose_config()
-            anchor_qpos = copy.deepcopy(init_qpos)
+                # Otherwise, random pose = anchor pose
+                _, joint_config = generate_random_pose_config()
+                anchor_qpos = copy.deepcopy(init_qpos)
+            
+            anchor_log_data, anchor_qpos, anchor_geom_xpos = generate_anchor_sample(args, env, iteration, joint_config, anchor_qpos)
+            
+            # Check if rows 2 and 3 contain negative values (no mujoco on the image)
+            if anchor_geom_xpos[2:4, 2].min() >= 0:
+                break
+            else:
+                print(f"Resampling iteration {iteration} due to negative values in rows 2 and 3")
         
-        # Get anchor pose
-        anchor_log_data, anchor_qpos, anchor_geom_xpos = generate_anchor_sample(args, env, iteration, joint_config, anchor_qpos)
-
         # Negative: Mirror the anchor state
         neg_qpos = copy.deepcopy(anchor_qpos)
         neg_qpos = mirror_qpos(neg_qpos)
@@ -256,6 +256,7 @@ def generate_flipping_triplets(args, env, seq_name: str, use_geom_xpos: bool, nu
 
         # Visualization
         if not args.skip_viz and (args.viz_until == -1 or iteration <= args.viz_until):
+            print(f"iteration: {iteration}")
             fig, axes = plt.subplots(1, 3, figsize=(15, 6))
             frames = []
 
@@ -292,7 +293,7 @@ def generate_flipping_triplets(args, env, seq_name: str, use_geom_xpos: bool, nu
 
 if __name__ == "__main__":
     """
-    python humanoid_generate_flipping_triplets.py --num_triplets 10 --viz_until 5
+    python humanoid_generate_flipping_triplets.py --num_triplets 5 --viz_until 5
     python humanoid_generate_flipping_triplets.py --seq_name both_arms_up_final_only --num_triplets 2 --use_geom_xpos 
     """
     parser = argparse.ArgumentParser()
@@ -302,6 +303,8 @@ if __name__ == "__main__":
     parser.add_argument("--skip_viz", action="store_true", help="Skip visualization")
     parser.add_argument("--viz_until", type=int, default=-1, help="Viz until a certain iteration")
     args = parser.parse_args()
+
+    set_seed(1231)
 
     make_env_kwargs = dict(
         episode_length = 120,
