@@ -136,7 +136,7 @@ def generate_seq_triplets(args, env, folder_path, folder_uid):
 
         for i, state_type in enumerate(["anchor", "pos", "neg"]):
             chosen_frame_idx = chosen_states[state_type]
-            log_data, frame, geom_xpos = generate_sample(env, folder_uid, init_qpos, iteration, state_type, chosen_frame_idx, seq_data[chosen_frame_idx])
+            log_data, frame, geom_xpos = generate_sample(env, folder_uid, init_qpos, idx, state_type, chosen_frame_idx, seq_data[chosen_frame_idx])
             geom_xpos_list.append(geom_xpos)
             log_data_list.append(log_data)
             frames.append(frame)
@@ -203,57 +203,56 @@ if __name__ == "__main__":
     # #         f.write(f"{uid}: {folder}\n")
 
 
-    # Load the list from file
-    with open(f"{FOLDER}/list_folder_used_for_seq.txt", "r") as f:
-        folder_list_with_uids = f.readlines()
-        folder_list_with_uids = [line.strip().split(": ", 1) for line in folder_list_with_uids]
-        folder_uids = {uid: folder for uid, folder in folder_list_with_uids}
+    # # Load the list from file
+    # with open(f"{FOLDER}/list_folder_used_for_seq.txt", "r") as f:
+    #     folder_list_with_uids = f.readlines()
+    #     folder_list_with_uids = [line.strip().split(": ", 1) for line in folder_list_with_uids]
+    #     folder_uids = {uid: folder for uid, folder in folder_list_with_uids}
     
 
-    if args.debug:
-        folder_uids = {k: v for k, v in folder_uids.items() if k == "uid_0000"}
+    # if args.debug:
+    #     folder_uids = {k: v for k, v in folder_uids.items() if k == "uid_0000"}
     
-    make_env_kwargs = dict(
-        episode_length = 120,
-        reward_type = "original",
-    )
+    # make_env_kwargs = dict(
+    #     episode_length = 120,
+    #     reward_type = "original",
+    # )
 
-    env = gymnasium.make(
-        'HumanoidSpawnedUpCustom',
-        render_mode="rgb_array",
-        **make_env_kwargs,
-    )
+    # env = gymnasium.make(
+    #     'HumanoidSpawnedUpCustom',
+    #     render_mode="rgb_array",
+    #     **make_env_kwargs,
+    # )
 
-    # Stat: total number of gifs: 8796
-    # total_num_gifs = 0
-    # for folder in folder_list:
-    #     # For every .npy in the folder (10k steps), we sample a triplet.
-    #     # Check how many gifs we have in total
-    #     gif_list = [f for f in os.listdir(folder) if f.endswith(".gif")]
-    #     total_num_gifs += len(gif_list)
+    # # Stat: total number of gifs: 8796
+    # # total_num_gifs = 0
+    # # for folder in folder_list:
+    # #     # For every .npy in the folder (10k steps), we sample a triplet.
+    # #     # Check how many gifs we have in total
+    # #     gif_list = [f for f in os.listdir(folder) if f.endswith(".gif")]
+    # #     total_num_gifs += len(gif_list)
 
-    # print(f"Total number of gifs: {total_num_gifs}")
+    # # print(f"Total number of gifs: {total_num_gifs}")
 
-    total_npy_processed = 0
-    num_folders = len(folder_uids)
-    for idx, (uid, folder) in enumerate(folder_uids.items()):
-        print(f"Processing {idx}/{num_folders}: {folder}")
-        output_logs, npy_processed = generate_seq_triplets(args, env, folder, uid)
-        total_npy_processed += npy_processed
+    # total_npy_processed = 0
+    # num_folders = len(folder_uids)
+    # for idx, (uid, folder) in enumerate(folder_uids.items()):
+    #     print(f"Processing {idx}/{num_folders}: {folder}")
+    #     output_logs, npy_processed = generate_seq_triplets(args, env, folder, uid)
+    #     total_npy_processed += npy_processed
     
-    print(f"Total number of npy processed: {total_npy_processed}")
-    env.close()
+    # print(f"Total number of npy processed: {total_npy_processed}")
+    # env.close()
 
-    if args.output_log:
-        suffix = f"_npy{total_npy_processed}"
-        if args.debug:
-            suffix = "_debug"
-        with open(f"{FOLDER}/output_log_seq{suffix}.json", "w") as fout:
-            json.dump(output_logs, fout)
+    # if args.output_log:
+    #     suffix = f"_npy{total_npy_processed}"
+    #     if args.debug:
+    #         suffix = "_debug"
+    #     with open(f"{FOLDER}/output_log_seq{suffix}.json", "w") as fout:
+    #         json.dump(output_logs, fout)
     
 
-
-    # select_random_debug_samples(f"{FOLDER}/debug", f"{FOLDER}/debug_200")
+    select_random_debug_samples(f"{FOLDER}/debug", f"{FOLDER}/debug_50", num_samples=50)
 
 
     print("Done")
