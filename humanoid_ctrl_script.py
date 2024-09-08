@@ -35,7 +35,7 @@ if args.debug:
 # Load the humanoid environment
 make_env_kwargs = dict(
     episode_length = 120,
-    reward_type = "both_arms_out_goal_only_euclidean"
+    reward_type = "original"
 )
 
 env = gymnasium.make(

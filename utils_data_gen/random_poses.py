@@ -30,5 +30,10 @@ def generate_random_pose_config(num_joints=19, joint_ranges=[(2, 4), (7, 23)]):
     # Generate random radian values for these joints
     # Assuming radian values should be between -pi and pi
     pose_config = {joint: np.random.uniform(-np.pi, np.pi) for joint in selected_joints}
+
+    if 2 in pose_config:
+        # 1.3 is when the humanoid's feet are touching the ground when it's standing
+        # above 2.2 is when the humanoid is about to be out of the frame
+        pose_config[2] = np.random.uniform(1.3, 2.2)
     
     return selected_joints, pose_config

@@ -13,10 +13,10 @@ import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
 
-from sbx import SAC, VLM_SAC
-from sbx.vlm_reward.reward_models.language_irl.utils import rewards_matrix_heatmap, rewards_line_plot, pad_to_longest_sequence
-from sbx.vlm_reward.reward_main import compute_rewards, load_reward_model
-from sbx.vlm_reward.reward_transforms import half_gaussian_filter_1d
+# from sbx import SAC, VLM_SAC
+# from sbx.vlm_reward.reward_models.language_irl.utils import rewards_matrix_heatmap, rewards_line_plot, pad_to_longest_sequence
+# from sbx.vlm_reward.reward_main import compute_rewards, load_reward_model
+# from sbx.vlm_reward.reward_transforms import half_gaussian_filter_1d
 
 
 from utils import get_run_hash, set_os_vars, vlm_for_reward

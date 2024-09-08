@@ -60,3 +60,4 @@ wandb/
 /inference_logs
 /vlm_reward
 /models
+/finetuning/data
