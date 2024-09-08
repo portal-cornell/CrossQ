@@ -96,7 +96,7 @@ def generate_anchor_sample(args, env, iteration, joint_config, init_qpos):
     anchor_image_path = f"{FOLDER}/anchor/{iteration}_pose.png"
     save_image(frame, anchor_image_path)
 
-    return log_data(curr_log, new_qpos, anchor_joint_npy_path, anchor_geom_xpos_npy_path, anchor_image_path)
+    return log_data(curr_log, new_qpos, anchor_joint_npy_path, anchor_geom_xpos_npy_path, anchor_image_path), geom_xpos
 
 def generate_positive_sample(args, env, iteration, pos_i, joint_config, init_qpos_copy, step_type):
     curr_log = {f"qpos_{i}": 0.0 for i in range(2, 24)}
@@ -128,7 +128,7 @@ def generate_positive_sample(args, env, iteration, pos_i, joint_config, init_qpo
     geom_xpos = copy.deepcopy(env.unwrapped.data.geom_xpos)
     save_geom_xpos(geom_xpos, f"{pos_geom_xpos_npy_path}")
 
-    return log_data(curr_log, new_qpos, pos_joint_npy_path, pos_geom_xpos_npy_path, image_path)
+    return log_data(curr_log, new_qpos, pos_joint_npy_path, pos_geom_xpos_npy_path, image_path), geom_xpos
 
 def generate_negative_sample(args, env, iteration, neg_i, joint_config, init_qpos_copy):
     curr_log = {f"qpos_{i}": 0.0 for i in range(2, 24)}
@@ -154,7 +154,7 @@ def generate_negative_sample(args, env, iteration, neg_i, joint_config, init_qpo
     geom_xpos = copy.deepcopy(env.unwrapped.data.geom_xpos)
     save_geom_xpos(geom_xpos, f"{neg_geom_xpos_npy_path}")
 
-    return log_data(curr_log, new_qpos, neg_joint_npy_path, neg_geom_xpos_npy_path, image_path)
+    return log_data(curr_log, new_qpos, neg_joint_npy_path, neg_geom_xpos_npy_path, image_path), geom_xpos
 
 
 
@@ -203,8 +203,50 @@ for iteration in range(args.k):
         frames = []
 
     # Generate anchor sample
-    anchor_log = generate_anchor_sample(args, env, iteration, joint_config, init_qpos)
-    output_logs.append(anchor_log)
+    anchor_log, anchor_geom_xpos = generate_anchor_sample(args, env, iteration, joint_config, init_qpos)
+    
+    # Positive samples
+    pos_logs = []
+    pos_geom_xpos_list = []
+    pos_i = 0
+    for i in range(1):
+        pos_i += 1
+        pos_log, pos_geom_xpos = generate_positive_sample(args, env, iteration, pos_i, joint_config, init_qpos_copy, "step")
+        pos_logs.append(pos_log)
+        pos_geom_xpos_list.append(pos_geom_xpos)
+
+    for i in range(2):
+        pos_i += 1
+        pos_log, pos_geom_xpos = generate_positive_sample(args, env, iteration, pos_i, joint_config, init_qpos_copy, "pose")
+        pos_logs.append(pos_log)
+        pos_geom_xpos_list.append(pos_geom_xpos)
+
+    # Negative samples
+    neg_logs = []
+    neg_geom_xpos_list = []
+    neg_i = 0
+    for i in range(3):
+        neg_i += 1
+        neg_log, neg_geom_xpos = generate_negative_sample(args, env, iteration, neg_i, joint_config, init_qpos_copy)
+        neg_logs.append(neg_log)
+        neg_geom_xpos_list.append(neg_geom_xpos)
+
+    # Normalize geom_xpos
+    anchor_geom_xpos_normalized = anchor_geom_xpos - anchor_geom_xpos[1]
+    pos_geom_xpos_normalized = [pos_xpos - pos_xpos[1] for pos_xpos in pos_geom_xpos_list]
+    neg_geom_xpos_normalized = [neg_xpos - neg_xpos[1] for neg_xpos in neg_geom_xpos_list]
+
+    # Check and append valid triplets
+    for pos_log, pos_xpos in zip(pos_logs, pos_geom_xpos_normalized):
+        for neg_log, neg_xpos in zip(neg_logs, neg_geom_xpos_normalized):
+            if np.linalg.norm(anchor_geom_xpos_normalized - pos_xpos) <= np.linalg.norm(anchor_geom_xpos_normalized - neg_xpos):
+                output_logs.append(anchor_log)
+                output_logs.append(pos_log)
+                output_logs.append(neg_log)
+                break  # Move to the next positive sample once a valid negative is found
+            else:
+                print(f"Warning: Negative sample is closer to the anchor than the positive sample\npos-distance: {np.linalg.norm(anchor_geom_xpos_normalized - pos_geom_xpos_normalized)}\nneg-distance: {np.linalg.norm(anchor_geom_xpos_normalized - neg_geom_xpos_normalized)}")
+
 
     if not args.skip_viz and (args.viz_until == -1 or iteration <= args.viz_until):
         anchor_frame = plt.imread(anchor_log["image_path"])
@@ -213,47 +255,20 @@ for iteration in range(args.k):
         axes[0, 0].set_title("Anchor")
         axes[0, 0].axis('off')
 
-    # Positive samples
-    pos_i = 0
-    for i in range(1):
-        pos_i += 1
-        pos_log = generate_positive_sample(args, env, iteration, pos_i, joint_config, init_qpos_copy, "step")
-        output_logs.append(pos_log)
-
-        if not args.skip_viz and (args.viz_until == -1 or iteration <= args.viz_until):
+        for i, pos_log in enumerate(pos_logs):
             pos_frame = plt.imread(pos_log["image_path"])
             frames.append(pos_frame)
-            axes[1, 0].imshow(pos_frame)
-            axes[1, 0].set_title(f"Positive (step)")
-            axes[1, 0].axis('off')
+            axes[1, i].imshow(pos_frame)
+            axes[1, i].set_title(f"Positive ({pos_log['step_type']})")
+            axes[1, i].axis('off')
 
-    for i in range(2):
-        pos_i += 1
-        pos_log = generate_positive_sample(args, env, iteration, pos_i, joint_config, init_qpos_copy, "pose")
-        output_logs.append(pos_log)
-
-        if not args.skip_viz and (args.viz_until == -1 or iteration <= args.viz_until):
-            pos_frame = plt.imread(pos_log["image_path"])
-            frames.append(pos_frame)
-            axes[1, i + 1].imshow(pos_frame)
-            axes[1, i + 1].set_title(f"Positive (pose)")
-            axes[1, i + 1].axis('off')
-
-    # Negative samples
-    neg_i = 0
-    for i in range(3):
-        neg_i += 1
-        neg_log = generate_negative_sample(args, env, iteration, neg_i, joint_config, init_qpos_copy)
-        output_logs.append(neg_log)
-
-        if not args.skip_viz and (args.viz_until == -1 or iteration <= args.viz_until):
+        for i, neg_log in enumerate(neg_logs):
             neg_frame = plt.imread(neg_log["image_path"])
             frames.append(neg_frame)
             axes[2, i].imshow(neg_frame)
             axes[2, i].set_title(f"Negative {i+1}")
             axes[2, i].axis('off')
 
-    if not args.skip_viz and (args.viz_until == -1 or iteration <= args.viz_until):
         plt.tight_layout()
         plt.suptitle(f"Samples: Iteration {iteration}")
         plt.savefig(f"{debug_folder}/samples_{iteration}.png")

@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 import envs
 from utils_data_gen.random_poses import generate_random_pose_config
 from utils_data_gen.utils_humanoid_generate import *
+from utils_data_gen.ft_qpos_stats import poses_thres
 
 # Set up
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
@@ -123,7 +124,40 @@ def generate_anchor_sample(args, env, iteration, joint_config, init_qpos):
     anchor_image_path = f"{FOLDER}/anchor/{iteration}_pose.png"
     save_image(frame, anchor_image_path)
 
-    return log_data(curr_log, new_qpos, anchor_joint_npy_path, anchor_geom_xpos_npy_path, anchor_image_path), new_qpos
+    return log_data(curr_log, new_qpos, anchor_joint_npy_path, anchor_geom_xpos_npy_path, anchor_image_path), new_qpos, geom_xpos
+
+
+def generate_positive_sample(args, env, iteration, pos_i, joint_config, init_qpos_copy, step_type):
+    curr_log = {f"qpos_{i}": 0.0 for i in range(2, 24)}
+    curr_log.update({"uid": iteration, "itype": 1, "step_type": step_type})
+
+    reset_initial_qpos = set_joints(joint_config, init_qpos_copy)
+    env.unwrapped.set_state(qpos=reset_initial_qpos, qvel=np.zeros((23,)))
+
+    if step_type == "step":
+        env.step(np.random.uniform(-0.3, 0.3, (17,)))
+    else:  # "pose"
+        joints_to_change, _ = generate_random_pose_config()
+        new_qpos = perturb_joints_positively(reset_initial_qpos, joints_to_change, poses_thres)
+        env.unwrapped.set_state(qpos=new_qpos, qvel=np.zeros((23,)))
+
+    obs = env.unwrapped.get_obs()
+    frame = env.render()
+
+    if step_type == "step":
+        new_qpos = obs
+
+    image_path = f"{FOLDER}/pos/{iteration}_{pos_i}_{step_type}.png"
+    save_image(frame, image_path)
+
+    pos_joint_npy_path = f"{FOLDER}/pos/{iteration}_{pos_i}_{step_type}_joint_state.npy"
+    save_joint_state(obs, f"{pos_joint_npy_path}")
+
+    pos_geom_xpos_npy_path = f"{FOLDER}/pos/{iteration}_{pos_i}_{step_type}_geom_xpos.npy"
+    geom_xpos = copy.deepcopy(env.unwrapped.data.geom_xpos)
+    save_geom_xpos(geom_xpos, f"{pos_geom_xpos_npy_path}")
+
+    return log_data(curr_log, new_qpos, pos_joint_npy_path, pos_geom_xpos_npy_path, image_path), new_qpos,geom_xpos
 
 
 def mirror_qpos(neg_qpos):
@@ -146,8 +180,28 @@ def mirror_qpos(neg_qpos):
     
     return neg_qpos
 
+def generate_negative_sample(args, env, iteration, neg_qpos):
+    curr_log = {f"qpos_{i}": 0.0 for i in range(2, 24)}
+    curr_log.update({"uid": iteration, "itype": 2, "step_type": "mirrored"})
+
+    env.unwrapped.set_state(qpos=neg_qpos, qvel=np.zeros((23,)))
+
+    obs = env.unwrapped.get_obs()
+    frame = env.render()
+
+    image_path = f"{FOLDER}/neg/{iteration}_mirrored.png"
+    save_image(frame, image_path)
+
+    neg_joint_npy_path = f"{FOLDER}/neg/{iteration}_mirrored_joint_state.npy"
+    save_joint_state(obs, f"{neg_joint_npy_path}")
+
+    neg_geom_xpos_npy_path = f"{FOLDER}/neg/{iteration}_mirrored_geom_xpos.npy"
+    geom_xpos = copy.deepcopy(env.unwrapped.data.geom_xpos)
+    save_geom_xpos(geom_xpos, f"{neg_geom_xpos_npy_path}")
+
+    return log_data(curr_log, neg_qpos, neg_joint_npy_path, neg_geom_xpos_npy_path, image_path), neg_qpos, geom_xpos
+
 def generate_flipping_triplets(args, env, seq_name: str, use_geom_xpos: bool, num_triplets: int = 1000, output_logs: list = []):
-    triplets = []
     for iteration in range(num_triplets):
         env.reset()
 
@@ -176,18 +230,29 @@ def generate_flipping_triplets(args, env, seq_name: str, use_geom_xpos: bool, nu
             anchor_qpos = copy.deepcopy(init_qpos)
         
         # Get anchor pose
-        anchor_log_data, anchor_qpos = generate_anchor_sample(args, env, iteration, joint_config, anchor_qpos)
-        output_logs.append(anchor_log_data)
+        anchor_log_data, anchor_qpos, anchor_geom_xpos = generate_anchor_sample(args, env, iteration, joint_config, anchor_qpos)
 
         # Negative: Mirror the anchor state
         neg_qpos = copy.deepcopy(anchor_qpos)
         neg_qpos = mirror_qpos(neg_qpos)
+        neg_log, neg_qpos, neg_geom_xpos = generate_negative_sample(args, env, iteration, neg_qpos)
 
-        # Positive: take a few steps from the anchor
+        # Positive
         pos_qpos = copy.deepcopy(anchor_qpos)
-        pos_log = generate_positive_sample(args, env, iteration, pos_i, joint_config, init_qpos_copy, "pose")
-        output_logs.append(pos_log)
+        pos_log, pos_qpos, pos_geom_xpos = generate_positive_sample(args, env, iteration, 0, joint_config, pos_qpos, "pose")
 
+        # Normalize geom_xpos
+        anchor_geom_xpos_normalized = anchor_geom_xpos - anchor_geom_xpos[1]
+        pos_geom_xpos_normalized = pos_geom_xpos - pos_geom_xpos[1]
+        neg_geom_xpos_normalized = neg_geom_xpos - neg_geom_xpos[1]
+
+        # Check if the positive sample is closer to the anchor than the negative sample
+        if np.linalg.norm(anchor_geom_xpos_normalized - pos_geom_xpos_normalized) <= np.linalg.norm(anchor_geom_xpos_normalized - neg_geom_xpos_normalized):
+            output_logs.append(anchor_log_data)
+            output_logs.append(neg_log)
+            output_logs.append(pos_log)
+        else:
+            print(f"Skipping triplet {iteration} due to invalid distances")
 
         # Visualization
         if not args.skip_viz and (args.viz_until == -1 or iteration <= args.viz_until):
@@ -221,11 +286,8 @@ def generate_flipping_triplets(args, env, seq_name: str, use_geom_xpos: bool, nu
             plt.suptitle(f"Flipping Triplet: Iteration {iteration}")
             plt.savefig(f"{debug_folder}/flipping_triplet_{iteration}.png")
             plt.close(fig)
-
-        triplets.append((anchor_qpos, pos_qpos, neg_qpos))
     
-    return triplets
-
+    return output_logs
 
 
 if __name__ == "__main__":
@@ -260,8 +322,4 @@ if __name__ == "__main__":
     output_logs = []
 
     triplets = generate_flipping_triplets(args, env, args.seq_name, args.use_geom_xpos, args.num_triplets, output_logs)    # import pdb; pdb.set_trace()
-    # env.close()
-
-    # # Save the triplets
-    # os.makedirs(f"{FOLDER}/{args.seq_name}", exist_ok=True)
-    # process_triplets(args, env, triplets)
+    env.close()
