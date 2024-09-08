@@ -32,8 +32,8 @@ os.environ["PYOPENGL_PLATFORM"] = "egl"
 os.environ["EGL_PLATFORM"] = "device"
 
 OUTPUT_ROOT = "finetuning/data/"
-# FOLDER = f"{OUTPUT_ROOT}/v3_flipping_debug"
-FOLDER = f"{OUTPUT_ROOT}/v3_flipping/manual_test"
+FOLDER = f"{OUTPUT_ROOT}/v3_flipping"
+# FOLDER = f"{OUTPUT_ROOT}/v3_flipping/manual_test"
 
 os.makedirs(FOLDER, exist_ok=True)
 os.makedirs(f"{FOLDER}/anchor", exist_ok=True)
@@ -50,7 +50,7 @@ SEQ_ROOT = "/home/aw588/git_annshin/CrossQ_yuki/create_demo/demos"
 SEQ_DICT = {
     "arms_bracket_right_final_only": [f"{SEQ_ROOT}/arms_bracket_right_joint-state.npy"],
 
-    "arms_bracket_down_final_only": [f"{SEQ_ROOT}/arms_bracket_down_joint-state.npy"],
+    # "arms_bracket_down_final_only": [f"{SEQ_ROOT}/arms_bracket_down_joint-state.npy"],
 
     "left_arm_extend_wave_higher_final_only": [f"{SEQ_ROOT}/left-arm-extend-wave-higher_joint-state.npy"],
 
@@ -120,7 +120,7 @@ flipping_map_body_x = [
 ##########################################
 
 # TODO: deduplicate with humanoid_generate_posneg_v3.py
-def generate_anchor_sample(args, env, iteration, joint_config, init_qpos):
+def generate_anchor_sample(args, env, iteration, joint_config, init_qpos, output_suffix):
     curr_log = {f"qpos_{i}": 0.0 for i in range(2, 24)}
     curr_log.update({"uid": iteration, "itype": 0, "step_type": None})
 
@@ -136,20 +136,20 @@ def generate_anchor_sample(args, env, iteration, joint_config, init_qpos):
     obs = env.unwrapped.get_obs()
     frame = env.render()
 
-    anchor_joint_npy_path = f"{FOLDER}/anchor/{iteration}_joint_state.npy"
+    anchor_joint_npy_path = f"{FOLDER}/anchor/{iteration}_joint_state{output_suffix}.npy"
     save_joint_state(obs, f"{anchor_joint_npy_path}")
 
-    anchor_geom_xpos_npy_path = f"{FOLDER}/anchor/{iteration}_geom_xpos.npy"
+    anchor_geom_xpos_npy_path = f"{FOLDER}/anchor/{iteration}_geom_xpos{output_suffix}.npy"
     geom_xpos = copy.deepcopy(env.unwrapped.data.geom_xpos)
     save_geom_xpos(geom_xpos, f"{anchor_geom_xpos_npy_path}")
 
-    anchor_image_path = f"{FOLDER}/anchor/{iteration}_pose.png"
+    anchor_image_path = f"{FOLDER}/anchor/{iteration}_pose{output_suffix}.png"
     save_image(frame, anchor_image_path)
 
     return log_data(curr_log, new_qpos, anchor_joint_npy_path, anchor_geom_xpos_npy_path, anchor_image_path), new_qpos, geom_xpos
 
 
-def generate_positive_sample(args, env, iteration, pos_i, joint_config, init_qpos_copy, step_type):
+def generate_positive_sample(args, env, iteration, pos_i, joint_config, init_qpos_copy, step_type, output_suffix):
     curr_log = {f"qpos_{i}": 0.0 for i in range(2, 24)}
     curr_log.update({"uid": iteration, "itype": 1, "step_type": step_type})
 
@@ -173,13 +173,13 @@ def generate_positive_sample(args, env, iteration, pos_i, joint_config, init_qpo
         new_qpos = copy.deepcopy(reset_initial_qpos)
         new_qpos[2:24] = copy.deepcopy(obs[0:22])
 
-    image_path = f"{FOLDER}/pos/{iteration}_{pos_i}_{step_type}.png"
+    image_path = f"{FOLDER}/pos/{iteration}_{pos_i}_{step_type}{output_suffix}.png"
     save_image(frame, image_path)
 
-    pos_joint_npy_path = f"{FOLDER}/pos/{iteration}_{pos_i}_{step_type}_joint_state.npy"
+    pos_joint_npy_path = f"{FOLDER}/pos/{iteration}_{pos_i}_{step_type}_joint_state{output_suffix}.npy"
     save_joint_state(obs, f"{pos_joint_npy_path}")
 
-    pos_geom_xpos_npy_path = f"{FOLDER}/pos/{iteration}_{pos_i}_{step_type}_geom_xpos.npy"
+    pos_geom_xpos_npy_path = f"{FOLDER}/pos/{iteration}_{pos_i}_{step_type}_geom_xpos{output_suffix}.npy"
     geom_xpos = copy.deepcopy(env.unwrapped.data.geom_xpos)
     save_geom_xpos(geom_xpos, f"{pos_geom_xpos_npy_path}")
 
@@ -205,7 +205,7 @@ def mirror_qpos(neg_qpos):
     
     return neg_qpos
 
-def generate_negative_sample(args, env, iteration, neg_qpos, step_type):
+def generate_negative_sample(args, env, iteration, neg_qpos, step_type, output_suffix):
     curr_log = {f"qpos_{i}": 0.0 for i in range(2, 24)}
     curr_log.update({"uid": iteration, "itype": 2, "step_type": "mirrored"})
 
@@ -227,19 +227,20 @@ def generate_negative_sample(args, env, iteration, neg_qpos, step_type):
         new_qpos = copy.deepcopy(neg_qpos)
         new_qpos[2:24] = copy.deepcopy(obs[0:22])
     
-    image_path = f"{FOLDER}/neg/{iteration}_mirrored.png"
+    image_path = f"{FOLDER}/neg/{iteration}_mirrored{output_suffix}.png"
     save_image(frame, image_path)
 
-    neg_joint_npy_path = f"{FOLDER}/neg/{iteration}_mirrored_joint_state.npy"
+    neg_joint_npy_path = f"{FOLDER}/neg/{iteration}_mirrored_joint_state{output_suffix}.npy"
     save_joint_state(obs, f"{neg_joint_npy_path}")
 
-    neg_geom_xpos_npy_path = f"{FOLDER}/neg/{iteration}_mirrored_geom_xpos.npy"
+    neg_geom_xpos_npy_path = f"{FOLDER}/neg/{iteration}_mirrored_geom_xpos{output_suffix}.npy"
     geom_xpos = copy.deepcopy(env.unwrapped.data.geom_xpos)
     save_geom_xpos(geom_xpos, f"{neg_geom_xpos_npy_path}")
 
     return log_data(curr_log, neg_qpos, neg_joint_npy_path, neg_geom_xpos_npy_path, image_path), new_qpos, geom_xpos
 
-def generate_flipping_triplets(args, env, seq_name: str, use_geom_xpos: bool, num_triplets: int = 1000, output_logs: list = []):
+def generate_flipping_triplets(args, env, seq_name: str, use_geom_xpos: bool, num_triplets: int = 1000, output_logs: list = [],
+                               output_suffix: str = ""):
     for iteration in range(num_triplets):
         env.reset()
 
@@ -248,24 +249,24 @@ def generate_flipping_triplets(args, env, seq_name: str, use_geom_xpos: bool, nu
 
         # Get anchor pose
         if seq_name:
-                # Load the reference sequence
-                ref_seq = load_reference_seq(seq_name, use_geom_xpos)
-                if len(ref_seq) == 1:
-                    new_qpos = ref_seq[0]
-                else:
-                    raise ValueError("Only single sequence is supported for now")
-                anchor_qpos = copy.deepcopy(init_qpos)
-                for idx in range(2, 24):
-                    anchor_qpos[idx] = new_qpos[idx - 2] # because anchor_qpos is (22) while init_qpos is (24)
-                joint_config = None
-                anchor_log_data, anchor_qpos, anchor_geom_xpos = generate_anchor_sample(args, env, iteration, joint_config, anchor_qpos)
+            # Load the reference sequence
+            ref_seq = load_reference_seq(seq_name, use_geom_xpos)
+            if len(ref_seq) == 1:
+                new_qpos = ref_seq[0]
+            else:
+                raise ValueError("Only single sequence is supported for now")
+            anchor_qpos = copy.deepcopy(init_qpos)
+            for idx in range(2, 24):
+                anchor_qpos[idx] = new_qpos[idx - 2] # because anchor_qpos is (22) while init_qpos is (24)
+            joint_config = None
+            anchor_log_data, anchor_qpos, anchor_geom_xpos = generate_anchor_sample(args, env, iteration, joint_config, anchor_qpos, output_suffix)
         else:
             while True:
                 # Otherwise, random pose = anchor pose
                 _, joint_config = generate_random_pose_config()
                 anchor_qpos = copy.deepcopy(init_qpos)
             
-                anchor_log_data, anchor_qpos, anchor_geom_xpos = generate_anchor_sample(args, env, iteration, joint_config, anchor_qpos)
+                anchor_log_data, anchor_qpos, anchor_geom_xpos = generate_anchor_sample(args, env, iteration, joint_config, anchor_qpos, output_suffix)
             
                 # Check if rows 2 and 3 contain negative values (no mujoco on the image)
                 if anchor_geom_xpos[2:4, 2].min() >= 0:
@@ -275,11 +276,11 @@ def generate_flipping_triplets(args, env, seq_name: str, use_geom_xpos: bool, nu
             
         # Negative: Mirror the anchor state
         neg_qpos = mirror_qpos(copy.deepcopy(anchor_qpos))
-        neg_log, neg_qpos, neg_geom_xpos = generate_negative_sample(args, env, iteration, neg_qpos, "pose")
+        neg_log, neg_qpos, neg_geom_xpos = generate_negative_sample(args, env, iteration, neg_qpos, "pose", output_suffix)
 
         # Positive
         pos_qpos = copy.deepcopy(anchor_qpos)
-        pos_log, pos_qpos, pos_geom_xpos = generate_positive_sample(args, env, iteration, 0, joint_config, pos_qpos, "pose")
+        pos_log, pos_qpos, pos_geom_xpos = generate_positive_sample(args, env, iteration, 0, joint_config, pos_qpos, "pose", output_suffix)
 
         # Normalize geom_xpos
         anchor_geom_xpos_normalized = anchor_geom_xpos - anchor_geom_xpos[1]
@@ -325,7 +326,7 @@ def generate_flipping_triplets(args, env, seq_name: str, use_geom_xpos: bool, nu
 
             plt.tight_layout()
             plt.suptitle(f"Flipping Triplet: Iteration {iteration}")
-            plt.savefig(f"{debug_folder}/flipping_triplet_{iteration}.png")
+            plt.savefig(f"{debug_folder}/flipping_triplet_{iteration}{output_suffix}.png")
             plt.close(fig)
     
     return output_logs
@@ -334,7 +335,7 @@ def generate_flipping_triplets(args, env, seq_name: str, use_geom_xpos: bool, nu
 if __name__ == "__main__":
     """
     python humanoid_generate_flipping_triplets.py --num_triplets 5 --viz_until 5 --output_log
-    python humanoid_generate_flipping_triplets.py --seq_name arms_bracket_right_final_only --num_triplets 2 --output_log
+    python humanoid_generate_flipping_triplets.py --seq_name arms_bracket_right_final_only --num_triplets 5 --output_log
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--seq_name", type=str, default="", help="Name of the sequence to generate triplets for. Only for manual test set")
@@ -365,12 +366,17 @@ if __name__ == "__main__":
 
     output_logs = []
 
-    output_logs = generate_flipping_triplets(args, env, args.seq_name, args.use_geom_xpos, args.num_triplets, output_logs)    # import pdb; pdb.set_trace()
+    if args.seq_name:
+        print(f"Generating triplets for {args.seq_name}")
+        output_suffix = f"_{args.seq_name}"
+    else:
+        output_suffix = ""
+    output_logs = generate_flipping_triplets(args, env, args.seq_name, args.use_geom_xpos, args.num_triplets, output_logs, output_suffix)    # import pdb; pdb.set_trace()
     env.close()
 
     if args.output_log:
         suffix = f"_{args.num_triplets}"
-        with open(f"{FOLDER}/output_log_flipping{suffix}.json", "w") as f:
+        with open(f"{FOLDER}/output_log_flipping{suffix}{output_suffix}.json", "w") as f:
             json.dump(output_logs, f)
 
-        print(f"Saved output logs to {FOLDER}/output_log_flipping{suffix}.json")
+        print(f"Saved output logs to {FOLDER}/output_log_flipping{suffix}{output_suffix}.json")
