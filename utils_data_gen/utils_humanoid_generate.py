@@ -2,6 +2,7 @@ import copy
 import numpy as np
 import random
 from PIL import Image
+import shutil, os
 
 
 def log_data(curr_log, qpos, joint_npy_path, geom_xpos_npy_path, image_path):
@@ -70,3 +71,15 @@ def set_joints(joint_config, init_qpos):
     for idx in joint_config.keys():
         new_qpos[int(idx)] = joint_config[int(idx)] # z-coordinate of torso
     return new_qpos
+
+
+def select_random_debug_samples(source_folder, dest_folder, num_samples=200):
+    os.makedirs(dest_folder, exist_ok=True)
+
+    all_files = [f for f in os.listdir(source_folder) if f.endswith('.png')]
+    selected_files = random.sample(all_files, min(num_samples, len(all_files)))
+
+    for file in selected_files:
+        shutil.copy(os.path.join(source_folder, file), os.path.join(dest_folder, file))
+
+    print(f"Copied {len(selected_files)} files to {dest_folder}")
