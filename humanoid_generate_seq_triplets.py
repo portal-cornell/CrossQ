@@ -13,6 +13,7 @@ import argparse
 import json, random
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import random, shutil
 
 import envs
 from inference import plot_info_on_frame
@@ -25,9 +26,6 @@ from clean_folder import clean_folder
 OUTPUT_ROOT = "finetuning/data/"
 FOLDER = f"{OUTPUT_ROOT}/v3_seq"
 folder_path = "/share/portal/hw575/CrossQ/train_logs"
-
-DIS_POS_MAX = 7 # max 5 frames
-DIS_NEG_MIN = 15 # min 10 frames
 
 
 
@@ -63,13 +61,16 @@ def sample_states(seq_data):
     anchor_idx = random.choice(list(available_indices))
     available_indices.remove(anchor_idx)
 
-    # at most 5 steps away from anchor
-    pos_index_range = set(range(max(0, anchor_idx - DIS_POS_MAX), min(len(seq_data), anchor_idx + DIS_POS_MAX + 1))) & available_indices
+    # At least 3 frames and at most 10 frames away from anchor
+    pos_index_range = set(range(max(0, anchor_idx - 10), anchor_idx - 2)) | set(range(anchor_idx + 3, min(len(seq_data), anchor_idx + 11)))
+    pos_index_range &= available_indices
     pos_idx = random.choice(list(pos_index_range)) if pos_index_range else None
-    available_indices.remove(pos_idx)
+    if pos_idx is not None:
+        available_indices.remove(pos_idx)
 
-    # at least 10 steps away from anchor
-    neg_index_range = (set(range(0, max(0, anchor_idx - DIS_NEG_MIN))) | set(range(min(len(seq_data), anchor_idx + DIS_NEG_MIN + 1), len(seq_data)))) & available_indices
+    # At least 15 frames away from anchor
+    neg_index_range = set(range(0, max(0, anchor_idx - 15))) | set(range(min(len(seq_data), anchor_idx + 16), len(seq_data)))
+    neg_index_range &= available_indices
     neg_idx = random.choice(list(neg_index_range)) if neg_index_range else None
     
     return {"anchor": anchor_idx, "pos": pos_idx, "neg": neg_idx}
@@ -130,37 +131,62 @@ def generate_seq_triplets(args, env, folder_path, folder_uid):
         chosen_states = sample_states(seq_data)
         print(f"Chosen states: {chosen_states}")
 
-        if not skip_viz and idx <= viz_until:
-            fig, axes = plt.subplots(1, 3, figsize=(15, 6))
-            frames = []
+        geom_xpos_list = []
+        log_data_list = []
+        frames = []
 
         for i, state_type in enumerate(["anchor", "pos", "neg"]):
             chosen_frame_idx = chosen_states[state_type]
             log_data, frame, geom_xpos = generate_sample(env, folder_uid, init_qpos, iteration, state_type, chosen_frame_idx, seq_data[chosen_frame_idx])
-            output_logs.append(log_data)
+            geom_xpos_list.append(geom_xpos)
+            log_data_list.append(log_data)
+            frames.append(frame)
+
+        # Normalize geom_xpos
+        anchor_geom_xpos_normalized = geom_xpos_list[0] - geom_xpos_list[0][1]
+        pos_geom_xpos_normalized = geom_xpos_list[1] - geom_xpos_list[1][1]
+        neg_geom_xpos_normalized = geom_xpos_list[2] - geom_xpos_list[2][1]
+
+        # Check if positive sample is closer to anchor than negative sample
+        if np.linalg.norm(anchor_geom_xpos_normalized - pos_geom_xpos_normalized) <= np.linalg.norm(anchor_geom_xpos_normalized - neg_geom_xpos_normalized):
+            output_logs.extend(log_data_list)
 
             if not skip_viz and idx <= viz_until:
-                frames.append(frame)
-                axes[i].imshow(frame)
-                axes[i].set_title(f"{state_type.capitalize()} (frame {chosen_frame_idx})")
-                axes[i].axis('off')
-        
-        if not skip_viz and idx <= viz_until:
-            plt.tight_layout()
-            debug_folder = os.path.join(FOLDER, "debug")
-            plt.suptitle(f"Sequence Triplet: Folder {folder_uid}, Iteration {iteration}")
-            # os.makedirs(debug_folder, exist_ok=True)
-            plt.savefig(f"{debug_folder}/triplet_{folder_uid}_{iteration}.png")
-            plt.close(fig)
+                fig, axes = plt.subplots(1, 3, figsize=(15, 6))
+                for i, (frame, state_type) in enumerate(zip(frames, ["anchor", "pos", "neg"])):
+                    axes[i].imshow(frame)
+                    axes[i].set_title(f"{state_type.capitalize()} (frame {chosen_states[state_type]})")
+                    axes[i].axis('off')
+                
+                plt.tight_layout()
+                debug_folder = os.path.join(FOLDER, "debug")
+                plt.suptitle(f"Sequence Triplet: Folder {folder_uid}, Iteration {iteration}")
+                plt.savefig(f"{debug_folder}/triplet_{folder_uid}_{iteration}.png")
+                plt.close(fig)
+        else:
+            print(f"Warning: Negative sample is closer to the anchor than the positive sample\npos-distance: {np.linalg.norm(anchor_geom_xpos_normalized - pos_geom_xpos_normalized)}\nneg-distance: {np.linalg.norm(anchor_geom_xpos_normalized - neg_geom_xpos_normalized)}")
+            print(f"Skipping triplet for folder {folder_uid}, iteration {iteration}: positive sample farther than negative")
 
         total_npy_processed += 1
 
     return output_logs, total_npy_processed
 
 
+def select_random_debug_samples(source_folder, dest_folder, num_samples=200):
+    os.makedirs(dest_folder, exist_ok=True)
+
+    all_files = [f for f in os.listdir(source_folder) if f.endswith('.png')]
+    selected_files = random.sample(all_files, min(num_samples, len(all_files)))
+
+    for file in selected_files:
+        shutil.copy(os.path.join(source_folder, file), os.path.join(dest_folder, file))
+
+    print(f"Copied {len(selected_files)} files to {dest_folder}")
+
+
 if __name__ == "__main__":
     """
-    python humanoid_generate_seq_triplets.py --output_log --viz_until 100 --skip-viz
+    python humanoid_generate_seq_triplets.py --output_log    # --viz_until 100 --skip-viz
     python humanoid_generate_seq_triplets.py --debug --output_log --viz_until 10
     """
     parser = argparse.ArgumentParser()
@@ -173,19 +199,20 @@ if __name__ == "__main__":
     set_seed(1231)
 
     
-    # folder_list = get_folder_with_gifs()
+    # # folder_list = get_folder_with_gifs()
 
-    # # Attribute a UID to each folder and save the mapping
-    # folder_uids = {folder: f"uid_{i:04d}" for i, folder in enumerate(folder_list)}
+    # # # Attribute a UID to each folder and save the mapping
+    # # folder_uids = {folder: f"uid_{i:04d}" for i, folder in enumerate(folder_list)}
 
-    # # Save the folder-UID mapping to a file
-    # with open(f"{FOLDER}/folder_uid_mapping.json", "w") as f:
-    #     json.dump(folder_uids, f, indent=2)
+    # # # Save the folder-UID mapping to a file
+    # # with open(f"{FOLDER}/folder_uid_mapping.json", "w") as f:
+    # #     json.dump(folder_uids, f, indent=2)
 
-    # # Save the list of folders with their UIDs
-    # with open(f"{FOLDER}/list_folder_used_for_seq.txt", "w") as f:
-    #     for folder, uid in folder_uids.items():
-    #         f.write(f"{uid}: {folder}\n")
+    # # # Save the list of folders with their UIDs
+    # # with open(f"{FOLDER}/list_folder_used_for_seq.txt", "w") as f:
+    # #     for folder, uid in folder_uids.items():
+    # #         f.write(f"{uid}: {folder}\n")
+
 
     # Load the list from file
     with open(f"{FOLDER}/list_folder_used_for_seq.txt", "r") as f:
@@ -234,5 +261,15 @@ if __name__ == "__main__":
             suffix = "_debug"
         with open(f"{FOLDER}/output_log_seq{suffix}.json", "w") as fout:
             json.dump(output_logs, fout)
+    
+
+
+    # select_random_debug_samples(f"{FOLDER}/debug", f"{FOLDER}/debug_200")
+
 
     print("Done")
+
+"""
+Total number of npy processed: 9037, 7308 triplets in total
+Done
+"""
