@@ -1,6 +1,29 @@
 import copy
 import numpy as np
 import random
+from PIL import Image
+
+
+def log_data(curr_log, qpos, joint_npy_path, geom_xpos_npy_path, image_path):
+    for idx in range(2, len(qpos)):
+        curr_log[f"qpos_{idx}"] = qpos[idx]
+    curr_log["joint_npy_path"] = joint_npy_path
+    curr_log["geom_xpos_npy_path"] = geom_xpos_npy_path
+    curr_log["image_path"] = image_path
+    return curr_log
+
+def save_image(frame, path):
+    image = Image.fromarray(frame)
+    image.save(path)
+
+def save_joint_state(obs, path):
+    with open(path, "wb") as fout:
+        np.save(fout, obs[:22])
+
+def save_geom_xpos(geom_xpos, path):
+    with open(path, "wb") as fout:
+        np.save(fout, geom_xpos)
+
 
 
 def set_seed(seed):
@@ -36,7 +59,7 @@ def perturb_joints_negatively(init_qpos, joint_to_change, poses_thres, perc=0.8)
     for idx in joint_to_change:
         std_dev = poses_thres[str(idx)]['std_dev']
         # randomly sample a float between 0 and perc
-        perturbation = np.random.uniform(1 * std_dev, 2 * std_dev)  # Using 100% to 200% for illustration
+        perturbation = np.random.uniform(1.5 * std_dev, 2.5 * std_dev)  # Using 100% to 200% for illustration
         # Randomly decide to add or subtract this perturbation
         perturbation *= np.random.choice([-1, 1])
         new_qpos[int(idx)] = init_qpos[int(idx)] + perturbation
