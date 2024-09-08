@@ -32,8 +32,8 @@ os.environ["PYOPENGL_PLATFORM"] = "egl"
 os.environ["EGL_PLATFORM"] = "device"
 
 OUTPUT_ROOT = "finetuning/data/"
-FOLDER = f"{OUTPUT_ROOT}/v3_flipping_debug"
-# FOLDER = f"{OUTPUT_ROOT}/v3_flipping/manual_test"
+# FOLDER = f"{OUTPUT_ROOT}/v3_flipping_debug"
+FOLDER = f"{OUTPUT_ROOT}/v3_flipping/manual_test"
 
 os.makedirs(FOLDER, exist_ok=True)
 os.makedirs(f"{FOLDER}/anchor", exist_ok=True)
@@ -60,7 +60,10 @@ SEQ_DICT = {
     # "both_arms_up_final_only": [f"{SEQ_ROOT}/arms_bracket_up_joint-state.npy"],
     # "both_arms_up_with_intermediate": [f"{SEQ_ROOT}/both-arms-out_joint-state.npy", f"{SEQ_ROOT}/arms_bracket_up_joint-state.npy"],
 
-    "arms_up_then_down": [f"{SEQ_ROOT}/left-arm-out_joint-state.npy", f"{SEQ_ROOT}/both-arms-out_joint-state.npy", f"{SEQ_ROOT}/right-arm-out_joint-state.npy"],
+    # "arms_up_then_down": [f"{SEQ_ROOT}/left-arm-out_joint-state.npy", f"{SEQ_ROOT}/both-arms-out_joint-state.npy", f"{SEQ_ROOT}/right-arm-out_joint-state.npy"],
+
+    "arms_up_then_down_left": [f"{SEQ_ROOT}/left-arm-out_joint-state.npy"],
+    "arms_up_then_down_right": [f"{SEQ_ROOT}/right-arm-out_joint-state.npy"],
 }
 
 # Function to load an anchor pose
@@ -167,7 +170,8 @@ def generate_positive_sample(args, env, iteration, pos_i, joint_config, init_qpo
     frame = env.render()
 
     if step_type == "step":
-        new_qpos = obs
+        new_qpos = copy.deepcopy(reset_initial_qpos)
+        new_qpos[2:24] = copy.deepcopy(obs[0:22])
 
     image_path = f"{FOLDER}/pos/{iteration}_{pos_i}_{step_type}.png"
     save_image(frame, image_path)
@@ -201,15 +205,28 @@ def mirror_qpos(neg_qpos):
     
     return neg_qpos
 
-def generate_negative_sample(args, env, iteration, neg_qpos):
+def generate_negative_sample(args, env, iteration, neg_qpos, step_type):
     curr_log = {f"qpos_{i}": 0.0 for i in range(2, 24)}
     curr_log.update({"uid": iteration, "itype": 2, "step_type": "mirrored"})
 
     env.unwrapped.set_state(qpos=neg_qpos, qvel=np.zeros((23,)))
 
+    # Add a small perturbation. Use "positive" to not deviate too much from the original pose
+    if step_type == "step":
+        # Note: 1 step may not be enough
+        env.step(np.random.uniform(-0.3, 0.3, (17,)))
+    else:  # "pose"
+        joints_to_change, _ = generate_random_pose_config()
+        new_qpos = perturb_joints_positively(neg_qpos, joints_to_change, poses_thres)
+        env.unwrapped.set_state(qpos=new_qpos, qvel=np.zeros((23,)))
+
     obs = env.unwrapped.get_obs()
     frame = env.render()
 
+    if step_type == "step":
+        new_qpos = copy.deepcopy(neg_qpos)
+        new_qpos[2:24] = copy.deepcopy(obs[0:22])
+    
     image_path = f"{FOLDER}/neg/{iteration}_mirrored.png"
     save_image(frame, image_path)
 
@@ -220,7 +237,7 @@ def generate_negative_sample(args, env, iteration, neg_qpos):
     geom_xpos = copy.deepcopy(env.unwrapped.data.geom_xpos)
     save_geom_xpos(geom_xpos, f"{neg_geom_xpos_npy_path}")
 
-    return log_data(curr_log, neg_qpos, neg_joint_npy_path, neg_geom_xpos_npy_path, image_path), neg_qpos, geom_xpos
+    return log_data(curr_log, neg_qpos, neg_joint_npy_path, neg_geom_xpos_npy_path, image_path), new_qpos, geom_xpos
 
 def generate_flipping_triplets(args, env, seq_name: str, use_geom_xpos: bool, num_triplets: int = 1000, output_logs: list = []):
     for iteration in range(num_triplets):
@@ -258,7 +275,7 @@ def generate_flipping_triplets(args, env, seq_name: str, use_geom_xpos: bool, nu
             
         # Negative: Mirror the anchor state
         neg_qpos = mirror_qpos(copy.deepcopy(anchor_qpos))
-        neg_log, neg_qpos, neg_geom_xpos = generate_negative_sample(args, env, iteration, neg_qpos)
+        neg_log, neg_qpos, neg_geom_xpos = generate_negative_sample(args, env, iteration, neg_qpos, "pose")
 
         # Positive
         pos_qpos = copy.deepcopy(anchor_qpos)

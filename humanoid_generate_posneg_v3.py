@@ -122,7 +122,8 @@ def generate_positive_sample(args, env, iteration, pos_i, joint_config, init_qpo
     frame = env.render()
 
     if step_type == "step":
-        new_qpos = obs
+        new_qpos = copy.deepcopy(reset_initial_qpos)
+        new_qpos[2:24] = copy.deepcopy(obs[0:22])
 
     image_path = f"{FOLDER}/pos/{iteration}_{pos_i}_{step_type}.png"
     save_image(frame, image_path)
