@@ -32,7 +32,13 @@ os.environ["PYOPENGL_PLATFORM"] = "egl"
 os.environ["EGL_PLATFORM"] = "device"
 
 OUTPUT_ROOT = "finetuning/data/"
-FOLDER = f"{OUTPUT_ROOT}/v3_flipping_debug"
+FOLDER = f"{OUTPUT_ROOT}/v3_flipping"
+
+os.makedirs(FOLDER, exist_ok=True)
+os.makedirs(f"{FOLDER}/anchor", exist_ok=True)
+os.makedirs(f"{FOLDER}/pos", exist_ok=True)
+os.makedirs(f"{FOLDER}/neg", exist_ok=True)
+os.makedirs(f"{FOLDER}/debug", exist_ok=True)
 
 
 ##########################################
@@ -85,15 +91,19 @@ def load_reference_seq(seq_name: str, use_geom_xpos: bool) -> np.ndarray:
 flipping_map_arms = {
     18: 21,
     19: 22,
-    # 20: 23,
+    20: 23,
 }
 flipping_map_pelvis_hip = {
     10: 14,
     11: 15,
-    # 12: 16,
+    12: 16,
     13: 17,
 }
-flipping_map_body_x = [3, 9]
+
+flipping_map_body_x = [
+    3, 9,
+    # 10, 14,
+]
 
 
 ##########################################
@@ -171,11 +181,11 @@ def mirror_qpos(neg_qpos):
     # Flip body angles
     for idx in flipping_map_body_x:
         neg_qpos[idx] = -neg_qpos[idx]  # Flip the angle
-        # Ensure the angle stays within [-pi, pi]
-        if neg_qpos[idx] < -np.pi:
-            neg_qpos[idx] += 2 * np.pi
-        elif neg_qpos[idx] > np.pi:
-            neg_qpos[idx] -= 2 * np.pi
+        # # Ensure the angle stays within [-pi, pi]
+        # if neg_qpos[idx] < -np.pi:
+        #     neg_qpos[idx] += 2 * np.pi
+        # elif neg_qpos[idx] > np.pi:
+        #     neg_qpos[idx] -= 2 * np.pi
     
     return neg_qpos
 
@@ -233,8 +243,7 @@ def generate_flipping_triplets(args, env, seq_name: str, use_geom_xpos: bool, nu
                 print(f"Resampling iteration {iteration} due to negative values in rows 2 and 3")
         
         # Negative: Mirror the anchor state
-        neg_qpos = copy.deepcopy(anchor_qpos)
-        neg_qpos = mirror_qpos(neg_qpos)
+        neg_qpos = mirror_qpos(copy.deepcopy(anchor_qpos))
         neg_log, neg_qpos, neg_geom_xpos = generate_negative_sample(args, env, iteration, neg_qpos)
 
         # Positive
@@ -293,7 +302,7 @@ def generate_flipping_triplets(args, env, seq_name: str, use_geom_xpos: bool, nu
 
 if __name__ == "__main__":
     """
-    python humanoid_generate_flipping_triplets.py --num_triplets 5 --viz_until 5
+    python humanoid_generate_flipping_triplets.py --num_triplets 5 --viz_until 5 --output_log
     python humanoid_generate_flipping_triplets.py --seq_name both_arms_up_final_only --num_triplets 2 --use_geom_xpos 
     """
     parser = argparse.ArgumentParser()
@@ -302,6 +311,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_triplets", type=int, default=1000, help="Number of triplets to generate")
     parser.add_argument("--skip_viz", action="store_true", help="Skip visualization")
     parser.add_argument("--viz_until", type=int, default=-1, help="Viz until a certain iteration")
+    parser.add_argument("--output_log", action="store_true", help="Output the data as a json file")
     args = parser.parse_args()
 
     set_seed(1231)
@@ -324,5 +334,12 @@ if __name__ == "__main__":
 
     output_logs = []
 
-    triplets = generate_flipping_triplets(args, env, args.seq_name, args.use_geom_xpos, args.num_triplets, output_logs)    # import pdb; pdb.set_trace()
+    output_logs = generate_flipping_triplets(args, env, args.seq_name, args.use_geom_xpos, args.num_triplets, output_logs)    # import pdb; pdb.set_trace()
     env.close()
+
+    if args.output_log:
+        suffix = f"_{args.num_triplets}"
+        with open(f"{FOLDER}/output_log_flipping{suffix}.json", "w") as f:
+            json.dump(output_logs, f)
+
+        print(f"Saved output logs to {FOLDER}/output_log_flipping{suffix}.json")

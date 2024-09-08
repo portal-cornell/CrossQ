@@ -151,7 +151,7 @@ def generate_seq_triplets(args, env, folder_path, folder_uid):
         if np.linalg.norm(anchor_geom_xpos_normalized - pos_geom_xpos_normalized) <= np.linalg.norm(anchor_geom_xpos_normalized - neg_geom_xpos_normalized):
             output_logs.extend(log_data_list)
 
-            if not skip_viz and idx <= viz_until:
+            if not skip_viz and (viz_until == -1 or idx <= viz_until):
                 fig, axes = plt.subplots(1, 3, figsize=(15, 6))
                 for i, (frame, state_type) in enumerate(zip(frames, ["anchor", "pos", "neg"])):
                     axes[i].imshow(frame)
