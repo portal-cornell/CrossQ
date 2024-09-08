@@ -32,7 +32,8 @@ os.environ["PYOPENGL_PLATFORM"] = "egl"
 os.environ["EGL_PLATFORM"] = "device"
 
 OUTPUT_ROOT = "finetuning/data/"
-FOLDER = f"{OUTPUT_ROOT}/v3_flipping"
+FOLDER = f"{OUTPUT_ROOT}/v3_flipping_debug"
+# FOLDER = f"{OUTPUT_ROOT}/v3_flipping/manual_test"
 
 os.makedirs(FOLDER, exist_ok=True)
 os.makedirs(f"{FOLDER}/anchor", exist_ok=True)
@@ -53,11 +54,11 @@ SEQ_DICT = {
 
     "left_arm_extend_wave_higher_final_only": [f"{SEQ_ROOT}/left-arm-extend-wave-higher_joint-state.npy"],
 
-    "both_arms_out_final_only": [f"{SEQ_ROOT}/both-arms-out_joint-state.npy"],
-    "both_arms_out_with_intermediate": [f"{SEQ_ROOT}/left-arm-out_joint-state.npy", f"{SEQ_ROOT}/both-arms-out_joint-state.npy"],
+    # "both_arms_out_final_only": [f"{SEQ_ROOT}/both-arms-out_joint-state.npy"],
+    # "both_arms_out_with_intermediate": [f"{SEQ_ROOT}/left-arm-out_joint-state.npy", f"{SEQ_ROOT}/both-arms-out_joint-state.npy"],
     
-    "both_arms_up_final_only": [f"{SEQ_ROOT}/arms_bracket_up_joint-state.npy"],
-    "both_arms_up_with_intermediate": [f"{SEQ_ROOT}/both-arms-out_joint-state.npy", f"{SEQ_ROOT}/arms_bracket_up_joint-state.npy"],
+    # "both_arms_up_final_only": [f"{SEQ_ROOT}/arms_bracket_up_joint-state.npy"],
+    # "both_arms_up_with_intermediate": [f"{SEQ_ROOT}/both-arms-out_joint-state.npy", f"{SEQ_ROOT}/arms_bracket_up_joint-state.npy"],
 
     "arms_up_then_down": [f"{SEQ_ROOT}/left-arm-out_joint-state.npy", f"{SEQ_ROOT}/both-arms-out_joint-state.npy", f"{SEQ_ROOT}/right-arm-out_joint-state.npy"],
 }
@@ -87,7 +88,8 @@ def load_reference_seq(seq_name: str, use_geom_xpos: bool) -> np.ndarray:
 ########### Define the flipping values ############
 ###################################################
 
-# along x
+# According to:
+# https://github.com/portal-cornell/CrossQ/blob/yuki/seq2seq/create_demo/pose_config.py#L3
 flipping_map_arms = {
     18: 21,
     19: 22,
@@ -101,8 +103,12 @@ flipping_map_pelvis_hip = {
 }
 
 flipping_map_body_x = [
-    3, 9,
+    3, 9, 
+    18, 21,
+    19, 22,
     # 10, 14,
+    # 11, 15,
+    # 12, 16
 ]
 
 
@@ -115,10 +121,13 @@ def generate_anchor_sample(args, env, iteration, joint_config, init_qpos):
     curr_log = {f"qpos_{i}": 0.0 for i in range(2, 24)}
     curr_log.update({"uid": iteration, "itype": 0, "step_type": None})
 
-    new_qpos = copy.deepcopy(init_qpos)
-    for idx in joint_config.keys():
-        new_qpos[int(idx)] = joint_config[int(idx)]
-    
+    if joint_config:
+        new_qpos = copy.deepcopy(init_qpos)
+        for idx in joint_config.keys():
+            new_qpos[int(idx)] = joint_config[int(idx)]
+    else:
+        new_qpos = copy.deepcopy(init_qpos)
+        
     env.unwrapped.set_state(qpos=new_qpos, qvel=np.zeros((23,)))
 
     obs = env.unwrapped.get_obs()
@@ -141,7 +150,10 @@ def generate_positive_sample(args, env, iteration, pos_i, joint_config, init_qpo
     curr_log = {f"qpos_{i}": 0.0 for i in range(2, 24)}
     curr_log.update({"uid": iteration, "itype": 1, "step_type": step_type})
 
-    reset_initial_qpos = set_joints(joint_config, init_qpos_copy)
+    if joint_config:
+        reset_initial_qpos = set_joints(joint_config, init_qpos_copy)
+    else:
+        reset_initial_qpos = copy.deepcopy(init_qpos_copy)
     env.unwrapped.set_state(qpos=reset_initial_qpos, qvel=np.zeros((23,)))
 
     if step_type == "step":
@@ -218,8 +230,7 @@ def generate_flipping_triplets(args, env, seq_name: str, use_geom_xpos: bool, nu
         init_geom_pos = copy.deepcopy(env.unwrapped.data.geom_xpos)
 
         # Get anchor pose
-        while True:
-            if seq_name:
+        if seq_name:
                 # Load the reference sequence
                 ref_seq = load_reference_seq(seq_name, use_geom_xpos)
                 if len(ref_seq) == 1:
@@ -229,19 +240,22 @@ def generate_flipping_triplets(args, env, seq_name: str, use_geom_xpos: bool, nu
                 anchor_qpos = copy.deepcopy(init_qpos)
                 for idx in range(2, 24):
                     anchor_qpos[idx] = new_qpos[idx - 2] # because anchor_qpos is (22) while init_qpos is (24)
-            else:
+                joint_config = None
+                anchor_log_data, anchor_qpos, anchor_geom_xpos = generate_anchor_sample(args, env, iteration, joint_config, anchor_qpos)
+        else:
+            while True:
                 # Otherwise, random pose = anchor pose
                 _, joint_config = generate_random_pose_config()
                 anchor_qpos = copy.deepcopy(init_qpos)
             
-            anchor_log_data, anchor_qpos, anchor_geom_xpos = generate_anchor_sample(args, env, iteration, joint_config, anchor_qpos)
+                anchor_log_data, anchor_qpos, anchor_geom_xpos = generate_anchor_sample(args, env, iteration, joint_config, anchor_qpos)
             
-            # Check if rows 2 and 3 contain negative values (no mujoco on the image)
-            if anchor_geom_xpos[2:4, 2].min() >= 0:
-                break
-            else:
-                print(f"Resampling iteration {iteration} due to negative values in rows 2 and 3")
-        
+                # Check if rows 2 and 3 contain negative values (no mujoco on the image)
+                if anchor_geom_xpos[2:4, 2].min() >= 0:
+                    break
+                else:
+                    print(f"Resampling iteration {iteration} due to negative values in rows 2 and 3")
+            
         # Negative: Mirror the anchor state
         neg_qpos = mirror_qpos(copy.deepcopy(anchor_qpos))
         neg_log, neg_qpos, neg_geom_xpos = generate_negative_sample(args, env, iteration, neg_qpos)
@@ -303,7 +317,7 @@ def generate_flipping_triplets(args, env, seq_name: str, use_geom_xpos: bool, nu
 if __name__ == "__main__":
     """
     python humanoid_generate_flipping_triplets.py --num_triplets 5 --viz_until 5 --output_log
-    python humanoid_generate_flipping_triplets.py --seq_name both_arms_up_final_only --num_triplets 2 --use_geom_xpos 
+    python humanoid_generate_flipping_triplets.py --seq_name arms_bracket_right_final_only --num_triplets 2 --output_log
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--seq_name", type=str, default="", help="Name of the sequence to generate triplets for. Only for manual test set")
