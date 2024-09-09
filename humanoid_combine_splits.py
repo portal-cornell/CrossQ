@@ -7,7 +7,7 @@ IMAGE_TYPES = ["v3_flipping", "v3_seq", "v3_random_joints", "v3_body_distortion_
 SPLIT_TYPES = ["train", "val", "test", "manual_test"]
 
 BASE_PATH = "/share/portal/aw588/finetuning/data"
-# OUTPUT_PATH = Path(BASE_PATH) / "combined_splits"
+# OUTPUT_PATH = Path(BASE_PATH) / "small_combined_splits"
 # OUTPUT_PATH.mkdir(exist_ok=True)
 OUTPUT_PATH = Path(BASE_PATH)
 
