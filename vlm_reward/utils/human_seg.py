@@ -27,12 +27,13 @@ class HumanSegmentationModel(nn.Module):
                 name = k[7:]
                 new_state_dict[name] = v
             model.load_state_dict(new_state_dict)
+
         model.eval()
         self.model=model
         self.device = device
         self.infer_size = 1280
 
-    def forward(self, img, thresh=.5):
+    def forward_logits(self, img):
         """
         img: torch.Tensor, (3, H, W) or (B, 3, H, W)
         """
@@ -62,9 +63,12 @@ class HumanSegmentationModel(nn.Module):
 
             # Make sure this tensor which is GPU-Memory intensive is deleted and frees up its memory
             del input_tensor
-
             torch.cuda.empty_cache()
-
             gc.collect()
+
+        return pred_segment
+
+    def forward(self, img, thresh=.5):
+        pred_segment = self.forward_logits(img)
 
         return pred_segment > thresh

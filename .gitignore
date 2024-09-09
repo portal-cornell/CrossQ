@@ -23,6 +23,8 @@ git_rewrite_commit_history.sh
 /build
 keys/
 models/
+finetune/
+datasets/
 
 # Virtualenv
 /env

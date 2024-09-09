@@ -189,7 +189,6 @@ def eval_from_config(config: DictConfig):
         sources_and_rewards = list(zip(config.eval_data.sources, config.eval_data.rewards))
     else:
         sources_and_rewards = parse_mujoco_eval_dir(config.eval_data.sequence_and_reward_dir, get_every_nth=5)
-
     reward_model = load_reward_model(rank=0, 
                                     worker_actual_batch_size=config.reward_model.reward_batch_size,  
                                     model_name=config.reward_model.name, 

@@ -12,12 +12,16 @@ import torch.nn.functional as F
 from torchvision.utils import save_image
 
 import numpy as np
+import ot
+import concurrent
+from scipy.spatial.distance import cdist
 
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 from sam2.build_sam import build_sam2
 from vlm_reward.reward_models.model_interface import RewardModel # this is the interface class
 
 from huggingface_hub import hf_hub_download
+from vlm_reward.utils.human_seg import HumanSegmentationModel
 
 """
 Current implementation lacking the following features
@@ -47,28 +51,24 @@ Why can't we just use mask_tokens_out? Because this should be some "prompt" that
 later: find wasserstein distance between all the mask predictions (for when there is uncertainty in the prompts)
 """
 
-def load_sam2_mean_feature_reward_model(rank: int, sam2_model_id: str, sam2_cfg_path:str,batch_size:int):
+def load_sam2_mean_feature_reward_model(rank: int, sam2_model_id: str, sam2_cfg_path:str, human_seg_model_path,
+                                    source_mask_thresh, target_mask_thresh, batch_size:int):
 
-    # normalized coordinates of points on the robot in the initial frame of source trajectories and target image
-    # note that the coordinates are centered (i.e, (0,0) corresponds to the center of the image) 
-
-    # coords[0,:] corresponds to width (distance from left)
-    # and coords[1, :] corresponds to height (distance from top, so 1 is the bottom of the image)
-    # the below correspond to left arm, right arm, hips, face of robot, ground, and sky respectively
-    first_frame_src_point_coords = np.array([[.5, .6], [.4125, .5], [.6, .5], [.5, .4125], [.125, .833], [.833, .125]])
-    first_frame_src_point_labels = np.array([1,1,1,1,0,0]) # sky is a background point
-    trg_point_coords = np.array([[.4125, .5], [.6, .4], [.125, .833]]) # TODO: get correct point coords for trg here
-    trg_point_labels = np.array([1, 1, 0])
-
-    return SAM2MeanFeatureRewardModel(rank, sam2_model_id, sam2_cfg_path, batch_size,
-                                    first_frame_src_point_coords, first_frame_src_point_labels,
-                                    trg_point_coords, trg_point_labels)
+    return SAM2MeanFeatureRewardModel(rank, sam2_model_id, sam2_cfg_path, human_seg_model_path,
+                                    source_mask_thresh, target_mask_thresh, batch_size)
     
+
+
+def load_sam2_wasserstein_reward_model(rank: int, sam2_model_id: str, sam2_cfg_path:str, human_seg_model_path,
+                                    source_mask_thresh, target_mask_thresh, batch_size:int):
+
+    return SAM2WassersteinRewardModel(rank, sam2_model_id, sam2_cfg_path, human_seg_model_path,
+                                    source_mask_thresh, target_mask_thresh, batch_size)
+
 class SAM2RewardModelBase(RewardModel):
     
-    def __init__(self, rank: int, sam2_model_id: str, sam2_cfg_path:str, batch_size: int,
-                first_frame_src_point_coords: np.ndarray, first_frame_src_point_labels: np.ndarray,
-                trg_point_coords: np.ndarray, trg_point_labels: np.ndarray, patch_dim=(12,12)):
+    def __init__(self, rank: int, sam2_model_id: str, sam2_cfg_path:str, human_seg_model_path: str, 
+                source_mask_thresh: str, target_mask_thresh: str, batch_size: int, patch_dim=(12,12)):
         """
         Initialize the SAM2-large model with the specified network type.
         
@@ -85,6 +85,7 @@ class SAM2RewardModelBase(RewardModel):
         """
         self.device = f'cuda:{rank}'
         self.batch_size = batch_size
+        self.model_id = sam2_model_id
         self.cfg_path = sam2_cfg_path
         self.model = self._build_sam2_hf(sam2_model_id, sam2_cfg_path, self.device)
 
@@ -92,16 +93,20 @@ class SAM2RewardModelBase(RewardModel):
         self.target_embedding = None
         self.patch_dim = patch_dim
 
-        self.first_frame_src_point_coords = first_frame_src_point_coords
-        self.first_frame_src_point_labels = first_frame_src_point_labels
-
-        # these embeddings will be computed when goal image is set (doesn't need to be precomputed here)
-        self.trg_point_coords = trg_point_coords
-        self.trg_point_labels = trg_point_labels
-
         self.mask_pooling = torch.nn.MaxPool2d(patch_dim) # if any mask logit is positive, use it
         self.embed_pooling = torch.nn.AvgPool2d(patch_dim)
-        self.mask_threshold = 0 # the threshold for mask logits (0 in standard SAM, but can be tuned for more/less refined masks)
+
+        # the threshold for mask logits (in HumanSeg, found that .01 is good for mujoco and .5 is good for real life)
+        self.human_seg_model = self.instantiate_human_seg(rank, human_seg_model_path)
+        self.source_mask_thresh = source_mask_thresh
+        self.target_mask_thresh = target_mask_thresh
+
+    def instantiate_human_seg(self, rank, human_seg_model_path):
+        human_seg_model = HumanSegmentationModel(rank, human_seg_model_path)
+        human_seg_model = human_seg_model.to(self.device)
+        human_seg_model.model = human_seg_model.model.to(self.device)
+        human_seg_model.device = self.device
+        return human_seg_model
 
     def _build_sam2_hf(self, model_id, sam2_cfg_path, device):
 
@@ -137,11 +142,10 @@ class SAM2RewardModelBase(RewardModel):
         all_feats = [low_res_feats] + high_res_feats
         return all_feats
 
-    def set_source_embeddings(self, image_sequence: Tensor) -> None:
+    def set_source_embeddings(self, images: Tensor) -> None:
         """
         Set the source embeddings.
-        image_sequence: a sequence of images (it is important that they occur in order), where the given prompts 
-        correspond to the first image in the batch
+        images: a set of images
         
         For each image in the batch, get embeddings and masks, downsize them to patch_dim, and apply the masks
         Embedding is retrieved after applying the masked decoder (cross attention on the prompts)
@@ -150,44 +154,33 @@ class SAM2RewardModelBase(RewardModel):
         Subsequent images are prompted with the previous image's masks
 
         """
-        if image_sequence.device != self.device: # because LPIPS doesn't have a device attribute
-            image_sequence = image_sequence.to(self.device)
-        if image_sequence.dtype == torch.uint8:
-            image_sequence = image_sequence.float() / 255
-        
-        all_masked_embeddings = []
-        all_ious = []        
-        all_sam_tokens = []
+        if images.device != self.device: 
+            images = images.to(self.device)
+        if images.dtype == torch.uint8:
+            images = images.float() / 255
 
-        for i, image in enumerate(image_sequence):
-            self.model.set_image(image) # model expects HWC numpy input
+        source_image_batches = torch.split(images, self.batch_size)
 
-            if i == 0:
-                # use the point prompts for the first frame
-                embeddings, masks, ious, sam_tokens = self.model.predict_embeddings(
-                    sparse_prompt_embeddings=self.first_frame_sparse_embeddings, 
-                    dense_prompt_embeddings=self.first_frame_dense_embeddings, 
-                    multi_object_mode=self.first_frame_multi_object_mode
-                )
-            else:
-                # use the mask prompts from the previous frame
-                sparse_prompt_embeddings, dense_prompt_embeddings, multi_object_mode= self.model.get_mask_embeddings(masks)
-                embeddings, masks, ious, sam_tokens = self.model.predict_embeddings(
-                    sparse_prompt_embeddings=sparse_prompt_embeddings, 
-                    dense_prompt_embeddings=dense_prompt_embeddings, 
-                    multi_object_mode=multi_object_mode
-                )
+        source_embeddings = []
+        source_masks = []
+        # inference on all at once will cause an out of memory error
+        for i, image_batch in enumerate(source_image_batches):
+            logger.info(f"batch {i} / {len(source_image_batches)}")
+            mask_input_batch = self.human_seg_model.forward_logits(image_batch)
+            # transform to input space for sam2 (weird hacky thing)
+            # 8 comes from qualitative evaluation (sam2 produces good masks when input is 8)
+            mask_input_batch_logits = torch.clamp(torch.log(torch.clamp(mask_input_batch, 1e-9, 1)), -32, 32)  + 8 
             
+            self.model.set_image_batch(image_batch) # model expects HWC numpy input
+            
+            embeddings, masks, ious, sam_tokens = self.model.predict_batch_embeddings(mask_input_batch=mask_input_batch_logits)
             embeddings_downsize = self.embed_pooling(embeddings)
-            masks_downsize = self.mask_pooling(masks.unsqueeze(1)).squeeze(1) # create artificial channel dim and convert to float tensor for interpolate, then convert back
-            binary_masks_downsize = masks_downsize > self.mask_threshold
+            masks_downsize = self.mask_pooling(masks) # create artificial channel dim and convert to float tensor for interpolate, then convert back
+            binary_masks_downsize = masks_downsize > self.source_mask_thresh
+            source_embeddings.append(embeddings_downsize)
+            source_masks.append(binary_masks_downsize)
 
-            masked_embeddings = self._index_embeddings(embeddings_downsize, binary_masks_downsize)
-
-            all_masked_embeddings.append(masked_embeddings)
-            all_ious.append(ious)
-            all_sam_tokens.append(sam_tokens)
-
+        masked_embeddings = self._index_embeddings(torch.cat(source_embeddings, dim=0), torch.cat(source_masks, dim=0))
         self.source_embedding = masked_embeddings
 
     def set_target_embedding(self, target_image: Tensor) -> None:
@@ -198,44 +191,39 @@ class SAM2RewardModelBase(RewardModel):
         """
         if target_image.device != self.device:
             target_image = target_image.to(self.device)
-        
         if target_image.dtype == torch.uint8:
             target_image = target_image.float() / 255
+        if len(target_image.shape) == 3: 
+            # batchify input
+            target_image_batch = target_image[None]
+        
+        mask_input_batch = self.human_seg_model.forward_logits(target_image_batch)
+        mask_input_batch_logits = torch.clamp(torch.log(torch.clamp(mask_input_batch, 1e-9, 1)), -32, 32) # get log probs from true probs, and clip them into range
 
-        self.model.set_image(target_image) # model expects HWC numpy input
+        self.model.set_image_batch(target_image_batch) # model expects HWC numpy input
+        embeddings, masks, ious, sam_tokens = self.model.predict_batch_embeddings(mask_input_batch=mask_input_batch_logits)
 
-        sparse_prompt_embeddings, dense_prompt_embeddings, multi_object_mode = self.model.get_point_embeddings(
-            point_coords=self.trg_point_coords, 
-            point_labels=self.trg_point_labels,
-            normalize_coords=False
-        )
-        target_embeddings, masks, ious, sam_tokens = self.model.predict_embeddings(
-            sparse_prompt_embeddings=sparse_prompt_embeddings, 
-            dense_prompt_embeddings=dense_prompt_embeddings, 
-            multi_object_mode=multi_object_mode
-        )
-
-        embeddings_downsize = self.embed_pooling(target_embeddings)
-        masks_downsize = self.mask_pooling(masks.unsqueeze(1)).squeeze(1) # create artificial channel dim and convert to float tensor for interpolate, then convert back
-        binary_masks_downsize = masks_downsize > self.mask_threshold
-
+        embeddings_downsize = self.embed_pooling(embeddings)
+        masks_downsize = self.mask_pooling(masks) # create artificial channel dim and convert to float tensor for interpolate, then convert back
+        binary_masks_downsize = masks_downsize > self.source_mask_thresh
         masked_embeddings = self._index_embeddings(embeddings_downsize, binary_masks_downsize)
+
+        # unbatchify output
         self.target_embedding = masked_embeddings[0]
 
-        # first frame embeddings are precomputed here as well, because the target image has been set, so the model knows what image dim to expect
-        self.first_frame_sparse_embeddings, self.first_frame_dense_embeddings, self.first_frame_multi_object_mode = self.model.get_point_embeddings(
-            point_coords=self.first_frame_src_point_coords, 
-            point_labels=self.first_frame_src_point_labels,
-            normalize_coords=False
-        )
         
     def to(self, device: str) -> None:
         """
         TODO: this is hacky, because sam2 only lets you set device at model instantation
         """
+        self.human_seg_model =self.human_seg_model.to(device)
+        self.human_seg_model.model = self.human_seg_model.model.to(device)
+        self.human_seg_model.device = device
+
         assert 'cuda' in device, "Error: cuda not found in device. Must be on gpu"
         if self.device != device:
-            return SAM2RewardModel(device[-1], self.cfg_path, self.checkpoint_path)
+            return self.__class__(device[-1], self.model_id, self.cfg_path, self.human_seg_model_path, self.source_mask_thresh, self.target_mask_thresh, self.batch_size)
+        
         
     def cuda(self, rank: int = 0) -> None:
         """
@@ -287,9 +275,63 @@ class SAM2MeanFeatureRewardModel(SAM2RewardModelBase):
         return self._mean_feature_distance(self.source_embedding, self.target_embedding)
     
     def _mean_feature_distance(self, masked_sources: List[Float[Tensor, "n_masked_patches channels"]], target: Float[Tensor, "n_masked_patches channels"]):
-        breakpoint()
         target_mean = target.mean(dim=0)
         source_means = torch.stack([source.mean(dim=0) for source in masked_sources])
         
         d = F.cosine_similarity(source_means, target_mean[None])
         return d
+
+class SAM2WassersteinRewardModel(SAM2RewardModelBase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def predict(self) -> Tensor:
+        if self.source_embedding is None or self.target_embedding is None:
+            raise ValueError("Source and target embeddings must be set before prediction.")
+        
+        return torch.as_tensor(self._wasserstein_distance(self.source_embedding, self.target_embedding))
+    
+    def _wasserstein_distance(self, sources: List[Float[Tensor, "n_masked_patches channels"]], target: Float[Tensor, "n_masked_patches channels"], return_ot_plan=False):
+        sources_cpu_np = [source.cpu().numpy() for source in sources]
+        target_cpu_np = target.cpu().numpy()
+
+        def compute_wasser_given_target(source_cpu_np):
+            # compute the wasserstein using the cached target
+            return self.compute_patchwise_wasserstein(source_cpu_np, target_cpu_np)
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = executor.map(compute_wasser_given_target, sources_cpu_np) 
+
+            raw_output_dict = [future for future in futures]
+            wassersteins = [o["wasser"] for o in raw_output_dict]
+            if return_ot_plan:
+                ot_plan = [o["T"] for o in raw_output_dict]
+                costs = [o["C"] for o in raw_output_dict]
+        if return_ot_plan: # for debugging
+            return dict(wasser=wassersteins, T=ot_plan, C=costs)
+        else:
+            return wassersteins
+
+    def compute_patchwise_wasserstein(self, features, target_features, d='cosine'):
+        """
+        Return: a dictionary that contains field
+            "wasser": the wasserstein distance
+            "T": (optional) the optimal transport plan
+        """   
+        if len(features) == 0:
+            print('Error: no source features found. Distance is considered -1. Consider decreasing the human threshold for the source or target')
+            return dict(wasser = -1)
+        elif len(target_features) == 0:
+            print('Error: no target features found. Distance is considered -1. Consider decreasing the human threshold for the source or target')
+            return dict(wasser = -1)
+        
+        M = cdist(target_features, features, metric=d)
+        
+        # Sinkhorn2 directly outputs the distance (compared to sinkhorn which outputs the OT solution)
+        # For regularizing, using this paper: (https://github.com/siddhanthaldar/ROT/blob/41ef7b98ca3950b9f31dd174f306cbe6916a09c9/ROT/rewarder.py#L4)
+        T = ot.sinkhorn([], [], M, reg=0.05, log=False)
+
+        # Calculate the wasserstein distance (ref: )
+        wasser = np.sum(T*M)
+
+        return dict(wasser=wasser, T=T, C=M)

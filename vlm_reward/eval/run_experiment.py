@@ -19,7 +19,7 @@ def override_tasks():
         result = subprocess.run(command)
 
 def override_reward_model():
-    models = ["sam2"]
+    models = ["sam2_mean_feature", "sam2_patch_wasserstein"]
     
     for model in models:
         command = [

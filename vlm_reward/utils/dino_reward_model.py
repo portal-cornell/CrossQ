@@ -458,27 +458,8 @@ class PatchWassersteinDistance(Image2ImageMetric):
         elif len(target_features) == 0:
             print('Error: no target features found. Distance is considered -1. Consider decreasing the human threshold for the source or target')
             return dict(wasser = -1)
-
-        match d:
-            case 'cosine':
-                similarity = np.dot(features, target_features.T) / np.linalg.norm(features, axis=1, keepdims=True) / np.linalg.norm(target_features.T, axis=0, keepdims=True) # Transpose B to match dimensions
-
-                # from sklearn.metrics.pairwise import cosine_similarity
-                # logger.debug(f"similarity=\n{similarity}\nsklearn_similarity=\n{cosine_similarity(features, target_features)}\nold=\n{M}")
-                
-                # Rescale to be between 0 and 1
-                similarity_rescaled = (similarity + 1) / 2
-
-                # Turn similarity into a cost
-                M = 1 - similarity_rescaled
-
-                # M = target_features @ features.T 
-                # M *= 1 / np.tile(np.linalg.norm(target_features, axis=1), (M.shape[1], 1)).T
-                # M *= 1 / np.tile(np.linalg.norm(features, axis=1), (M.shape[0], 1))
-                # M *= -1 # turn the similarity into a cost
-
-            case 'euclidean':
-                M = cdist(target_features, features)
+        
+        M = cdist(target_features, features, metric=d)
         
         # Uniform distribution
         features_weights = np.ones(features.shape[0]) * (1 / features.shape[0])
