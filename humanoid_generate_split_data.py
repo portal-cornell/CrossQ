@@ -15,17 +15,17 @@ from utils_data_gen.utils_humanoid_generate import set_seed
 set_seed(1231)
 
 
-IMAGE_TYPE = "v3_random_joints" # v3_flipping, v3_seq, v3_random_joints, v3_body_distortion_arm
+IMAGE_TYPE = "v3_body_distortion_arm" # v3_flipping, v3_seq, v3_random_joints, v3_body_distortion_arm
 
-INPUT_PATH = f"finetuning/data/{IMAGE_TYPE}"
-ANCHOR_PATH = f"finetuning/data/{IMAGE_TYPE}/anchor"
-NEG_PATH = f"finetuning/data/{IMAGE_TYPE}/neg"
-POS_PATH = f"finetuning/data/{IMAGE_TYPE}/pos"
+INPUT_PATH = f"/share/portal/aw588/finetuning/data/{IMAGE_TYPE}"
+ANCHOR_PATH = f"/share/portal/aw588/finetuning/data/{IMAGE_TYPE}/anchor"
+NEG_PATH = f"/share/portal/aw588/finetuning/data/{IMAGE_TYPE}/neg"
+POS_PATH = f"/share/portal/aw588/finetuning/data/{IMAGE_TYPE}/pos"
 if IMAGE_TYPE == "v3_flipping":
     # We'll add the 4 with target images
-    MANUAL_TEST_PATH = f"finetuning/data/{IMAGE_TYPE}/debug_46_manually_checked/"
+    MANUAL_TEST_PATH = f"/share/portal/aw588/finetuning/data/{IMAGE_TYPE}/debug_46_manually_checked/"
 else:
-    MANUAL_TEST_PATH = f"finetuning/data/{IMAGE_TYPE}/debug_50_manually_checked/"
+    MANUAL_TEST_PATH = f"/share/portal/aw588/finetuning/data/{IMAGE_TYPE}/debug_50_manually_checked/"
 
 OUTPUT_PATH = INPUT_PATH
 
@@ -44,9 +44,10 @@ elif IMAGE_TYPE == "v3_seq":
         for name in manual_test_images
     }
 elif IMAGE_TYPE == "v3_body_distortion_arm":
-    get_anchor_id = lambda name: name.split("sample_")[1].split(".png")[0]
+    get_anchor_id = lambda name: name.split("sample_")[1].split("_")[0]
     manual_prefix = list(set([get_anchor_id(name) for name in manual_test_images]))
     print(manual_prefix)
+    print(len(manual_prefix))
     input("stop")
     manual_prefix_to_data = {
         get_anchor_id(name): op.join(ANCHOR_PATH, [f for f in os.listdir(ANCHOR_PATH) if f.startswith(get_anchor_id(name)) and f.endswith(".png")][0])
@@ -74,7 +75,10 @@ print("first 5 anchor images", anchor_prefix[:5])
 print(f"Found {len(anchor_prefix)} anchor images.")
 
 # Filter out the anchor images from the manual test set
-filtered_anchor_prefix = [prefix for prefix in anchor_prefix if prefix not in manual_prefix]
+if IMAGE_TYPE == "v3_body_distortion_arm":
+    filtered_anchor_prefix = [prefix for prefix in anchor_prefix if prefix.split("_")[0] not in manual_prefix]
+else:
+    filtered_anchor_prefix = [prefix for prefix in anchor_prefix if prefix not in manual_prefix]
 print(f"Filtered {len(anchor_prefix) - len(filtered_anchor_prefix)} anchor images.")
 
 # Sample 5k for train, 2k for val, 2k for test
@@ -113,7 +117,7 @@ def create_split(prefix_list, path_type, prefix_d):
     # The images for anchor/pos/neg have exactly the same name (so no need of prefix), just that they're in different folders
     if IMAGE_TYPE == "v3_flipping" and path_type == "manual_test":
         flipping_output = []
-        flipping_base_path = "finetuning/data/v3_flipping/manual_test"
+        flipping_base_path = "/share/portal/aw588/finetuning/data/v3_flipping/manual_test"
         # TODO: to normalize for easier parsing
         for image_name in [f for f in os.listdir(op.join(flipping_base_path, "anchor")) if f.endswith(".png")]:
             image_basename = image_name.split("0_pose_")[1]

@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 from loguru import logger
 
-IMAGE_TYPES = ["v3_flipping", "v3_seq", "v3_random_joints"]
+IMAGE_TYPES = ["v3_flipping", "v3_seq", "v3_random_joints", "v3_body_distortion_arm"]
 SPLIT_TYPES = ["train", "val", "test", "manual_test"]
 
 BASE_PATH = "/share/portal/aw588/finetuning/data"

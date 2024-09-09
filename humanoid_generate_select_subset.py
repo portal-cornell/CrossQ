@@ -13,10 +13,36 @@ def select_random_debug_samples(source_folder, dest_folder, num_samples=200):
 
     print(f"Copied {len(selected_files)} files to {dest_folder}")
 
+def select_random_debug_samples_for_arm_distortion(source_folder, dest_folder, num_samples=200):
+    os.makedirs(dest_folder, exist_ok=True)
+
+    all_files = [f for f in os.listdir(source_folder) if f.endswith('.png')]
+    get_anchor_id = lambda name: name.split("sample_")[1].split("_")[0]
+    anchor_files = list(set([get_anchor_id(name) for name in all_files]))
+
+    all_files_list = [[f"sample_{anchor_id}_{i}.png" for i in range(3)] for anchor_id in anchor_files]
+
+    selected_files = random.sample(all_files_list, min(num_samples, len(all_files_list)))
+
+    print(selected_files)
+    input("stop")
+
+    # flatten selected_files
+    selected_files = [file for sublist in selected_files for file in sublist]
+
+    print(selected_files)
+    input("stop")
+
+
+    for file in selected_files:
+        shutil.copy(os.path.join(source_folder, file), os.path.join(dest_folder, file))
+
+    print(f"Copied {len(selected_files)} files to {dest_folder}")
+
 
 if __name__ == "__main__":
 
-    IMAGE_TYPE = "v3_random_joints"
+    IMAGE_TYPE = "v3_body_distortion_arm"
 
     if IMAGE_TYPE == "v3_seq":
         OUTPUT_ROOT = "finetuning/data/"
@@ -33,3 +59,8 @@ if __name__ == "__main__":
         OUTPUT_ROOT = "finetuning/data/"
         FOLDER = f"{OUTPUT_ROOT}/v3_random_joints"
         select_random_debug_samples(f"{FOLDER}/debug", f"{FOLDER}/debug_75", num_samples=75)
+
+    elif IMAGE_TYPE == "v3_body_distortion_arm":
+        OUTPUT_ROOT = "/share/portal/aw588/finetuning/data"
+        FOLDER = f"{OUTPUT_ROOT}/v3_body_distortion_arm"
+        select_random_debug_samples_for_arm_distortion(f"{FOLDER}/debug", f"{FOLDER}/debug_50", num_samples=50)
