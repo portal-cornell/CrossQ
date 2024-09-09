@@ -15,7 +15,7 @@ from utils_data_gen.utils_humanoid_generate import set_seed
 set_seed(1231)
 
 
-IMAGE_TYPE = "v3_random_joints" # v3_flipping, v3_seq, v3_random_joints
+IMAGE_TYPE = "v3_random_joints" # v3_flipping, v3_seq, v3_random_joints, v3_body_distortion_arm
 
 INPUT_PATH = f"finetuning/data/{IMAGE_TYPE}"
 ANCHOR_PATH = f"finetuning/data/{IMAGE_TYPE}/anchor"
@@ -43,6 +43,17 @@ elif IMAGE_TYPE == "v3_seq":
         name.split("_eval.png")[0]: op.join(ANCHOR_PATH, [f for f in os.listdir(ANCHOR_PATH) if f.startswith(name.split("_eval.png")[0]) and f.endswith(".png")][0])
         for name in manual_test_images
     }
+elif IMAGE_TYPE == "v3_body_distortion_arm":
+    get_anchor_id = lambda name: name.split("sample_")[1].split(".png")[0]
+    manual_prefix = list(set([get_anchor_id(name) for name in manual_test_images]))
+    print(manual_prefix)
+    input("stop")
+    manual_prefix_to_data = {
+        get_anchor_id(name): op.join(ANCHOR_PATH, [f for f in os.listdir(ANCHOR_PATH) if f.startswith(get_anchor_id(name)) and f.endswith(".png")][0])
+        for name in manual_test_images
+    }
+    print(manual_prefix_to_data)
+    input("stop")
 else:
     manual_prefix = [name.split("samples_")[1].split(".png")[0] for name in manual_test_images]
     manual_prefix_to_data = {
@@ -58,6 +69,8 @@ anchor_prefix_to_data = {
     name.split("_anchor")[0]: op.join(ANCHOR_PATH, name)
     for name in anchor_images
 }
+print("first 5 anchor images", anchor_prefix[:5])
+
 print(f"Found {len(anchor_prefix)} anchor images.")
 
 # Filter out the anchor images from the manual test set
@@ -78,10 +91,9 @@ def create_split(prefix_list, path_type, prefix_d):
         if IMAGE_TYPE == "v3_seq":
             pos_path = op.join(POS_PATH, [f for f in os.listdir(POS_PATH) if f.startswith(prefix) and f.endswith(".png")][0])
             neg_path = op.join(NEG_PATH, [f for f in os.listdir(NEG_PATH) if f.startswith(prefix) and f.endswith(".png")][0])
-        elif IMAGE_TYPE in ["v3_flipping", "v3_random_joints"]:
+        elif IMAGE_TYPE in ["v3_flipping", "v3_random_joints", "v3_body_distortion_arm"]:
             pos_path = op.join(POS_PATH, [f for f in os.listdir(POS_PATH) if f.startswith(prefix.split("_pose.png")[0]) and f.endswith(".png")][0])
             neg_path = op.join(NEG_PATH, [f for f in os.listdir(NEG_PATH) if f.startswith(prefix.split("_pose.png")[0]) and f.endswith(".png")][0])
-
         if op.exists(anchor_path) and op.exists(pos_path) and op.exists(neg_path):
             output.append({
                 "anchor": anchor_path,

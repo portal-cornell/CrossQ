@@ -6,9 +6,10 @@ from loguru import logger
 IMAGE_TYPES = ["v3_flipping", "v3_seq", "v3_random_joints"]
 SPLIT_TYPES = ["train", "val", "test", "manual_test"]
 
-BASE_PATH = "finetuning/data"
-OUTPUT_PATH = Path(BASE_PATH) / "combined_splits"
-OUTPUT_PATH.mkdir(exist_ok=True)
+BASE_PATH = "/share/portal/aw588/finetuning/data"
+# OUTPUT_PATH = Path(BASE_PATH) / "combined_splits"
+# OUTPUT_PATH.mkdir(exist_ok=True)
+OUTPUT_PATH = Path(BASE_PATH)
 
 def load_json(file_path):
     with open(file_path, 'r') as f:

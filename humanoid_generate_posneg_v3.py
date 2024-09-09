@@ -30,6 +30,8 @@ from utils_data_gen.utils_humanoid_generate import *
 
 import matplotlib.pyplot as plt
 
+from tqdm import tqdm
+
 # Set up
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 # Get egl (mujoco) rendering to work on cluster
@@ -39,13 +41,7 @@ os.environ["MUJOCO_GL"] = "egl"
 os.environ["PYOPENGL_PLATFORM"] = "egl"
 os.environ["EGL_PLATFORM"] = "device"
 
-OUTPUT_ROOT = "finetuning/data/"
-
-os.makedirs(FOLDER, exist_ok=True)
-os.makedirs(f"{FOLDER}/anchor", exist_ok=True)
-os.makedirs(f"{FOLDER}/pos", exist_ok=True)
-os.makedirs(f"{FOLDER}/neg", exist_ok=True)
-os.makedirs(f"{FOLDER}/debug", exist_ok=True)
+OUTPUT_ROOT = "/share/portal/aw588/finetuning/data"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-p", "--pose_name",   type=str, help="Name of the demo to generate data for (correspond to create_demo/pose_config.py)")
@@ -109,10 +105,11 @@ def save_geom_pos(geom_pos, path):
     with open(path, "wb") as fout:
         np.save(fout, geom_pos)
 
-def log_data(curr_log, qpos, npy_path, image_path):
+def log_data(curr_log, qpos, joint_npy_path, geom_xpos_npy_path, image_path):
     for idx in range(2, len(qpos)):
         curr_log[f"qpos_{idx}"] = qpos[idx]
-    curr_log["npy_path"] = npy_path
+    curr_log["joint_npy_path"] = joint_npy_path
+    curr_log["geom_xpos_npy_path"] = geom_xpos_npy_path
     curr_log["image_path"] = image_path
     return curr_log
 
@@ -213,7 +210,7 @@ def generate_negative_sample(args, env, iteration, neg_i, joint_config, init_qpo
 
 
 # Sample k random poses
-for iteration in range(args.k):
+for iteration in tqdm(range(args.k)):
     # + 1 because n_skip_viz indicates the number of iterations we want to skip
     if args.n_skip_viz > 0 and iteration % (args.n_skip_viz+1) != 0:
         skip_viz = True

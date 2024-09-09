@@ -35,7 +35,7 @@ import gymnasium as gym
 from loguru import logger
 
 import utils
-import multiprocess
+import _multiprocess
 from envs.base import get_make_env
 from sbx.vlm_reward.reward_main import load_reward_model, dist_worker_compute_reward
 from callbacks import VideoRecorderCallback, WandbCallback
@@ -359,7 +359,7 @@ if __name__ == "__main__":
         if use_vlm_for_reward:
             logger.info("Running VLM-rewarded RL. Spawning workers.")
             args_with_multiprocessing = ("nccl", run_name, args)
-            multiprocess.spawn(
+            _multiprocess.spawn(
                 fn=init_process,
                 args=args_with_multiprocessing,
                 nprocs=args.n_workers,

@@ -104,8 +104,6 @@ def generate_body_distortion_arm_config():
     # Land the entire torso on the floor
     pose_config[2] = 1.3
 
-    logger.debug(f"Selected joints: {selected_joints}")
-    logger.debug(f"Pose config: {pose_config}")
 
     return selected_joints, pose_config
 
@@ -126,12 +124,11 @@ def mild_body_distortion(init_qpos):
     # Randomly select the joint indices to change
     selected_joints = random.sample(body_joints, num_joints_to_change)
 
-    logger.debug(f"Selected joints: {selected_joints}")
 
     # Changing 9 (x-angle of the abdomen (in pelvis)) is tricky because to adjust it, we need to change 4, which also affects the arm position
     # For now, we don't handle arm position. We just adjust the legs
-    joint_7_divisor = 4
-    joint_8_divisor = 4
+    joint_7_divisor = 8
+    joint_8_divisor = 8
     joint_9_divisor = 10
 
     if 9 in selected_joints:
@@ -148,7 +145,6 @@ def mild_body_distortion(init_qpos):
     #  the maximum range should be between -pi/3 and pi/3
     if 7 in selected_joints:
         new_qpos[7] = np.random.uniform(-np.pi/joint_7_divisor, np.pi/joint_7_divisor)
-        logger.debug(f"New qpos[7]: {new_qpos[7]}")
 
     # If we are changing 8 (y-angle of the abdomen (in lower_waist))
     #   the maximum range should be between -pi/4 and pi/4
@@ -159,9 +155,6 @@ def mild_body_distortion(init_qpos):
         # Bring the legs back close to the original position
         new_qpos[12] = - new_qpos[8] + (-1)**np.random.randint(0, 2) * np.pi/joint_8_divisor/3
         new_qpos[16] = - new_qpos[8] + (-1)**np.random.randint(0, 2) * np.pi/joint_8_divisor/3
-        logger.debug(f"New qpos[8]: {new_qpos[8]}")
-        logger.debug(f"New qpos[12]: {new_qpos[12]}")
-        logger.debug(f"New qpos[16]: {new_qpos[16]}")
 
     # Hard code arm related joints
     arm_joints = [18, 19, 20, 21, 22, 23]
