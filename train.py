@@ -17,7 +17,7 @@ import torch.distributed as dist
 
 from stable_baselines3.common.callbacks import CallbackList
 
-from sb3_sac import SAC, VLM_SAC
+from sb3_sac import SAC, VLM_SAC, JOINT_VLM_SAC
 from stable_baselines3.sac.policies import MultiInputPolicy
 
 from sbx.common.make_vec_env import make_vec_env
@@ -50,8 +50,10 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
 
     # Initialize the environment
     use_vlm_for_reward = utils.use_vlm_for_reward(cfg)
+    use_joint_vlm_for_reward = utils.use_joint_vlm_for_reward(cfg)
 
     logger.info(f"using_vlm_for_reward={use_vlm_for_reward}")
+    logger.info(f"using vlm to predict joint pos: {use_joint_vlm_for_reward}")
 
     make_env_kwargs = utils.get_make_env_kwargs(cfg)
 
@@ -71,7 +73,14 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
 
     assert cfg.rl_algo.name == "sb3_sac", "Only StableBaseline3 SAC is supported for now"
     # Train a model from scatch
-    sac_class = VLM_SAC if use_vlm_for_reward else SAC
+
+    if use_joint_vlm_for_reward:
+        sac_class = JOINT_VLM_SAC
+    elif use_vlm_for_reward:
+        sac_class = VLM_SAC
+    else:
+        sac_class = SAC
+
     model = sac_class(
         MultiInputPolicy if isinstance(training_env.observation_space, gym.spaces.Dict) else "MlpPolicy",
         training_env,
