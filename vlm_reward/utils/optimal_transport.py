@@ -119,10 +119,29 @@ def euclidean_distance_advanced(x, y):
     x: (x_batch_size, ...)
     y: (y_batch_size, ...)
     """
+    # print(f"x: {x.shape}, y: {y.shape}")
     # To allow x and y to have different batch sizes, we will expand the dimensions of x and y
     #   to allow for broadcasting
     x_exp = np.expand_dims(x, axis=1)  # (x_batch_size, 1, ...)
     y_exp = np.expand_dims(y, axis=0)  # (1, y_batch_size, ...)
+    
+    # Calculate the norm along all axes except the batch axis
+    norm_axis = tuple(range(2, len(x.shape)+1))
+
+    return np.linalg.norm(x_exp - y_exp, axis=norm_axis)
+
+def euclidean_distance_advanced_arms_only(x, y):
+    """
+    x: (x_batch_size, ...)
+    y: (y_batch_size, ...)
+    """
+    x_arms_only = x[:, 12:, :]
+    y_arms_only = y[:, 12:, :]
+    # print(f"x: {x.shape}, y: {y.shape}")
+    # To allow x and y to have different batch sizes, we will expand the dimensions of x and y
+    #   to allow for broadcasting
+    x_exp = np.expand_dims(x_arms_only, axis=1)  # (x_batch_size, 1, ...)
+    y_exp = np.expand_dims(y_arms_only, axis=0)  # (1, y_batch_size, ...)
     
     # Calculate the norm along all axes except the batch axis
     norm_axis = tuple(range(2, len(x.shape)+1))
@@ -136,9 +155,17 @@ def sigmoid_euclidean_distance(x, y):
     # Since euclidean is positive, we can scale the positive values of sigmoid to be between 0 and 1
     return 2 / (1 + np.exp(-euclidean_distance_advanced(x, y))) - 1
 
+def sigmoid_euclidean_distance_arms_only(x, y):
+    assert len(x.shape) == 3 and len(y.shape) == 3, f"x and y must have 3 dimensions, but got x={x.shape} and y={y.shape}"
+    
+    # Since euclidean is positive, we can scale the positive values of sigmoid to be between 0 and 1
+    return 2 / (1 + np.exp(-euclidean_distance_advanced(x[:, 12:, :], y[:, 12:, :]))) - 1
+
 COST_FN_DICT = {
     "cosine": cosine_distance,
     "euclidean": euclidean_distance_advanced,
+    "euclidean_arms_only": euclidean_distance_advanced_arms_only,
     "squared_euclidean": squared_euclidean_distance_advanced,
     "sigmoid_euclidean": sigmoid_euclidean_distance,
+    "sigmoid_euclidean_arms_only": sigmoid_euclidean_distance_arms_only,
 }

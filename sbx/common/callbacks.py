@@ -35,7 +35,7 @@ class JointBasedSeqRewardCallback(BaseCallback):
         super(JointBasedSeqRewardCallback, self).__init__(verbose)
 
         self._ref_seq = custom_ot.load_reference_seq(seq_name, use_geom_xpos=use_geom_xpos)
-        logger.info(f"[JointBasedSeqRewardCallback] Loaded reference sequence. seq_name={seq_name}, use_geom_xpos={use_geom_xpos}")
+        logger.info(f"[JointBasedSeqRewardCallback] Loaded reference sequence. seq_name={seq_name}, use_geom_xpos={use_geom_xpos}, self._ref_seq.shape={self._ref_seq.shape}")
 
         self._scale = matching_fn_cfg['scale']
         self._use_geom_xpos = use_geom_xpos
@@ -74,6 +74,8 @@ class JointBasedSeqRewardCallback(BaseCallback):
         #   For OT-based reward, train_freq = episode_length
         if self._use_geom_xpos:
             obs_to_process = np.array(self.model.replay_buffer.geom_xpos)
+            # Normalize along the center of mass (index 1)
+            obs_to_process = obs_to_process - obs_to_process[:, :, 1:2, :]
         else:
             if replay_buffer_pos - env_episode_timesteps >= 0:
                 # logger.debug(f"not circular, check replay buffer: {self.model.replay_buffer.observations[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :].shape}")
@@ -89,10 +91,11 @@ class JointBasedSeqRewardCallback(BaseCallback):
         for env_i in range(self.model.env.num_envs):
             # TODO: A hard-coded value (22 is matching qpos of the environment)
             if self._use_geom_xpos:
+                # Don't need to do anything here, geom_xpos is getting normalized when we get it from the replay buffer
                 obs = obs_to_process[:, env_i]
             else:
                 obs = obs_to_process[:, env_i, :22]  # size: (train_freq, 22)
-
+            
             matching_reward, _ = self._matching_fn(obs, self._ref_seq)  # size: (train_freq,)
             # logger.debug(f"matching_reward={matching_reward.shape}")
             matching_reward_list.append(matching_reward)
@@ -429,6 +432,7 @@ class VideoRecorderCallback(BaseCallback):
                 rewards.append(_locals["rewards"])
 
                 geom_xpos = _locals.get('info', {})["geom_xpos"]
+
                 # Normalize the joint states based on the torso (index 1)
                 geom_xpos = geom_xpos - geom_xpos[1]
                 geom_xposes.append(geom_xpos)
@@ -451,6 +455,7 @@ class VideoRecorderCallback(BaseCallback):
 
             # Calculate the goal matching reward
             if self._use_geom_xpos:
+                # Don't need to do anything here, geom_xpos is getting normalized in the grab_screens function
                 goal_matching_reward = self._gt_goal_matching_fn(np.array(geom_xposes))
             else:
                 goal_matching_reward = self._gt_goal_matching_fn(np.array(states)[:, :22])
@@ -467,6 +472,7 @@ class VideoRecorderCallback(BaseCallback):
             # TODO: We can potentially also do VLM reward calculation
             if self._calc_matching_reward:
                 if self._use_geom_xpos:
+                    # Don't need to do anything here, geom_xpos is getting normalized in the grab_screens function
                     matching_reward, _ = self._matching_fn(np.array(geom_xposes), self._ref_seq)
                 else:
                     matching_reward, _ = self._matching_fn(np.array(states)[:, :22], self._ref_seq)

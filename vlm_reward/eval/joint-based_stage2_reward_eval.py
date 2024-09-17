@@ -24,6 +24,7 @@ def eval_one_traj(
     reward_fn_type: str,
     reward_fn: callable,
     eval_result_path: str,
+    use_geom_xpos: bool = False,
 ):
     """
 
@@ -36,7 +37,9 @@ def eval_one_traj(
     os.symlink(os.path.abspath(gif_path), os.path.join(eval_result_path, "rollout.gif"))
 
     # Load the saved .np trajectory states file
-    traj = np.load(traj_path)[:, :22]
+    traj = np.load(traj_path)
+    if not use_geom_xpos:
+        traj = traj[:, :22]
       
     # Load the path to the ground truth reward
     gt_reward = np.load(gt_reward_path)
@@ -113,7 +116,7 @@ def eval_from_config(cfg: DictConfig):
 
     # Filter the gif_files based on cfg.skip_gifs (how many gifs to skip)
     gif_files = [all_gif_files[i] for i in range(0, len(all_gif_files), cfg.skip_gifs)]
-    gif_files += [all_gif_files[72]]
+    # gif_files += [all_gif_files[72]]g
 
     data_save_dir = HydraConfig.get().runtime.output_dir
 
@@ -121,6 +124,7 @@ def eval_from_config(cfg: DictConfig):
         base_name = str(f).replace(".gif", "")
 
         if cfg.use_geom_xpos:
+            # This geom_xpos_states.npy has already been normalized
             states_npy_fp = os.path.join(cfg.joint_eval_data.sequence_and_reward_dir, base_name + "_geom_xpos_states.npy")
         else:
             states_npy_fp = os.path.join(cfg.joint_eval_data.sequence_and_reward_dir, base_name + "_states.npy")
@@ -136,6 +140,7 @@ def eval_from_config(cfg: DictConfig):
             reward_fn_type=cfg.reward_model.name,
             reward_fn=reward_fn,
             eval_result_path=os.path.join(data_save_dir, f),
+            use_geom_xpos=cfg.use_geom_xpos,
         )
 
 

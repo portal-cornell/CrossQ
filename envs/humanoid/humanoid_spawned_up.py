@@ -515,6 +515,7 @@ def reward_goal_only_euclidean_geom_xpos(data, **kwargs):
                                                             **kwargs)
 
     # Calculate the reward based on the euclidean distance between the current joint states and the goal joint states
+    #   Assume ref_joint_states are already normalized when they are loaded
     assert "ref_joint_states" in kwargs, "ref_joint_states must be passed in as part of the kwargs"
     ref_joint_states = kwargs.get('ref_joint_states', None)
 
@@ -705,6 +706,7 @@ def reward_only_basic_r_geom_xpos(data, **kwargs):
 
     # Still calculating the pose matching reward (to individual poses) to show in the terms_to_plot
     assert "ref_joint_states" in kwargs, "ref_joint_states must be passed in as part of the kwargs"
+    # Assume ref_joint_states are already normalized when they are loaded
     ref_joint_states = kwargs.get('ref_joint_states', None)
 
     num_ref_joint_states = ref_joint_states.shape[0]
@@ -754,6 +756,7 @@ REWARD_FN_MAPPING = dict(
 
         left_arm_out_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
         left_arm_out_basic_r = reward_only_basic_r,
+        left_arm_out_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
 
         right_arm_out_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
         right_arm_out_basic_r = reward_only_basic_r,
