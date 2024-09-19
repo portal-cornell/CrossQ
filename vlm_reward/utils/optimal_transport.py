@@ -77,12 +77,16 @@ def compute_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1, modifi
     ref_weight = np.ones(ref.shape[0]) / ref.shape[0]
     T = ot.sinkhorn(obs_weight, ref_weight, cost_matrix, reg=0.01, log=False)  # size: (train_freq, ref_seq_len)
 
+    # Normalize the path so that each row sums to 1
+    normalized_T = T / np.expand_dims(np.sum(T, axis=1), 1)
+
     # Calculate the OT cost for each timestep
     #   sum by row of (cost matrix * OT plan)
-    ot_cost = np.sum(cost_matrix * T, axis=1)  # size: (train_freq,)
+    ot_cost = np.sum(cost_matrix * normalized_T, axis=1)  # size: (train_freq,)
 
     info = dict(
         assignment=T,
+        original_assignment=T,
         cost_matrix=cost_matrix,
         transported_cost=cost_matrix * T,
     )
@@ -161,6 +165,48 @@ def sigmoid_euclidean_distance_arms_only(x, y):
     # Since euclidean is positive, we can scale the positive values of sigmoid to be between 0 and 1
     return 2 / (1 + np.exp(-euclidean_distance_advanced(x[:, 12:, :], y[:, 12:, :]))) - 1
 
+def edit_distance(x, y):
+    """
+    x: (x_batch_size, A, B)
+    y: (y_batch_size, A, B)
+
+    Given two binary matrix M_1 (size (A, B)) and M_2 (size (A, B)), the edit distance is the minimum number of operations to transform M_1 to M_2
+        We can calculate it by np.sum(np.abs(M_1 - M_2))
+
+    Returns:
+        edit_distance: (x_batch_size, y_batch_size)
+    """
+    # Expand the dimensions of a and b to make them broadcastable
+    x_expanded = x[:, np.newaxis, :, :]  # Shape becomes (T, 1, 2, 2)
+    y_expanded = y[np.newaxis, :, :, :]  # Shape becomes (1, T', 2, 2)
+    
+    return np.sum(np.abs(x_expanded - y_expanded), axis=(2, 3))
+
+def nav_manhantan_distance(x, y):
+    """
+    x: (x_batch_size, A, B)
+    y: (y_batch_size, A, B)
+
+    Given two binary matrix M_1 (size (A, B)) and M_2 (size (A, B)). Each matrix has 1 to represent the agent, -1 to represent the obstacles, and 0 to represent the empty space. We want to calculate the Manhattan distance between the agent in M_1 and the agent in M_2.
+    """
+    x_batch_size = x.shape[0]
+    y_batch_size = y.shape[0]
+
+    cost_matrix = np.zeros((x_batch_size, y_batch_size))
+
+    for i in range(x_batch_size):
+        for j in range(y_batch_size):
+            matrix1 = x[i]
+            matrix2 = y[j]
+
+            # Get the indices of the position of 1 (the agent) in each matrix
+            pos1 = np.argwhere(matrix1 == 1)[0]  # Get the position of the '1' in matrix1
+            pos2 = np.argwhere(matrix2 == 1)[0]  # Get the position of the '1' in matrix2
+
+            cost_matrix[i, j] = np.abs(pos1[0] - pos2[0]) + np.abs(pos1[1] - pos2[1])
+
+    return cost_matrix
+
 COST_FN_DICT = {
     "cosine": cosine_distance,
     "euclidean": euclidean_distance_advanced,
@@ -168,4 +214,6 @@ COST_FN_DICT = {
     "squared_euclidean": squared_euclidean_distance_advanced,
     "sigmoid_euclidean": sigmoid_euclidean_distance,
     "sigmoid_euclidean_arms_only": sigmoid_euclidean_distance_arms_only,
+    "edit_distance": edit_distance,
+    "nav_manhattan": nav_manhantan_distance,
 }
