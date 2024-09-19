@@ -24,8 +24,18 @@ from clean_folder import clean_folder
 
 
 OUTPUT_ROOT = "finetuning/data/"
-FOLDER = f"{OUTPUT_ROOT}/v3_seq"
+FOLDER = f"{OUTPUT_ROOT}/v4_seq_frame20-30_40-60_all"
 folder_path = "/share/portal/hw575/CrossQ/train_logs"
+
+os.makedirs(FOLDER, exist_ok=True)
+os.makedirs(f"{FOLDER}/anchor", exist_ok=True)
+os.makedirs(f"{FOLDER}/pos", exist_ok=True)
+os.makedirs(f"{FOLDER}/neg", exist_ok=True)
+os.makedirs(f"{FOLDER}/debug", exist_ok=True)
+
+import shutil
+shutil.copy(f"/home/aw588/git_annshin/CrossQ/finetuning/data/v4_seq_frame20-25/list_folder_used_for_seq.txt", 
+            f"{FOLDER}/list_folder_used_for_seq.txt")
 
 
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
@@ -60,19 +70,22 @@ def sample_states(seq_data):
     anchor_idx = random.choice(list(available_indices))
     available_indices.remove(anchor_idx)
 
-    # At least 3 frames and at most 10 frames away from anchor
-    pos_index_range = set(range(max(0, anchor_idx - 10), anchor_idx - 2)) | set(range(anchor_idx + 3, min(len(seq_data), anchor_idx + 11)))
+    # At least 20 frames and at most 30 frames away from anchor
+    pos_index_range = set(range(max(0, anchor_idx - 30), max(0, anchor_idx - 20))) | \
+                      set(range(min(len(seq_data), anchor_idx + 20), min(len(seq_data), anchor_idx + 30)))
     pos_index_range &= available_indices
     pos_idx = random.choice(list(pos_index_range)) if pos_index_range else None
     if pos_idx is not None:
         available_indices.remove(pos_idx)
 
-    # At least 15 frames away from anchor
-    neg_index_range = set(range(0, max(0, anchor_idx - 15))) | set(range(min(len(seq_data), anchor_idx + 16), len(seq_data)))
+    # At least 40 frames away from anchor and at most 55 frames away from anchor
+    neg_index_range = set(range(max(0, anchor_idx - 55), max(0, anchor_idx - 40))) | \
+                      set(range(min(len(seq_data), anchor_idx + 40), min(len(seq_data), anchor_idx + 55)))
     neg_index_range &= available_indices
     neg_idx = random.choice(list(neg_index_range)) if neg_index_range else None
     
     return {"anchor": anchor_idx, "pos": pos_idx, "neg": neg_idx}
+
 
 def generate_sample(env, folder_uid, init_qpos, iteration, state_type, chosen_frame_idx, state_data):
     curr_log = {f"qpos_{i}": 0.0 for i in range(2, 24)}
@@ -147,7 +160,9 @@ def generate_seq_triplets(args, env, folder_path, folder_uid):
         neg_geom_xpos_normalized = geom_xpos_list[2] - geom_xpos_list[2][1]
 
         # Check if positive sample is closer to anchor than negative sample
-        if np.linalg.norm(anchor_geom_xpos_normalized - pos_geom_xpos_normalized) <= np.linalg.norm(anchor_geom_xpos_normalized - neg_geom_xpos_normalized):
+        # Also chec that the difference of norm between the positive's geom xpos and the anchor's geom xpos is greater than 0.1
+        if np.linalg.norm(anchor_geom_xpos_normalized - pos_geom_xpos_normalized) <= np.linalg.norm(anchor_geom_xpos_normalized - neg_geom_xpos_normalized) \
+            and np.linalg.norm(pos_geom_xpos_normalized - anchor_geom_xpos_normalized) > 0.1:
             output_logs.extend(log_data_list)
 
             if not skip_viz and (viz_until == -1 or idx <= viz_until):
@@ -164,7 +179,7 @@ def generate_seq_triplets(args, env, folder_path, folder_uid):
                 plt.close(fig)
         else:
             print(f"Warning: Negative sample is closer to the anchor than the positive sample\npos-distance: {np.linalg.norm(anchor_geom_xpos_normalized - pos_geom_xpos_normalized)}\nneg-distance: {np.linalg.norm(anchor_geom_xpos_normalized - neg_geom_xpos_normalized)}")
-            print(f"Skipping triplet for folder {folder_uid}, iteration {iteration}: positive sample farther than negative")
+            print(f"Skipping triplet for folder {folder_uid}, iteration {iteration}: positive sample farther than negative or not enough distance between positive and anchor")
 
         total_npy_processed += 1
 
@@ -175,7 +190,7 @@ def generate_seq_triplets(args, env, folder_path, folder_uid):
 
 if __name__ == "__main__":
     """
-    python humanoid_generate_seq_triplets.py --output_log   # Used # --viz_until 100 --skip-viz
+    # Used # --viz_until 100 --skip-viz
     python humanoid_generate_seq_triplets.py --debug --output_log --viz_until 10
     """
     parser = argparse.ArgumentParser()
@@ -190,69 +205,68 @@ if __name__ == "__main__":
     
     # # folder_list = get_folder_with_gifs()
 
-    # # # Attribute a UID to each folder and save the mapping
-    # # folder_uids = {folder: f"uid_{i:04d}" for i, folder in enumerate(folder_list)}
+    # # Attribute a UID to each folder and save the mapping
+    # folder_uids = {folder: f"uid_{i:04d}" for i, folder in enumerate(folder_list)}
 
-    # # # Save the folder-UID mapping to a file
-    # # with open(f"{FOLDER}/folder_uid_mapping.json", "w") as f:
-    # #     json.dump(folder_uids, f, indent=2)
+    # # Save the folder-UID mapping to a file
+    # with open(f"{FOLDER}/folder_uid_mapping.json", "w") as f:
+    #     json.dump(folder_uids, f, indent=2)
 
-    # # # Save the list of folders with their UIDs
-    # # with open(f"{FOLDER}/list_folder_used_for_seq.txt", "w") as f:
-    # #     for folder, uid in folder_uids.items():
-    # #         f.write(f"{uid}: {folder}\n")
+    # # Save the list of folders with their UIDs
+    # with open(f"{FOLDER}/list_folder_used_for_seq.txt", "w") as f:
+    #     for folder, uid in folder_uids.items():
+    #         f.write(f"{uid}: {folder}\n")
 
 
-    # # Load the list from file
-    # with open(f"{FOLDER}/list_folder_used_for_seq.txt", "r") as f:
-    #     folder_list_with_uids = f.readlines()
-    #     folder_list_with_uids = [line.strip().split(": ", 1) for line in folder_list_with_uids]
-    #     folder_uids = {uid: folder for uid, folder in folder_list_with_uids}
+    # Load the list from file
+    with open(f"{FOLDER}/list_folder_used_for_seq.txt", "r") as f:
+        folder_list_with_uids = f.readlines()
+        folder_list_with_uids = [line.strip().split(": ", 1) for line in folder_list_with_uids]
+        folder_uids = {uid: folder for uid, folder in folder_list_with_uids}
+
+    if args.debug:
+        folder_uids = {k: v for k, v in folder_uids.items() if k in ["uid_0000", "uid_0001", "uid_0002"]}
+    
+    make_env_kwargs = dict(
+        episode_length = 120,
+        reward_type = "original",
+    )
+
+    env = gymnasium.make(
+        'HumanoidSpawnedUpCustom',
+        render_mode="rgb_array",
+        **make_env_kwargs,
+    )
+
+    # Stat: total number of gifs: 8796
+    # total_num_gifs = 0
+    # for folder in folder_list:
+    #     # For every .npy in the folder (10k steps), we sample a triplet.
+    #     # Check how many gifs we have in total
+    #     gif_list = [f for f in os.listdir(folder) if f.endswith(".gif")]
+    #     total_num_gifs += len(gif_list)
+
+    # print(f"Total number of gifs: {total_num_gifs}")
+
+    total_npy_processed = 0
+    num_folders = len(folder_uids)
+    for idx, (uid, folder) in enumerate(folder_uids.items()):
+        print(f"Processing {idx}/{num_folders}: {folder}")
+        output_logs, npy_processed = generate_seq_triplets(args, env, folder, uid)
+        total_npy_processed += npy_processed
+    
+    print(f"Total number of npy processed: {total_npy_processed}")
+    env.close()
+
+    if args.output_log:
+        suffix = f"_npy{total_npy_processed}"
+        if args.debug:
+            suffix = "_debug"
+        with open(f"{FOLDER}/output_log_seq{suffix}.json", "w") as fout:
+            json.dump(output_logs, fout)
     
 
-    # if args.debug:
-    #     folder_uids = {k: v for k, v in folder_uids.items() if k == "uid_0000"}
-    
-    # make_env_kwargs = dict(
-    #     episode_length = 120,
-    #     reward_type = "original",
-    # )
-
-    # env = gymnasium.make(
-    #     'HumanoidSpawnedUpCustom',
-    #     render_mode="rgb_array",
-    #     **make_env_kwargs,
-    # )
-
-    # # Stat: total number of gifs: 8796
-    # # total_num_gifs = 0
-    # # for folder in folder_list:
-    # #     # For every .npy in the folder (10k steps), we sample a triplet.
-    # #     # Check how many gifs we have in total
-    # #     gif_list = [f for f in os.listdir(folder) if f.endswith(".gif")]
-    # #     total_num_gifs += len(gif_list)
-
-    # # print(f"Total number of gifs: {total_num_gifs}")
-
-    # total_npy_processed = 0
-    # num_folders = len(folder_uids)
-    # for idx, (uid, folder) in enumerate(folder_uids.items()):
-    #     print(f"Processing {idx}/{num_folders}: {folder}")
-    #     output_logs, npy_processed = generate_seq_triplets(args, env, folder, uid)
-    #     total_npy_processed += npy_processed
-    
-    # print(f"Total number of npy processed: {total_npy_processed}")
-    # env.close()
-
-    # if args.output_log:
-    #     suffix = f"_npy{total_npy_processed}"
-    #     if args.debug:
-    #         suffix = "_debug"
-    #     with open(f"{FOLDER}/output_log_seq{suffix}.json", "w") as fout:
-    #         json.dump(output_logs, fout)
-    
-
-    select_random_debug_samples(f"{FOLDER}/debug", f"{FOLDER}/debug_50", num_samples=50)
+    # select_random_debug_samples(f"{FOLDER}/debug", f"{FOLDER}/debug_50", num_samples=50)
 
 
     print("Done")
