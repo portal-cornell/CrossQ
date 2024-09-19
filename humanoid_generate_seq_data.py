@@ -24,7 +24,7 @@ from clean_folder import clean_folder
 
 
 OUTPUT_ROOT = "finetuning/data/"
-FOLDER = f"{OUTPUT_ROOT}/v4_seq_frames_every5_debug_sharded"
+FOLDER = f"{OUTPUT_ROOT}/v4_seq_frames_every5_sharded"
 folder_path = "/share/portal/hw575/CrossQ/train_logs"
 
 STEP_SIZE = 5

@@ -15,7 +15,10 @@ from utils_data_gen.utils_humanoid_generate import set_seed
 set_seed(1231)
 
 
-IMAGE_TYPE = "v3_random_joints" # v3_flipping, v3_seq, v3_random_joints
+# IMAGE_TYPE = "v3_random_joints" # v3_flipping, v3_seq, v3_random_joints
+# IMAGE_TYPE = "v4_seq_frame25-3070"
+# IMAGE_TYPE = "v4_seq_frame20-30_40-55"
+IMAGE_TYPE = "v4_seq_frame20-30_40-60_all"
 
 INPUT_PATH = f"finetuning/data/{IMAGE_TYPE}"
 ANCHOR_PATH = f"finetuning/data/{IMAGE_TYPE}/anchor"
@@ -29,27 +32,27 @@ else:
 
 OUTPUT_PATH = INPUT_PATH
 
-# Get the list of all images in the manual test set
-manual_test_images = [f for f in os.listdir(MANUAL_TEST_PATH) if f.endswith(".png")]
-if IMAGE_TYPE == "v3_flipping":
-    manual_prefix = [name.split("flipping_triplet_")[1].split(".png")[0] for name in manual_test_images]
-    manual_prefix_to_data = {
-        name.split("flipping_triplet_")[1].split(".png")[0]: op.join(ANCHOR_PATH, [f for f in os.listdir(ANCHOR_PATH) if f.startswith(name.split("flipping_triplet_")[1].split(".png")[0]) and f.endswith(".png")][0])
-        for name in manual_test_images
-    }
-elif IMAGE_TYPE == "v3_seq":
-    manual_prefix = [name.split("_eval.png")[0] for name in manual_test_images]
-    manual_prefix_to_data = {
-        name.split("_eval.png")[0]: op.join(ANCHOR_PATH, [f for f in os.listdir(ANCHOR_PATH) if f.startswith(name.split("_eval.png")[0]) and f.endswith(".png")][0])
-        for name in manual_test_images
-    }
-else:
-    manual_prefix = [name.split("samples_")[1].split(".png")[0] for name in manual_test_images]
-    manual_prefix_to_data = {
-        name.split("samples_")[1].split(".png")[0]: op.join(ANCHOR_PATH, [f for f in os.listdir(ANCHOR_PATH) if f.startswith(name.split("samples_")[1].split(".png")[0]) and f.endswith(".png")][0])
-        for name in manual_test_images
-    }
-print(f"Found {len(manual_prefix)} images in the manual test set.")
+# # Get the list of all images in the manual test set
+# manual_test_images = [f for f in os.listdir(MANUAL_TEST_PATH) if f.endswith(".png")]
+# if IMAGE_TYPE == "v3_flipping":
+#     manual_prefix = [name.split("flipping_triplet_")[1].split(".png")[0] for name in manual_test_images]
+#     manual_prefix_to_data = {
+#         name.split("flipping_triplet_")[1].split(".png")[0]: op.join(ANCHOR_PATH, [f for f in os.listdir(ANCHOR_PATH) if f.startswith(name.split("flipping_triplet_")[1].split(".png")[0]) and f.endswith(".png")][0])
+#         for name in manual_test_images
+#     }
+# elif "_seq" in IMAGE_TYPE:
+#     manual_prefix = [name.split("_eval.png")[0] for name in manual_test_images]
+#     manual_prefix_to_data = {
+#         name.split("_eval.png")[0]: op.join(ANCHOR_PATH, [f for f in os.listdir(ANCHOR_PATH) if f.startswith(name.split("_eval.png")[0]) and f.endswith(".png")][0])
+#         for name in manual_test_images
+#     }
+# else:
+#     manual_prefix = [name.split("samples_")[1].split(".png")[0] for name in manual_test_images]
+#     manual_prefix_to_data = {
+#         name.split("samples_")[1].split(".png")[0]: op.join(ANCHOR_PATH, [f for f in os.listdir(ANCHOR_PATH) if f.startswith(name.split("samples_")[1].split(".png")[0]) and f.endswith(".png")][0])
+#         for name in manual_test_images
+#     }
+# print(f"Found {len(manual_prefix)} images in the manual test set.")
 
 # Get the list of all anchor images
 anchor_images = [f for f in os.listdir(ANCHOR_PATH) if f.endswith(".png")]
@@ -60,22 +63,25 @@ anchor_prefix_to_data = {
 }
 print(f"Found {len(anchor_prefix)} anchor images.")
 
-# Filter out the anchor images from the manual test set
-filtered_anchor_prefix = [prefix for prefix in anchor_prefix if prefix not in manual_prefix]
-print(f"Filtered {len(anchor_prefix) - len(filtered_anchor_prefix)} anchor images.")
+# # Filter out the anchor images from the manual test set
+filtered_anchor_prefix = [prefix for prefix in anchor_prefix] # if prefix not in manual_prefix]
+# print(f"Filtered {len(anchor_prefix) - len(filtered_anchor_prefix)} anchor images.")
 
 # Sample 5k for train, 2k for val, 2k for test
 random.shuffle(filtered_anchor_prefix)
 
-train_prefix = filtered_anchor_prefix[:5000]
-val_prefix = filtered_anchor_prefix[5000:7000]
-test_prefix = filtered_anchor_prefix[7000:]
+total_num = len(filtered_anchor_prefix)
+
+train_prefix = filtered_anchor_prefix[:int(total_num * 0.9)]
+val_prefix = filtered_anchor_prefix[int(total_num * 0.9):int(total_num * 0.95)]
+test_prefix = filtered_anchor_prefix[int(total_num * 0.95):]
+# test_prefix = anchor_prefix
 
 def create_split(prefix_list, path_type, prefix_d):
     output = []
     for prefix in tqdm(prefix_list):
         anchor_path = prefix_d[prefix]
-        if IMAGE_TYPE == "v3_seq":
+        if "_seq" in IMAGE_TYPE:
             pos_path = op.join(POS_PATH, [f for f in os.listdir(POS_PATH) if f.startswith(prefix) and f.endswith(".png")][0])
             neg_path = op.join(NEG_PATH, [f for f in os.listdir(NEG_PATH) if f.startswith(prefix) and f.endswith(".png")][0])
         elif IMAGE_TYPE in ["v3_flipping", "v3_random_joints"]:
@@ -135,15 +141,15 @@ logger.info("Creating val split")
 val_split = create_split(val_prefix, "val", anchor_prefix_to_data)
 logger.info("Creating test split")
 test_split = create_split(test_prefix, "test", anchor_prefix_to_data)
-logger.info("Creating manual test split")
-manual_test_split = create_split(manual_prefix, "manual_test", manual_prefix_to_data)
+# logger.info("Creating manual test split")
+# manual_test_split = create_split(manual_prefix, "manual_test", manual_prefix_to_data)
 
 
 # Print split sizes
 logger.info(f"Train split size: {len(train_split)}")
 logger.info(f"Val split size: {len(val_split)}")
 logger.info(f"Test split size: {len(test_split)}")
-logger.info(f"Manual test split size: {len(manual_test_split)}")
+# logger.info(f"Manual test split size: {len(manual_test_split)}")
 
 # Save splits to JSON files
 def save_split(split_data, split_name):
@@ -159,6 +165,6 @@ def save_split(split_data, split_name):
 save_split(train_split, "train")
 save_split(val_split, "val")
 save_split(test_split, "test")
-save_split(manual_test_split, "manual_test")
+# save_split(manual_test_split, "manual_test")
 
 logger.info("Done")
