@@ -7,10 +7,13 @@ from gymnasium.envs.mujoco import MujocoEnv
 from gymnasium.envs.mujoco.humanoid_v4 import HumanoidEnv as GymHumanoidEnv
 from gymnasium.spaces import Box
 from numpy.typing import NDArray
+import copy
+
+from vlm_reward.utils.optimal_transport import load_reference_seq, euclidean_distance_advanced
 
 from envs.humanoid.reward_helpers import *
 
-from constants import DEMOS_DICT
+from constants import REWARDS_TO_ENTRY_IN_SEQ
 
 def mass_center(model, data):
     mass = np.expand_dims(model.body_mass, axis=1)
@@ -101,10 +104,14 @@ class HumanoidEnvCustom(GymHumanoidEnv):
 
         self._ref_joint_states = np.array([])
 
-        if reward_type in DEMOS_DICT:
-            self._load_reference_joint_states(DEMOS_DICT[reward_type])
+        if reward_type in REWARDS_TO_ENTRY_IN_SEQ:
+            # If it's using the relative joint states, size (num_of_ref_joint_states, 22)
+            # If it's using the geom_xpos, size (num_of_ref_joint_states, 18, 3)
+            use_geom_xpos = "geom_xpos" in reward_type
+            self._ref_joint_states = load_reference_seq(REWARDS_TO_ENTRY_IN_SEQ[reward_type], use_geom_xpos=use_geom_xpos)
+            logger.info(f"[Env] Loaded reference sequence for {reward_type}. seq_name={REWARDS_TO_ENTRY_IN_SEQ[reward_type]} and use_geom_xpos={use_geom_xpos}")
         else:
-            logger.info(f"Warning: {reward_type} is not in the DEMOS_DICT. No reference joint states loaded.")
+            logger.info(f"[Env] Warning: {reward_type} is not in the REWARDS_TO_ENTRY_IN_SEQ. No reference joint states loaded.")
 
         # Spawned the humanoid not so high
         self.init_qpos[2] = 1.3
@@ -124,6 +131,8 @@ class HumanoidEnvCustom(GymHumanoidEnv):
                                         healthy_reward=self.healthy_reward,
                                         forward_reward_weight=self._forward_reward_weight,
                                         ref_joint_states=self._ref_joint_states)
+        
+        info["geom_xpos"] = copy.deepcopy(self.data.geom_xpos)  # Allows us to access geom_xpos during evaluation
 
         self.num_steps += 1
         self.stage = int(info.get("stage", 0))
@@ -144,20 +153,6 @@ class HumanoidEnvCustom(GymHumanoidEnv):
     def get_obs(self):
         return self._get_obs()
 
-    def _load_reference_joint_states(self, joint_state_fp_list):
-        """
-        Parameters:
-            joint_state_fp_list (list): list of path to the saved reference joint state
-
-        Effects:
-            self._ref_joint_states gets updated
-        """
-        ref_joint_states_list = []
-        for fp in joint_state_fp_list:
-            ref_joint_states_list.append(np.load(fp))
-        self._ref_joint_states = np.stack(ref_joint_states_list)
-
-        # logger.debug(f"Updated self._ref_joint_states: {self._ref_joint_states.shape}\n{self._ref_joint_states}")
 
 def reward_original(data, **kwargs):
     model = kwargs.get("model", None)
@@ -191,99 +186,6 @@ def reward_original(data, **kwargs):
         }
     
     return rewards, info
-
-def reward_simple_remain_standing(data, **kwargs):
-    original_mujoco_reward, _ = reward_original(data, **kwargs)
-
-    ctrl_cost = kwargs.get("ctrl_cost", None)
-    ctrl_cost_w = 1
-
-    upward_cost = vert_dist_btw_torso_and_standing_height(data)
-    upward_cost_w = 1
-
-    rewards = - upward_cost - ctrl_cost
-
-    terms_to_plot = dict(
-            uph_c= - upward_cost,
-            ctrl_c= - ctrl_cost,
-            tor=str([f"{data.qpos.flat[:3][i]:.2f}" for i in range(3)]),
-            com=str([f"{data.xipos[1][i]:.2f}" for i in range(3)]),
-            r= f"{rewards:.2f}",
-            og_r= f"{original_mujoco_reward:.2f}",
-    )
-    
-    return rewards, terms_to_plot
-
-def reward_simple_remain_standing_exp_dist(data, **kwargs):
-    original_mujoco_reward, _ = reward_original(data, **kwargs)
-
-    ctrl_cost = kwargs.get("ctrl_cost", None)
-    ctrl_cost_w = 1
-
-    upward_reward = np.exp(-(data.qpos.flat[2] - 1.3)**2)
-    upward_reward_w = 1
-
-    rewards = upward_reward_w * upward_reward - ctrl_cost_w * ctrl_cost
-
-    terms_to_plot = dict(
-            uph_r= upward_reward,
-            ctrl_c= ctrl_cost,
-            tor=str([f"{data.qpos.flat[:3][i]:.2f}" for i in range(3)]),
-            com=str([f"{data.xipos[1][i]:.2f}" for i in range(3)]),
-            r= f"{rewards:.2f}",
-            og_r= f"{original_mujoco_reward:.2f}",
-    )
-    
-    return rewards, terms_to_plot
-
-def reward_remain_standing(data, **kwargs):
-    original_mujoco_reward, _ = reward_original(data, **kwargs)
-
-    ctrl_cost = kwargs.get("ctrl_cost", None)
-    ctrl_cost_w = 1
-
-    upward_cost = vert_dist_btw_torso_and_standing_height(data)
-    upward_cost_w = 1
-
-    # penalizes the horizontal distance (in the xy-plane) between
-    # the center-of-mass (CoM) and the mean of the feet positions.
-    torso_and_left_foot_dist_cost, torso_and_right_foot_dist_cost, com_and_left_foot_dist_cost, com_and_right_foot_dist_cost, info = hori_dist_btw_torso_and_com_circular_range_and_feet_no_smooth_abs(data)
-    torso_and_feet_dist_cost_w = 1
-    com_and_feet_dist_cost_w = 1
-
-    # provide an reward for distance between the legs and bottom
-    bottom_and_left_foot_dist_r, bottom_and_right_foot_dist_r, bottom_info = vert_dist_btw_bottom_and_feet(data)
-    bottom_and_feet_dist_r_w = 1
-    
-    # penalizes the horizontal distance between
-    # the torso and the CoM
-    torso_and_com_dist_cost = hori_dist_btw_com_and_torso_no_smooth_abs(data)
-    torso_and_com_dist_cost_w = 1
-
-    rewards = - upward_cost - ctrl_cost \
-                + bottom_and_feet_dist_r_w * (bottom_and_left_foot_dist_r + bottom_and_right_foot_dist_r) \
-                - torso_and_feet_dist_cost_w * (torso_and_left_foot_dist_cost + torso_and_right_foot_dist_cost) \
-                - com_and_feet_dist_cost_w * (com_and_left_foot_dist_cost + com_and_right_foot_dist_cost)
-
-    terms_to_plot = dict(
-            uph_c= - upward_cost,
-            ctrl_c= -ctrl_cost,
-            ctor=f"{torso_and_com_dist_cost:.2f}",
-            cLft=f"{torso_and_left_foot_dist_cost:.2f}, {com_and_left_foot_dist_cost:.2f}",
-            cRft=f"{torso_and_right_foot_dist_cost:.2f}, {com_and_right_foot_dist_cost:.2f}",
-            cBLft=f"{bottom_and_left_foot_dist_r:.2f}",
-            cBRft=f"{bottom_and_right_foot_dist_r:.2f}",
-            # vel=str([f"{data.qvel.flat[:3][i]:.2f}" for i in range(3)]),
-            Rft=info['right_foot_xy'],
-            Lft=info['left_foot_xy'],
-            btm=bottom_info['bottom_z'],
-            tor=str([f"{data.qpos.flat[:3][i]:.2f}" for i in range(3)]),
-            com=str([f"{data.xipos[1][i]:.2f}" for i in range(3)]),
-            r= f"{rewards:.2f}",
-            og_r= f"{original_mujoco_reward:.2f}",
-    )
-    
-    return rewards, terms_to_plot
 
 # reward_tassa_improved_feet_to_circle_bottom_up
 # torso_and_feet_dist_cost_w = 50, com_and_feet_dist_cost_w = 25
@@ -470,8 +372,43 @@ def reward_splitting(data, **kwargs):
 
     return reward, terms_to_plot
 
+# TODO: Remove (We stopped using qpos because agent cannot learn well with this)
+# def reward_goal_only_euclidean(data, **kwargs):
+#     """Only use the goal joint states to calculate the reward
+#     - The reward is based on the euclidean distance between the current joint states and the reference joint states
 
-def reward_goal_only_euclidean(data, **kwargs):
+#     Final goal: Both arms out
+
+#     This task is a goal-reaching task (i.e. doesn't matter how you get to the goal, as long as you get to the goal)
+#     """
+#     basic_standing_reward, terms_to_plot = basic_remain_standing_rewards(data, 
+#                                                             upward_reward_w=1, 
+#                                                             ctrl_cost_w=1, 
+#                                                             **kwargs)
+
+#     # Calculate the reward based on the euclidean distance between the current joint states and the goal joint states
+#     assert "ref_joint_states" in kwargs, "ref_joint_states must be passed in as part of the kwargs"
+#     ref_joint_states = kwargs.get('ref_joint_states', None)
+
+#     assert ref_joint_states.shape[0] == 1, "there should only be the goal image/joint position"
+
+#     # Mimicking how they get the observation
+#     # https://github.com/Farama-Foundation/Gymnasium/blob/b6046caeb30c9938789aeeec183147c7ffd1983b/gymnasium/envs/mujoco/humanoid_v4.py#L119
+#     curr_qpos = data.qpos.flat.copy()[2:]
+
+#     pose_matching_reward = np.exp(-np.linalg.norm(curr_qpos - ref_joint_states[0]))
+#     pose_matching_reward_w = 1
+    
+#     reward = basic_standing_reward + pose_matching_reward_w * pose_matching_reward
+
+#     terms_to_plot["pose_r"] = f"{pose_matching_reward:.2f}"
+#     terms_to_plot["r"] = f"{reward:.2f}"
+#     terms_to_plot["steps"] = kwargs.get("num_steps", 0)
+
+#     return reward, terms_to_plot
+
+
+def reward_goal_only_euclidean_geom_xpos(data, **kwargs):
     """Only use the goal joint states to calculate the reward
     - The reward is based on the euclidean distance between the current joint states and the reference joint states
 
@@ -485,6 +422,7 @@ def reward_goal_only_euclidean(data, **kwargs):
                                                             **kwargs)
 
     # Calculate the reward based on the euclidean distance between the current joint states and the goal joint states
+    #   Assume ref_joint_states are already normalized when they are loaded
     assert "ref_joint_states" in kwargs, "ref_joint_states must be passed in as part of the kwargs"
     ref_joint_states = kwargs.get('ref_joint_states', None)
 
@@ -492,9 +430,17 @@ def reward_goal_only_euclidean(data, **kwargs):
 
     # Mimicking how they get the observation
     # https://github.com/Farama-Foundation/Gymnasium/blob/b6046caeb30c9938789aeeec183147c7ffd1983b/gymnasium/envs/mujoco/humanoid_v4.py#L119
-    curr_qpos = data.qpos.flat.copy()[2:]
+    # Ignore the 1st joint state, which is the floor
+    curr_geom_xpos = copy.deepcopy(data.geom_xpos)  # (n, 3)
+    # Normalize the current pose by the torso's position (which is at index 1)
+    curr_geom_xpos = curr_geom_xpos - curr_geom_xpos[1]
 
-    pose_matching_reward = np.exp(-np.linalg.norm(curr_qpos - ref_joint_states[0]))
+    # Only the arms are relevant
+    curr_geom_xpos_relevant = curr_geom_xpos[12:, :]
+    ref_joint_states_relevant = ref_joint_states[0, 12:, :]
+
+    pose_matching_reward = np.exp(-np.linalg.norm(curr_geom_xpos_relevant - ref_joint_states_relevant))
+    # pose_matching_reward = np.exp(-np.linalg.norm(curr_geom_xpos - ref_joint_states[0]))
     pose_matching_reward_w = 1
     
     reward = basic_standing_reward + pose_matching_reward_w * pose_matching_reward
@@ -627,9 +573,52 @@ def reward_seq_avg(data, **kwargs):
     
     return reward, terms_to_plot
 
+# TODO: Remove (We stopped using qpos because agent cannot learn well with this)
+# def reward_only_basic_r(data, **kwargs):
+#     """Only provide basic reward to remain standing and control cost
+#     """
+#     basic_standing_reward, terms_to_plot = basic_remain_standing_rewards(data, 
+#                                                             upward_reward_w=1, 
+#                                                             ctrl_cost_w=1, 
+#                                                             **kwargs)
+    
+#     reward = basic_standing_reward
 
-def reward_only_basic_r(data, **kwargs):
+#     # Still calculating the pose matching reward (to individual poses) to show in the terms_to_plot
+#     assert "ref_joint_states" in kwargs, "ref_joint_states must be passed in as part of the kwargs"
+#     ref_joint_states = kwargs.get('ref_joint_states', None)
+
+#     num_ref_joint_states = ref_joint_states.shape[0]
+
+#     curr_qpos = data.qpos.flat.copy()[2:]
+
+#     unweighted_reward_for_each_ref = np.exp(-euclidean_distance_advanced(curr_qpos, ref_joint_states))
+
+#     terms_to_plot["pose_r_l"] = str([f"{unweighted_reward_for_each_ref[i]:.2f}" for i in range(num_ref_joint_states)])
+#     terms_to_plot["r"] = f"{reward:.2f}"
+#     terms_to_plot["steps"] = kwargs.get("num_steps", 0)
+    
+#     return reward, terms_to_plot
+
+
+def remain_standing_reward(data, **kwargs):
     """Only provide basic reward to remain standing and control cost
+    """
+    basic_standing_reward, terms_to_plot = basic_remain_standing_rewards(data, 
+                                                            upward_reward_w=1, 
+                                                            ctrl_cost_w=1, 
+                                                            **kwargs)
+    
+    reward = basic_standing_reward
+
+    return reward, terms_to_plot
+
+
+def reward_only_basic_r_geom_xpos(data, **kwargs):
+    """Only provide basic reward to remain standing and control cost
+
+    However, this also plot the pose matching reward based on the ground-truth reference joint state
+        Note: this pose matching reward is not used in the final reward calculation
     """
     basic_standing_reward, terms_to_plot = basic_remain_standing_rewards(data, 
                                                             upward_reward_w=1, 
@@ -640,15 +629,19 @@ def reward_only_basic_r(data, **kwargs):
 
     # Still calculating the pose matching reward (to individual poses) to show in the terms_to_plot
     assert "ref_joint_states" in kwargs, "ref_joint_states must be passed in as part of the kwargs"
+    # Assume ref_joint_states are already normalized when they are loaded
     ref_joint_states = kwargs.get('ref_joint_states', None)
 
     num_ref_joint_states = ref_joint_states.shape[0]
 
-    curr_qpos = data.qpos.flat.copy()[2:]
+    curr_geom_xpos = copy.deepcopy(data.geom_xpos)  # (n, 3)
+    # Normalize the current pose by the torso's position (which is at index 1)
+    curr_geom_xpos = curr_geom_xpos - curr_geom_xpos[1]
+    curr_geom_xpos = curr_geom_xpos.reshape(1, *curr_geom_xpos.shape)
 
-    unweighted_reward_for_each_ref = np.exp(-np.linalg.norm(curr_qpos - ref_joint_states, axis=1))
+    unweighted_reward_for_each_ref = np.exp(-euclidean_distance_advanced(curr_geom_xpos, ref_joint_states))
 
-    terms_to_plot["pose_r_l"] = str([f"{unweighted_reward_for_each_ref[i]:.2f}" for i in range(num_ref_joint_states)])
+    terms_to_plot["pose_r_l"] = str([f"{unweighted_reward_for_each_ref[0][i]:.2f}" for i in range(num_ref_joint_states)])
     terms_to_plot["r"] = f"{reward:.2f}"
     terms_to_plot["steps"] = kwargs.get("num_steps", 0)
     
@@ -657,36 +650,64 @@ def reward_only_basic_r(data, **kwargs):
 
 REWARD_FN_MAPPING = dict(
         original = reward_original,
-        simple_remain_standing = reward_simple_remain_standing,
-        simple_remain_standing_exp_dist = reward_simple_remain_standing_exp_dist,
-        remain_standing = reward_remain_standing,
+
+        remain_standing = remain_standing_reward,
 
         best_standing_up = best_standing_from_lying_down,
 
+        # Goal reaching tasks
         kneeling = reward_kneeling,
 
         splitting = reward_splitting,
 
-        arms_bracket_right_goal_only_euclidean = reward_goal_only_euclidean,
-        arms_bracket_right_basic_r = reward_only_basic_r,
+        arms_bracket_left_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
+        arms_bracket_left_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
 
-        arms_bracket_down_goal_only_euclidean = reward_goal_only_euclidean,
-        arms_bracket_down_basic_r = reward_only_basic_r,
+        arms_bracket_right_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
+        arms_bracket_right_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
 
-        left_arm_extend_wave_higher_goal_only_euclidean = reward_goal_only_euclidean,
-        left_arm_extend_wave_higher_basic_r = reward_only_basic_r,
+        arms_bracket_down_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
+        arms_bracket_down_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
 
-        both_arms_out_goal_only_euclidean = reward_goal_only_euclidean,
+        arms_bracket_up_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
+        arms_bracket_up_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
+
+        arms_crossed_high_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
+        arms_crossed_high_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
+
+        left_arm_out_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
+        left_arm_out_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
+
+        right_arm_out_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
+        right_arm_out_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
+
+        left_arm_extend_wave_higher_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
+        left_arm_extend_wave_higher_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
+
+        left_arm_extend_wave_lower_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
+        left_arm_extend_wave_lower_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
+
+        right_arm_extend_wave_higher_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
+        right_arm_extend_wave_higher_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
+
+        right_arm_extend_wave_lower_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
+        right_arm_extend_wave_lower_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
+
+        both_arms_out_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
         both_arms_out_seq_euclidean = reward_seq_euclidean,
-        both_arms_out_basic_r = reward_only_basic_r,
+        both_arms_out_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
 
-        both_arms_up_goal_only_euclidean = reward_goal_only_euclidean,
+        both_arms_up_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
         both_arms_up_seq_euclidean = reward_seq_euclidean,
-        both_arms_up_basic_r = reward_only_basic_r,
+        both_arms_up_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
 
+        default_but_arms_up_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
+        default_but_arms_up_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
+
+        # Sequence matching tasks
         arms_up_then_down_seq_euclidean = reward_seq_euclidean,
         arms_up_then_down_seq_stage_detector = reward_seq_stage_detector,
         arms_up_then_down_seq_avg = reward_seq_avg,
-        arms_up_then_down_basic_r = reward_only_basic_r,
+        arms_up_then_down_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
     )
     

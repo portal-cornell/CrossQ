@@ -286,8 +286,9 @@ class VideoRecorderCallback(BaseCallback):
             n_eval_episodes: Number of episodes to render
             deterministic: Whether to use deterministic or stochastic policy
             goal_seq_name: The name of the reference sequence to compare with (This defines the unifying metric that all approaches attempting to solve the same task gets compared against)
+                i.e. it defines "rollout/sum_total_reward_per_epsisode" in wandb
             seq_name: The name of the reference sequence to compare with
-                You only need to set this if you want to calculate the OT reward
+                You only need to set this if you want to calculate the OT/DTW reward
             matching_fn_cfg: The configuration for the matching function
         """
         super().__init__(verbose)
@@ -297,11 +298,13 @@ class VideoRecorderCallback(BaseCallback):
         self._deterministic = deterministic
         self._rollout_save_path = rollout_save_path  # Save the state of the environment
 
-        # TODO: Figure out how to calculate the joint matching reward for sequence following tasks
-        #   For now, we will just support calculating the ground-truth reward for matching the goal joint state
-        self._goal_ref_seq = custom_ot.load_reference_seq(goal_seq_name)
-        self.set_ground_truth_goal_matching_fn(goal_seq_name)
-
+        if goal_seq_name != "":
+            self._calc_gt_reward = True
+            self._goal_ref_seq = custom_ot.load_reference_seq(goal_seq_name)
+            self.set_ground_truth_goal_matching_fn(goal_seq_name)
+        else:
+            self._calc_gt_reward = False
+        
         if matching_fn_cfg != {}:
             self._ref_seq = custom_ot.load_reference_seq(seq_name)
             self._calc_matching_reward = True
@@ -385,16 +388,17 @@ class VideoRecorderCallback(BaseCallback):
             states = np.concatenate(states)
             rewards = np.concatenate(rewards)
 
-            # Calculate the goal matching reward
-            goal_matching_reward = self._gt_goal_matching_fn(np.array(states)[:, :22])
-            for i in range(len(infos)):
-                infos[i]["gt_joint_match_r"] = f"{goal_matching_reward[i]:.4f}"
+            # Calculate the goal matching reward (the unifying metric that all methods get compared against)
+            if self._calc_gt_reward:
+                goal_matching_reward = self._gt_goal_matching_fn(np.array(states)[:, :22])
+                for i in range(len(infos)):
+                    infos[i]["gt_joint_match_r"] = f"{goal_matching_reward[i]:.4f}"
 
-            with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_goal_matching_reward.npy"), "wb") as f:
-                np.save(f, np.array(goal_matching_reward))
-            self.logger.record("rollout/sum_total_reward_per_epsisode", 
-                                np.sum(goal_matching_reward), 
-                                exclude=("stdout", "log", "json", "csv"))
+                with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_goal_matching_reward.npy"), "wb") as f:
+                    np.save(f, np.array(goal_matching_reward))
+                self.logger.record("rollout/sum_total_reward_per_epsisode", 
+                                    np.sum(goal_matching_reward), 
+                                    exclude=("stdout", "log", "json", "csv"))
 
             # TODO: We can potentially also do VLM reward calculation
             if self._calc_matching_reward:

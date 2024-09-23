@@ -63,3 +63,4 @@ wandb/
 /inference_logs
 /vlm_reward/eval/joint_eval_logs
 /models
+/seq_matching_toy/toy_examples_logs
