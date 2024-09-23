@@ -22,7 +22,7 @@ PREDEFINED_MAPS = {
 class GridNavigationEnv(gym.Env):
     metadata = {"render_modes": ["rgb_array"]}
 
-    def __init__(self, map_config, ref_seq, render_mode=None, grid_size=(3, 3)):
+    def __init__(self, map_config, render_mode=None, grid_size=(3, 3)):
         self.grid_size = grid_size  # The size of the square grid
 
         # Observations is the agent's location in the grid
@@ -31,7 +31,6 @@ class GridNavigationEnv(gym.Env):
         # We have 5 actions, corresponding to "right", "up", "left", "down", "do nothing"
         self.action_space = spaces.Discrete(5)
 
-        self.ref_seq = ref_seq
         self.map_config = map_config
 
         """
@@ -82,7 +81,7 @@ class GridNavigationEnv(gym.Env):
 
     def _get_info(self):
         return {
-            "ref_seq": self.ref_seq
+            
         }
     
     def reset(self):

@@ -32,7 +32,7 @@ import multiprocess
 from envs.base import get_make_env
 from vlm_reward.reward_models.model_factory import load_reward_model
 from vlm_reward.reward_main import dist_worker_compute_reward
-from sbx.common.callbacks import VideoRecorderCallback, WandbCallback, JointBasedSeqRewardCallback
+from callbacks import VideoRecorderCallback, WandbCallback, JointBasedSeqRewardCallback
 from constants import REWARDS_TO_ENTRY_IN_SEQ
 
 def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] = None):
