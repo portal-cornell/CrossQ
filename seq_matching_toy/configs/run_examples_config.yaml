@@ -1,6 +1,6 @@
 example: criss_cross_0
 
-cost_fn: nav_manhattan
+cost_fn: nav_shortest_path
 
 seq_matching_fns:
   - name: optimal_transport

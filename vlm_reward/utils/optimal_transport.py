@@ -2,7 +2,7 @@ import numpy as np
 import ot
 from scipy.spatial.distance import cdist
 from constants import SEQ_DICT
-
+import heapq
 import matplotlib.pyplot as plt
 
 def load_reference_seq(seq_name: str, use_geom_xpos: bool) -> np.ndarray:
@@ -194,6 +194,8 @@ def nav_manhantan_distance(x, y):
     y: (y_batch_size, A, B)
 
     Given two binary matrix M_1 (size (A, B)) and M_2 (size (A, B)). Each matrix has 1 to represent the agent, -1 to represent the obstacles, and 0 to represent the empty space. We want to calculate the Manhattan distance between the agent in M_1 and the agent in M_2.
+
+    Warning: This function does not account for obstacles
     """
     x_batch_size = x.shape[0]
     y_batch_size = y.shape[0]
@@ -213,6 +215,89 @@ def nav_manhantan_distance(x, y):
 
     return cost_matrix
 
+
+def manhattan_heuristic(pos, goal):
+    """
+    Manhattan distance heuristic for A*.
+    
+    pos: (x, y) current position
+    goal: (x, y) goal position
+    """
+    return abs(pos[0] - goal[0]) + abs(pos[1] - goal[1])
+
+
+# Directions for moving up, down, left, right
+DIRECTIONS = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+
+def a_star_shortest_path(matrix, start, goal):
+    """
+    A* algorithm to find the shortest path from start to goal in a matrix avoiding obstacles.
+    
+    matrix: (A, B) binary matrix
+    start: (x, y) tuple representing the starting position of the agent
+    goal: (x, y) tuple representing the goal position of the agent
+    """
+    rows, cols = matrix.shape
+    open_list = []
+    heapq.heappush(open_list, (0, start))  # Priority queue (f_score, position)
+    g_score = {start: 0}  # Cost from start to current position
+    f_score = {start: manhattan_heuristic(start, goal)}  # Estimated cost from start to goal
+    
+    visited = set()
+
+    while open_list:
+        _, current = heapq.heappop(open_list)
+        
+        if current == goal:
+            return g_score[current]
+        
+        if current in visited:
+            continue
+        visited.add(current)
+        
+        for direction in DIRECTIONS:
+            new_row, new_col = current[0] + direction[0], current[1] + direction[1]
+            neighbor = (new_row, new_col)
+            
+            if 0 <= new_row < rows and 0 <= new_col < cols and matrix[new_row, new_col] != -1:  # Stay within bounds and avoid obstacles
+                tentative_g_score = g_score[current] + 1  # Distance between neighbors is always 1
+
+                if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
+                    g_score[neighbor] = tentative_g_score
+                    f_score[neighbor] = tentative_g_score + manhattan_heuristic(neighbor, goal)
+                    heapq.heappush(open_list, (f_score[neighbor], neighbor))
+
+    return float('inf')  # If there's no valid path to the goal
+
+def nav_shortest_path_distance(x, y):
+    """
+    x: (x_batch_size, A, B)
+    y: (y_batch_size, A, B)
+    
+    Given two binary matrices M_1 (size (A, B)) and M_2 (size (A, B)), 
+    with 1 as the agent, -1 as obstacles, and 0 as empty space, 
+    calculates the shortest path distance considering obstacles using A* algorithm.
+    """
+    x_batch_size = x.shape[0]
+    y_batch_size = y.shape[0]
+
+    cost_matrix = np.zeros((x_batch_size, y_batch_size))
+
+    for i in range(x_batch_size):
+        for j in range(y_batch_size):
+            matrix1 = x[i]
+            matrix2 = y[j]
+
+            # Get the positions of the agent (marked as 1)
+            pos1 = np.argwhere(matrix1 == 1)[0]
+            pos2 = np.argwhere(matrix2 == 1)[0]
+
+            # Find the shortest path between pos1 and pos2 in matrix1, considering obstacles
+            cost_matrix[i, j] = a_star_shortest_path(matrix1, list(pos1), list(pos2))
+
+    return cost_matrix
+
+
 COST_FN_DICT = {
     "cosine": cosine_distance,
     "euclidean": euclidean_distance_advanced,
@@ -222,4 +307,5 @@ COST_FN_DICT = {
     "sigmoid_euclidean_arms_only": sigmoid_euclidean_distance_arms_only,
     "edit_distance": edit_distance,
     "nav_manhattan": nav_manhantan_distance,
+    "nav_shortest_path": nav_shortest_path_distance,
 }
