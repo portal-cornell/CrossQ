@@ -1,1 +1,1 @@
-python -m train "reward_model=joint_pred_resnet" "compute.n_gpu_workers=1" "logging.wandb_mode=disabled" "env.reward_type=simple_remain_standing"
+python -m train "reward_model=joint_pred_resnet" "compute.n_gpu_workers=1" "logging.wandb_tags=['resnet', 'goal_reaching', 'geom_xpos']" "logging.wandb_mode=disabled" "env.reward_type=right_arm_out_basic_r_geom_xpos"

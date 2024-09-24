@@ -1,7 +1,7 @@
 name: joint_pred_resnet
 vlm_model: resnet50
 rank0_batch_size_pct: 1.0  # Determine how many percentage of the batch the main worker (rank = 0) need to process when doing reward calculation
-reward_batch_size: 16  # Batch size sent to the VLM reward model
+reward_batch_size: 8 # Batch size sent to the VLM reward model
 checkpoint: /share/portal/wph52/models/joint_pred/train_logs/default/2024-09-19-155952_model=resnet_linear_startpt=True_freezebackbone=False_xpos=True_lr=0.008nt=None/checkpoints/best_model_epoch_98.pth
 output_dim: 54 # 18 joints * 3 dimensions each for joint geom xpos pos data
 add_to_gt_rewards: True

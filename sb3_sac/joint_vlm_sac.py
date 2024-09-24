@@ -244,11 +244,11 @@ class JointVLMSAC(SAC):
         ref_joint_states = self._ref_joint_states # target joint states
         
         ### Prepare the frame to be processed
-        frames = torch.from_numpy(np.array(self.replay_buffer.render_arrays))
+        frames = torch.from_numpy(np.array(self.replay_buffer.render_arrays)).float().cuda(0 ) / 255.0
 
         print(f"Start calculating rewards: frames.shape={frames.shape}")
 
-        frames = rearrange(frames, "n_steps n_envs ... -> (n_steps n_envs) ...")
+        frames = rearrange(frames, "n_steps n_envs h w c -> (n_steps n_envs) c h w")
  
         rewards = self._compute_joint_rewards(
             model=self.reward_model,

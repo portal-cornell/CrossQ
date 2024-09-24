@@ -300,7 +300,7 @@ class VideoRecorderCallback(BaseCallback):
 
         if goal_seq_name != "":
             self._calc_gt_reward = True
-            self._goal_ref_seq = custom_ot.load_reference_seq(goal_seq_name)
+            self._goal_ref_seq = custom_ot.load_reference_seq(goal_seq_name, use_geom_xpos=True)
             self.set_ground_truth_goal_matching_fn(goal_seq_name)
         else:
             self._calc_gt_reward = False
