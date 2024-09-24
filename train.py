@@ -10,6 +10,7 @@ from omegaconf import DictConfig, OmegaConf
 import hydra
 from hydra.core.global_hydra import GlobalHydra
 
+import numpy as np
 
 import torch
 from torch import multiprocessing
@@ -74,12 +75,15 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
     assert cfg.rl_algo.name == "sb3_sac", "Only StableBaseline3 SAC is supported for now"
     # Train a model from scatch
 
+    ref_joint_states = None
     if use_joint_vlm_for_reward:
         sac_class = JOINT_VLM_SAC
+        ref_joint_states = torch.as_tensor(np.load(cfg.reward_model.target_joint_state))
     elif use_vlm_for_reward:
         sac_class = VLM_SAC
     else:
         sac_class = SAC
+    
 
     model = sac_class(
         MultiInputPolicy if isinstance(training_env.observation_space, gym.spaces.Dict) else "MlpPolicy",
@@ -109,6 +113,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         episode_length = cfg.env.episode_length,
         render_dim = cfg.env.render_dim,
         add_to_gt_rewards = cfg.reward_model.add_to_gt_rewards if use_vlm_for_reward else False,
+        ref_joint_states=ref_joint_states
     )
 
     # TODO: Not sure if .load() is better than .set_parameters()
@@ -172,7 +177,6 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
 
         logger.info("Done.")
         wandb_run.finish()
-
 
 def vlm_inference_worker(rank: int, cfg: DictConfig, stop_event: multiprocessing.Event):
     """

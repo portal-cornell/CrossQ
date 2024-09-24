@@ -1,6 +1,7 @@
 from stable_baselines3 import SAC
 import torch
 from collections import deque
+import copy
 
 from loguru import logger
 
@@ -31,7 +32,7 @@ from vlm_reward.vlm_buffer import VLMReplayBuffer
 from vlm_reward.reward_transforms import half_gaussian_filter_1d
 
 
-def load_joint_prediction_model(device, model_cfg):
+def load_joint_prediction_model(device, checkpoint, output_dim):
     """
     Load a resnet50 pretrained model. model_cfg should contain output_dim, checkpoint_path
 
@@ -45,9 +46,9 @@ def load_joint_prediction_model(device, model_cfg):
     model = models.resnet50(pretrained=False)
 
     # Replace the class prediction head with an embedding prediction head
-    model.fc = nn.Linear(model.fc.in_features, model_cfg.output_dim) 
+    model.fc = nn.Linear(model.fc.in_features, output_dim) 
 
-    state_dict = torch.load(model_cfg)
+    state_dict = torch.load(checkpoint)
     model.load_state_dict(state_dict)
 
     # from the resnet50 code, this is the image format expected
@@ -63,24 +64,7 @@ def load_joint_prediction_model(device, model_cfg):
 
     return model, transform
 
-def compute_rewards(model, joint_pos, frames, batch_size):  
-    """
-    Predicts the locations of joints, and then uses those locations to return a reward based on 
-    the distance from the joint positions in the target image
-    """
-    all_rews = []
-    batches = torch.split(frames, batch_size)
-    for batch in batches:
-        joint_pos_preds = model(batch)
-
-        # Use average euclidean distance between joints as reward
-        rews = nn.mse_loss(joint_pos, joint_pos_preds)
-        all_rews.append(rews)
-
-    all_rews = torch.cat(all_rews, dim=0)
-    return all_rews
-
-class JointVLMSac(SAC):
+class JointVLMSAC(SAC):
     def __init__(
         self,
         policy: Union[str, Type[SACPolicy]],
@@ -118,6 +102,7 @@ class JointVLMSac(SAC):
         episode_length: int = 120,
         render_dim: Tuple[int, int] = (480, 480),
         add_to_gt_rewards: bool = True,
+        ref_joint_states = None
     ):
         # TODO: Add a parameter to point to the dataset relevant to the task
         # train_freq[0] because we are assuming that the train_freq is a tuple
@@ -190,6 +175,7 @@ class JointVLMSac(SAC):
         self.filter_rewards = False # whether or not to gaussian filter the rewards after computing
 
         self._add_to_gt_rewards = add_to_gt_rewards
+        self._ref_joint_states = ref_joint_states
 
         if _init_setup_model:
             self._setup_model()
@@ -207,10 +193,13 @@ class JointVLMSac(SAC):
         else:
             rank0_worker_batch = self.reward_model_config["reward_batch_size"] // self.n_gpu_workers
 
-        reward_model, transform = load_joint_prediction_model(device='cuda:0', model_config_dict=self.reward_model_config)
+        reward_model, transform = load_joint_prediction_model(device='cuda:0', 
+                                    checkpoint=self.reward_model_config["checkpoint"],
+                                    output_dim=self.reward_model_config["output_dim"]
+                                    )
         
         self.reward_model = reward_model
-        self.image_transform = image_transform
+        self.image_transform = transform
 
         logger.debug(f"Finished loading up VLM reward model: {self.reward_model_config['vlm_model']}")
 
@@ -252,6 +241,8 @@ class JointVLMSac(SAC):
         total_episodes = self.get_episode_num() - self.previous_num_episodes
         env_episodes = total_episodes // self.env.num_envs
 
+        ref_joint_states = self._ref_joint_states # target joint states
+        
         ### Prepare the frame to be processed
         frames = torch.from_numpy(np.array(self.replay_buffer.render_arrays))
 
@@ -259,34 +250,19 @@ class JointVLMSac(SAC):
 
         frames = rearrange(frames, "n_steps n_envs ... -> (n_steps n_envs) ...")
  
-        ### Compute rewards
-        # TODO: also pass in joints here
-        rewards = compute_rewards(
+        rewards = self._compute_joint_rewards(
             model=self.reward_model,
-            rank0_batch_size_pct=self.reward_model_config["rank0_batch_size_pct"],
-            batch_size=self.reward_model_config["reward_batch_size"], 
+            transform=self.image_transform,
+            frames=frames,
+            ref_joint_states=ref_joint_states,
+            batch_size=self.reward_model_config["reward_batch_size"],
             )
-
-        # rewards = rearrange(
-        #     rewards,
-        #     "(n_steps n_envs) ... -> (n_envs n_steps) ...",
-        #     n_envs=self.env.num_envs,
-        # )
-
         # TODO: this assumes 1D (DreamSim). Potentially to adapt for other reward models (using above)
         rewards = rearrange(
             rewards,
             "(n_steps n_envs) -> n_steps n_envs",
             n_envs=self.env.num_envs,
         )
-
-        # TODO: Add _filter_rewards for models other than the perceptual ones
-        # # Filter the rewards
-        # if self._filter_rewards:
-        #     print("Filtering rewards")
-        #     rewards = half_gaussian_filter_1d(rewards, sigma=4, smooth_last_N=True) 
-            
-        # Clear the rendered images in the ReplayBuffer
         self.replay_buffer.clear_render_arrays()
         rewards_np = rewards.cpu().numpy()
 
@@ -343,7 +319,39 @@ class JointVLMSac(SAC):
 
         print(f"VLMRewardCallback took {time.time() - start_time} seconds")
 
-    
+    def _compute_joint_rewards(self, model, transform, frames, ref_joint_states, batch_size):
+        """Only use the goal joint xpos states to calculate the reward
+        - The reward is based on the euclidean distance between the current joint states and the reference joint states
+
+        Final goal: Both arms out
+
+        This task is a goal-reaching task (i.e. doesn't matter how you get to the goal, as long as you get to the goal)
+        """
+        batches = torch.split(frames, batch_size)
+        all_preds = []
+        for i, batch in enumerate(batches):
+            xpos_preds = model(transform(batch))
+            # TODO: figure out what data is, and how to replace upper body parts of it with joint_preds
+            all_preds.append(xpos_preds)
+
+        assert ref_joint_states.shape[0] == 1, "there should only be the goal image/joint position"
+
+        # Mimicking how they get the observation
+        # https://github.com/Farama-Foundation/Gymnasium/blob/b6046caeb30c9938789aeeec183147c7ffd1983b/gymnasium/envs/mujoco/humanoid_v4.py#L119
+        curr_geom_xpos = torch.cat(all_preds, dim=0)
+        # Normalize the current pose by the torso's position (which is at index 1)
+        curr_geom_xpos = curr_geom_xpos - curr_geom_xpos[1]
+
+        # Only the arms are relevant
+        curr_geom_xpos_relevant = curr_geom_xpos[12:, :]
+        ref_joint_states_relevant = ref_joint_states[0, 12:, :]
+
+        reward = np.exp(-np.linalg.norm(curr_geom_xpos_relevant - ref_joint_states_relevant))
+
+        terms_to_plot = {}
+        terms_to_plot["r"] = f"{reward:.2f}"
+        return reward, terms_to_plot
+
     def learn(self, *args, **kwargs):
         self.previous_num_timesteps = 0
         self.previous_num_episodes = 0

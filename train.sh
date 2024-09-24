@@ -1,0 +1,1 @@
+python -m train "reward_model=joint_pred_resnet" "compute.n_gpu_workers=1" "logging.wandb_mode=disabled" "env.reward_type=simple_remain_standing"
