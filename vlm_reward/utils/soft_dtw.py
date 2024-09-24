@@ -33,24 +33,25 @@ def compute_soft_dtw_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, gamma=1, 
         else:
             raise NotImplementedError(f"Unknown method: {modification_dict['method']}")
 
-    sdtw = SoftDTW(cost_matrix, gamma=gamma)
-    dist_sq = sdtw.compute()  # We don't actually use this
-    a = sdtw.grad()
+    if gamma != 10000:
+        sdtw = SoftDTW(cost_matrix, gamma=gamma)
+        dist_sq = sdtw.compute()  # We don't actually use this
+        a = sdtw.grad()
+    else:
+        # TODO: remove this
+        # Manually set the assignment matrix a to be evenly distributed across the reference sequence
+        a = np.zeros_like(cost_matrix)
 
-    # TODO: remove this
-    # Manually set the assignment matrix a to be evenly distributed across the reference sequence
-    # a = np.zeros_like(cost_matrix)
+        n_obs_per_ref = cost_matrix.shape[0] // cost_matrix.shape[1]
 
-    # n_obs_per_ref = cost_matrix.shape[0] // cost_matrix.shape[1]
-
-    # i = 0
-    # for j in range(cost_matrix.shape[1]):
-    #     if j == cost_matrix.shape[1] - 1:
-    #         a[i:, j] = 1
-    #     else:
-    #         a[i:i+n_obs_per_ref, j] = 1
-    #     i += n_obs_per_ref
-    # TODO: remove this
+        i = 0
+        for j in range(cost_matrix.shape[1]):
+            if j == cost_matrix.shape[1] - 1:
+                a[i:, j] = 1
+            else:
+                a[i:i+n_obs_per_ref, j] = 1
+            i += n_obs_per_ref
+        # TODO: remove this
 
     normalized_a = a / np.expand_dims(np.sum(a, axis=1), 1)
     

@@ -85,7 +85,7 @@ def compute_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1, modifi
     ot_cost = np.sum(cost_matrix * normalized_T, axis=1)  # size: (train_freq,)
 
     info = dict(
-        assignment=T,
+        assignment=normalized_T,
         original_assignment=T,
         cost_matrix=cost_matrix,
         transported_cost=cost_matrix * T,
@@ -122,8 +122,14 @@ def euclidean_distance_advanced(x, y):
     """
     x: (x_batch_size, ...)
     y: (y_batch_size, ...)
+
+    Specific use case:
+        e.g. when we use geom_xpos, we have (batch_size, num_joints, 3)
+        we want to calculate the euclidean distance between the joints
+
+    Return: 
+        euclidean distance matrix (x_batch_size, y_batch_size)
     """
-    # print(f"x: {x.shape}, y: {y.shape}")
     # To allow x and y to have different batch sizes, we will expand the dimensions of x and y
     #   to allow for broadcasting
     x_exp = np.expand_dims(x, axis=1)  # (x_batch_size, 1, ...)

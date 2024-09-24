@@ -15,7 +15,7 @@ from vlm_reward.utils.optimal_transport import COST_FN_DICT, compute_ot_reward
 from vlm_reward.utils.soft_dtw import compute_soft_dtw_reward
 from vlm_reward.utils.dtw import compute_dtw_reward
 
-def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, title:str, cmap: str, vmin=None, vmax=None):
+def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, title:str, cmap: str, rolcol_size: int, vmin=None, vmax=None):
     """
     Plot the Matrix with obs_seq on the left and ref_seq on top of the heatmap.
     """
@@ -52,11 +52,11 @@ def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, 
     for i in range(matrix.shape[0]):
         for j in range(matrix.shape[1]):
             text_color = 'white' if matrix[i, j] > mid_val else 'black'
-            ax_heatmap.text(j, i, f'{matrix[i, j]:.2f}', ha='center', va='center', color=text_color, fontsize=20)
+            ax_heatmap.text(j, i, f'{matrix[i, j]:.2f}', ha='center', va='center', color=text_color, fontsize=10*rolcol_size)
 
     ax_colorbar = fig.add_subplot(gs[1:obs_len+1, ref_len + 1])
     cbar = fig.colorbar(im, cax=ax_colorbar, fraction=0.046, pad=0.04)
-    cbar.ax.tick_params(labelsize=10)  # Adjust the colorbar tick labels if neede
+    cbar.ax.tick_params(labelsize=5*rolcol_size)  # Adjust the colorbar tick labels if neede
 
     # # Adjust the layout and remove padding
     # plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
@@ -67,7 +67,7 @@ def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, 
         ax_b.imshow(ref_seq[j], cmap='plasma')
         ax_b.axis('off')
 
-    ax.set_title(title, fontsize=30)
+    ax.set_title(title, fontsize=15*rolcol_size)
 
     # Turn off the axis
     ax.axis('off')
@@ -130,7 +130,7 @@ def run_examples_from_config(cfg: DictConfig):
 
         rolcol_size = cfg.plot.rolcol_size
 
-        # 2 * because we have 2 figure columns
+        # 3 * because we have 3 figure columns
         #   In each figure columns, we have len(ref_seq) for the reference sequence/cost matrix, 1 column for the vertical stack of obs seq, and 1 column for the colorbar
         fig_width = 3 * (rolcol_size * (len(ref_seq) + 2))
         # n_seq_matching_fns * because we need a figure row for each sequence matching function
@@ -147,20 +147,15 @@ def run_examples_from_config(cfg: DictConfig):
 
             # Plot the cost matrix
             ax = axs[fn_idx, 0]
-            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, info["cost_matrix"], f"{fn_name} Cost Matrix", cmap="gray_r")
+            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, info["cost_matrix"], f"{fn_name} Cost Matrix", cmap="gray_r", rolcol_size=rolcol_size,)
 
             # Plot the assignment matrix
-            ax = axs[fn_idx, 1]
-            
-            assignment_matrix = info["assignment"]
-            if "optimal_transport" in fn_name:
-                assignment_matrix *= len(obs_seq)
-                
-            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, assignment_matrix, f"{fn_name} Assignment Matrix", cmap="Greens", vmin=0, vmax=1)
+            ax = axs[fn_idx, 1]   
+            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, info["assignment"], f"{fn_name} Assignment Matrix", cmap="Greens", rolcol_size=rolcol_size, vmin=0, vmax=1)
 
             # Plot the reward
             ax = axs[fn_idx, 2]
-            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, np.expand_dims(reward,1), f"{fn_name} Reward (Sum = {np.sum(reward):.2f})", cmap="Greens", 
+            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, np.expand_dims(reward,1), f"{fn_name} Reward (Sum = {np.sum(reward):.2f})", cmap="Greens", rolcol_size=rolcol_size,
                                          vmin=examples[example_name]["plot"]["reward_vmin"], vmax=examples[example_name]["plot"]["reward_vmax"])
 
         plt.tight_layout()

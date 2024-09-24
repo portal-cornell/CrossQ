@@ -11,27 +11,22 @@ UP = 2
 LEFT = 3
 STAY = 4
 
-PREDEFINED_MAPS = {
-    "3x3": np.array([
-        [0, 0, 0],
-        [0, -1, 0],
-        [0, 0, 0]
-    ])
-}
 
 class GridNavigationEnv(gym.Env):
     metadata = {"render_modes": ["rgb_array"]}
 
-    def __init__(self, map_config, render_mode=None, grid_size=(3, 3)):
-        self.grid_size = grid_size  # The size of the square grid
+    def __init__(self, map_array, render_mode=None, episode_length=10):
+        self.grid_size = map_array.shape  # The size of the square grid
 
         # Observations is the agent's location in the grid
-        self.observation_space = spaces.Discrete(grid_size[0] * grid_size[1])
+        self.observation_space = spaces.Box(np.zeros((2,)), np.array([grid_size - 1 for grid_size in self.grid_size]), shape=(2,), dtype=np.int64)
 
         # We have 5 actions, corresponding to "right", "up", "left", "down", "do nothing"
         self.action_space = spaces.Discrete(5)
-
-        self.map_config = map_config
+        
+        self.num_steps = 0
+        self.episode_length = episode_length
+        self._map = map_array
 
         """
         The following dictionary maps abstract actions from `self.action_space` to
@@ -59,8 +54,10 @@ class GridNavigationEnv(gym.Env):
         info = self._get_info()
         reward = 0  # We are using sequence matching function to produce reward
 
-        # truncation=False as the time limit is handled by the `TimeLimit` wrapper added during `make`
-        return observation, reward, False, info
+        self.num_steps += 1
+        terminated = self.num_steps >= self.episode_length
+
+        return observation, reward, terminated, False, info
 
     def _update_location(self, direction):
         new_pos = self._agent_pos + direction
@@ -73,31 +70,32 @@ class GridNavigationEnv(gym.Env):
     def _is_valid_location(self, pos):
         within_x_bounds = 0 <= pos[0] < self.grid_size[0]
         within_y_bounds = 0 <= pos[1] < self.grid_size[1]
-        not_a_hole = self._map[pos[0], pos[1]] != -1
-        return within_x_bounds and within_y_bounds and not_a_hole
+
+        if within_x_bounds and within_y_bounds:
+            not_a_hole = self._map[pos[0], pos[1]] != -1
+            return  not_a_hole
+        else:
+            return False
 
     def _get_obs(self):
         return self._agent_pos
-
-    def _get_info(self):
-        return {
-            
-        }
     
-    def reset(self):
-        self._map = self._load_map(self.map_config)
-        self._agent_pos = np.array([0, 0])
-        return self._get_obs()
+    def _get_info(self):
+        return {"step": self.num_steps}
 
-    def _load_map(self, map_config):
-        if "name" in map_config:
-            return PREDEFINED_MAPS[map_config["name"]]
-        elif "map" in map_config:
-            return map_config["map"]
-        else:
-            raise ValueError(f"Invalid map config: {map_config}. Need to specify either 'name' or 'map'")
-        
+    def reset(self, seed=0):
+        """
+        This is a deterministic environment, so we don't use the seed."""
+        self.num_steps = 0
+        self._agent_pos = np.array([0, 0])
+
+        return self._get_obs(), self._get_info()
+
     def render(self):
+        """
+        Render the environment as an RGB image.
+        
+        The agent is represented by a yellow square, empty cells are white, and holes are blue."""
         if self.render_mode == "rgb_array":
             map_with_agent = self._map.copy()
 
@@ -117,7 +115,13 @@ class GridNavigationEnv(gym.Env):
             return
     
 if __name__ == "__main__":
-    env = GridNavigationEnv({"name": "3x3"}, [], render_mode="rgb_array")
+    env = GridNavigationEnv(
+        np.array([
+            [0, 0, 0],
+            [0, -1, 0],
+            [0, 0, 0]
+        ]), 
+        render_mode="rgb_array")
     env.reset()
     env.render()
     

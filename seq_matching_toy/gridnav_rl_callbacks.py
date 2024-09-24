@@ -6,29 +6,28 @@ import torch as th
 import numpy as np
 from numpy import array
 from stable_baselines3.common.callbacks import BaseCallback
-from stable_baselines3.common.callbacks import (
-    CheckpointCallback as SB3CheckpointCallback,
-)
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.logger import Video
+from stable_baselines3.common.logger import Image as WandbImage
 from wandb.integration.sb3 import WandbCallback as SB3WandbCallback
-from stable_baselines3.common.base_class import BaseAlgorithm
 
 from PIL import Image, ImageDraw, ImageFont
-from numbers import Number
+import matplotlib.pyplot as plt
 
 from loguru import logger
-from einops import rearrange
 
-import vlm_reward.utils.optimal_transport as custom_ot
-import vlm_reward.utils.soft_dtw as custom_sdtw
 import time
 
 from vlm_reward.utils.optimal_transport import COST_FN_DICT, compute_ot_reward
 from vlm_reward.utils.soft_dtw import compute_soft_dtw_reward
 from vlm_reward.utils.dtw import compute_dtw_reward
 
+from seq_matching_toy.run_seq_matching_on_examples import plot_matrix_as_heatmap_on_ax
+
+
 def set_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
+    """
+    """
     assert  fn_config["name"] in ["optimal_transport", "dtw", "soft_dtw"], f"Currently only supporting ['optimal_transport', 'dtw', 'soft_dtw'], got {fn_config['name']}"
     logger.info(f"[GridNavSeqRewardCallback] Using the following reward model:\n{fn_config}")
 
@@ -37,27 +36,50 @@ def set_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
     fn_name = fn_config["name"]
 
     if fn_name == "optimal_transport":
-        return lambda obs_seq, ref_seq: compute_ot_reward(obs_seq, ref_seq, cost_fn, scale)
+        return lambda obs_seq, ref_seq: compute_ot_reward(obs_seq, ref_seq, cost_fn, scale), fn_name
     elif fn_name == "dtw":
-        return lambda obs_seq, ref_seq: compute_dtw_reward(obs_seq, ref_seq, cost_fn, scale)
+        return lambda obs_seq, ref_seq: compute_dtw_reward(obs_seq, ref_seq, cost_fn, scale), fn_name
     elif fn_name == "soft_dtw":
         gamma = float(fn_config["gamma"])
-        return lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale: compute_soft_dtw_reward(obs_seq, ref_seq, cost_fn, gamma, scale)
+        return lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale: compute_soft_dtw_reward(obs_seq, ref_seq, cost_fn, gamma, scale), f"{fn_name}_gamma={gamma}"
     else:
         raise NotImplementedError(f"Unknown sequence matching function: {fn_name}")
+    
+def convert_obs_to_frames(map_array, obs):
+    """
+    Frames is represented as map_array with the agent's position marked by 1
+
+    obs represents the agent's (x, y) position in the grid
+
+    Parameters:
+        map_array: np.ndarray (row_size, col_size)
+        obs: np.ndarray (n_timesteps, 2)
+
+    Returns:
+        frames: np.ndarray (n_timesteps, row_size, col_size)
+    """
+    frames = []
+    for i in range(len(obs)):
+        frame = np.copy(map_array)
+        frame[int(obs[i][0]), int(obs[i][1])] = 1
+        frames.append(frame)
+
+    return np.array(frames)
 
 class GridNavSeqRewardCallback(BaseCallback):
     """
     Custom callback for calculating seq matching reward in the GridNavigation environment.
     """
-    def __init__(self, ref_seq, matching_fn_cfg, cost_fn_name, verbose=0):
+    def __init__(self, map_array, ref_seq, matching_fn_cfg, cost_fn_name, verbose=0):
         super(GridNavSeqRewardCallback, self).__init__(verbose)
+
+        self._map = map_array
 
         self._ref_seq = ref_seq
 
         logger.info(f"[GridNavSeqRewardCallback] Loaded reference sequence. self._ref_seq.shape={self._ref_seq.shape} self._ref_seq=\n{self._ref_seq}")
 
-        self._matching_fn = set_matching_fn(matching_fn_cfg, cost_fn_name)
+        self._matching_fn, self._matching_fn_name = set_matching_fn(matching_fn_cfg, cost_fn_name)
 
     def on_rollout_end(self) -> None:
         """
@@ -67,51 +89,19 @@ class GridNavSeqRewardCallback(BaseCallback):
         # Time this function
         start_time = time.time()
 
-        replay_buffer_pos = self.model.replay_buffer.pos
-        total_timesteps = self.model.num_timesteps - self.model.previous_num_timesteps  # Total number of timesteps that we have collected
-        env_episode_timesteps = total_timesteps // self.model.env.num_envs  # Number of timesteps that we have collected per environment
-
-        logger.debug(f"\nreplay_buffer_pos={replay_buffer_pos}, total_timesteps={total_timesteps}, \nenv_episode_timesteps={env_episode_timesteps}, self.model.num_timesteps={self.model.num_timesteps}")
-
-        # Get the observation from the replay buffer
-        #   size: (train_freq, n_envs, obs_size)
-        #   For OT-based reward, train_freq = episode_length
-        obs_to_process = np.array(self.model.replay_buffer.frames)
-
-        logger.debug(f"obs_to_process={obs_to_process.shape}")
-
         matching_reward_list = []
         for env_i in range(self.model.env.num_envs):
-            obs = obs_to_process[:, env_i]
-
-            logger.debug(f"obs={obs.shape}")
+            frames = convert_obs_to_frames(self._map, self.model.rollout_buffer.observations[:, env_i])
             
-            matching_reward, _ = self._matching_fn(obs, self._ref_seq)  # size: (train_freq,)
-
-            logger.debug(f"matching_reward={matching_reward.shape}")
+            matching_reward, _ = self._matching_fn(frames, self._ref_seq)  # size: (n_steps,)
 
             matching_reward_list.append(matching_reward)
 
-        rewards = np.stack(matching_reward_list, axis=1)  # size: (train_freq, n_envs)
+        rewards = np.stack(matching_reward_list, axis=1)  # size: (n_steps, n_envs)
 
-        # Add the optimal transport reward to exisiting rewards
-        if replay_buffer_pos - env_episode_timesteps >= 0:
-            self.model.replay_buffer.rewards[
-                replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
-            ] += rewards[:, :]
-        else:
-            # Split reward assignment (circular buffer)
-            self.model.replay_buffer.rewards[
-                -(env_episode_timesteps - replay_buffer_pos) :, :
-            ] += rewards[: env_episode_timesteps - replay_buffer_pos, :]
+        self.model.rollout_buffer.rewards += rewards
 
-            self.model.replay_buffer.rewards[:replay_buffer_pos, :] += rewards[
-                env_episode_timesteps - replay_buffer_pos :, :
-            ]
-
-        self.model.replay_buffer.clear_geom_xpos()
-
-        print(f"GridNavSeqRewardCallback took {time.time() - start_time} seconds")
+        # print(f"GridNavSeqRewardCallback took {time.time() - start_time} seconds")
 
 
     def _on_step(self) -> bool:
@@ -147,7 +137,7 @@ def plot_info_on_frame(pil_image, info, font_size=20):
     i = 0
     for k in info:
         # TODO: This is pretty ugly
-        if not any([text in k for text in ["TimeLimit", "render_array", "geom_xpos"]]):
+        if not any([text in k for text in ["TimeLimit", "render_array", "geom_xpos", "episode"]]):
             reward_text = f"{k}:{info[k]}"
             # Plot the text from bottom to top
             text_position = (x, y - (font_size + 10)*(i+1))
@@ -163,9 +153,12 @@ class GridNavVideoRecorderCallback(BaseCallback):
         render_freq: int,
         n_eval_episodes: int = 1,
         deterministic: bool = True,
+        map_array: np.ndarray = None,
         ref_seq: str = "",
         matching_fn_cfg: dict = {}, 
         cost_fn_name: str = "nav_manhattan",
+        reward_vmin: int = 0, 
+        reward_vmax: int = 0, 
         verbose=0
     ):
         """
@@ -191,12 +184,16 @@ class GridNavVideoRecorderCallback(BaseCallback):
         self._deterministic = deterministic
         self._rollout_save_path = rollout_save_path  # Save the state of the environment
 
+        self._map = map_array
         self._ref_seq = ref_seq
         logger.info(f"[GridNavVideoRecorderCallback] Loaded reference sequence. self._ref_seq.shape={self._ref_seq.shape} self._ref_seq=\n{self._ref_seq}")
 
+        self._reward_vmin = reward_vmin
+        self._reward_vmax = reward_vmax
+
         if matching_fn_cfg != {}:
             self._calc_matching_reward = True
-            self._matching_fn = set_matching_fn(matching_fn_cfg, cost_fn_name)
+            self._matching_fn, self._matching_fn_name = set_matching_fn(matching_fn_cfg, cost_fn_name)
         else:
             self._calc_matching_reward = False
 
@@ -206,7 +203,6 @@ class GridNavVideoRecorderCallback(BaseCallback):
             raw_screens = []
             screens = []
             states = []
-            geom_xposes = []
             infos = []
             rewards = []
 
@@ -221,12 +217,12 @@ class GridNavVideoRecorderCallback(BaseCallback):
                  callback's scope
                 """
                 screen = self._eval_env.render()
-
                 image_int = np.uint8(screen)
 
                 raw_screens.append(Image.fromarray(image_int))
                 screens.append(Image.fromarray(image_int))  # The frames here will get plotted with info later
                 infos.append(_locals.get('info', {}))
+
                 states.append(_locals["observations"])
                 rewards.append(_locals["rewards"])
 
@@ -247,21 +243,10 @@ class GridNavVideoRecorderCallback(BaseCallback):
             rewards = np.concatenate(rewards)
 
             if self._calc_matching_reward:
-                if self._use_geom_xpos:
-                    # Don't need to do anything here, geom_xpos is getting normalized in the grab_screens function
-                    matching_reward, _ = self._matching_fn(np.array(geom_xposes), self._ref_seq)
-                else:
-                    matching_reward, _ = self._matching_fn(np.array(states)[:, :22], self._ref_seq)
-                matching_reward = self._matching_fn(np.array(states), self._ref_seq)
+                obs_seq = convert_obs_to_frames(self._map, states)
 
-                self.logger.record("rollout/avg_matching_reward_unscaled", 
-                                np.mean(matching_reward)/self._scale, 
-                                exclude=("stdout", "log", "json", "csv"))
-                
-                self.logger.record("rollout/avg_total_reward_unscaled", 
-                                np.mean(matching_reward/self._scale + rewards), 
-                                exclude=("stdout", "log", "json", "csv"))
-                
+                matching_reward, info = self._matching_fn(obs_seq, self._ref_seq)
+
                 self.logger.record("rollout/avg_total_reward", 
                                 np.mean(matching_reward + rewards), 
                                 exclude=("stdout", "log", "json", "csv"))
@@ -273,6 +258,51 @@ class GridNavVideoRecorderCallback(BaseCallback):
                 # Save the matching_rewards locally    
                 with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_matching_rewards.npy"), "wb") as f:
                     np.save(f, np.array(states))
+
+                # TODO: messy code taken from seq_matching_toy/run_seq_matching_on_examples.py
+                #   Basically allows us to visualizing the matching function on a rollout
+                rolcol_size = 1
+
+                # 3 * because we have 3 figure columns
+                #   In each figure columns, we have len(ref_seq) for the reference sequence/cost matrix, 1 column for the vertical stack of obs seq, and 1 column for the colorbar
+                fig_width = 3 * (rolcol_size * (len(self._ref_seq) + 2))
+
+                #  We have len(obs_seq) for the observed sequence/cost matrix, 1 row for the horizontal stack of ref seq
+                fig_height = rolcol_size * (len(obs_seq) + 1)
+
+                # Create the figure (2 columns, and the number of rows will be the number of sequence matching algorithms)
+                fig, axs = plt.subplots(1, 3, figsize=(fig_width, fig_height))
+
+                # Plot the cost matrix
+                ax = axs[0]
+                plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, self._ref_seq, info["cost_matrix"], f"{self._matching_fn_name} Cost Matrix", cmap="gray_r", rolcol_size=rolcol_size)
+
+                # Plot the assignment matrix
+                ax = axs[1]
+                
+                plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, self._ref_seq, info["assignment"], f"{self._matching_fn_name} Assignment Matrix", cmap="Greens", rolcol_size=rolcol_size, vmin=0, vmax=1)
+
+                # Plot the reward
+                ax = axs[2]
+                plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, self._ref_seq, np.expand_dims(matching_reward,1), f"{self._matching_fn_name} Reward (Sum = {np.sum(matching_reward):.2f})", cmap="Greens", rolcol_size=rolcol_size,  
+                                            vmin=self._reward_vmin, vmax=self._reward_vmax)
+                
+
+                plt.tight_layout()
+
+                img_path = os.path.join(self._rollout_save_path, f"{self.num_timesteps}_matching_fn_viz.png")
+                plt.savefig(img_path)
+
+                img = Image.open(img_path)
+
+                # Log to wandb
+                self.logger.record(
+                    "trajectory/matching_fn_viz",
+                    WandbImage(np.array(img), "HWC"),
+                    exclude=("stdout", "log", "json", "csv"),
+                )
+
+                plt.close(fig)
 
             # Plot info on the frames  
             for i in range(len(screens)):
@@ -290,9 +320,6 @@ class GridNavVideoRecorderCallback(BaseCallback):
             # Save the rollouts locally    
             with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_states.npy"), "wb") as f:
                 np.save(f, np.array(states))
-
-            with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_geom_xpos_states.npy"), "wb") as f:
-                np.save(f, np.array(geom_xposes))
             
             with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_rewards.npy"), "wb") as f:
                 np.save(f, np.array(rewards))

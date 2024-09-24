@@ -17,7 +17,7 @@ import torch.distributed as dist
 
 from stable_baselines3.common.callbacks import CallbackList
 
-from sb3_sac import SAC, VLM_SAC
+from custom_sb3 import SAC, VLM_SAC
 from stable_baselines3.sac.policies import MultiInputPolicy
 
 from sbx.common.make_vec_env import make_vec_env

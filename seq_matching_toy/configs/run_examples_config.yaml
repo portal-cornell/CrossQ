@@ -21,5 +21,5 @@ run_notes: null
 
 hydra:
   run:
-    dir: ./seq_matching_toy/toy_examples_log/${now:%Y-%m-%d-%H%M%S}_ex=${example}_cf=${cost_fn}_nt=${run_notes}
+    dir: ./seq_matching_toy/toy_examples_logs/${now:%Y-%m-%d-%H%M%S}_ex=${example}_cf=${cost_fn}_nt=${run_notes}
 

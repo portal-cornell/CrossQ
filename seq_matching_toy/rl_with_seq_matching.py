@@ -6,78 +6,116 @@ import os
 import wandb
 from typing import Any, Dict, List, Union
 from numpy.typing import NDArray
-from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.callbacks import CallbackList
 from loguru import logger
 
+from custom_sb3 import PPO
 from seq_matching_toy.toy_envs.grid_nav import *
-from callbacks import WandbCallback
+from seq_matching_toy.toy_examples_main import examples
+from seq_matching_toy.gridnav_rl_callbacks import WandbCallback, GridNavVideoRecorderCallback, GridNavSeqRewardCallback
 
-class GridNavReplayBuffer(RolloutBuffer):
-    # Directly inherit from ReplayBuffer
-    def __init__(
-        self,
-        buffer_size: int,
-        observation_space: spaces.Space,
-        action_space: spaces.Space,
-        device: Union[th.device, str] = "auto",
-        n_envs: int = 1,
-        optimize_memory_usage: bool = False,
-        handle_timeout_termination: bool = True,
-    ):
-        super().__init__(
-            buffer_size,
-            observation_space,
-            action_space,
-            device,
-            n_envs,
-            optimize_memory_usage,
-            handle_timeout_termination,
-        )
-        self.render_arrays: List[NDArray] = []
 
-    def add(
-        self,
-        obs,
-        next_obs: NDArray,
-        action: NDArray,
-        reward: NDArray,
-        done: NDArray,
-        infos: List[Dict[str, Any]],
-    ) -> None:
-        super().add(
-            obs,
-            next_obs,
-            action,
-            reward,
-            done,
-            infos,
-        )
+def load_map_from_example_dict(example_name: str) -> NDArray:
+    """
+    Load the map from the example dictionary.
 
-        assert len(self.render_arrays) < self.buffer_size
-        self.render_arrays.append([info["geom_xpos"] for info in infos])
+    Parameters:
+        example_name: str
+            - The name of the example
 
-    def clear_geom_xpos(self) -> None:
-        self.geom_xpos = []
+    Returns:
+        map_array: NDArray
+            - The map array
+    """
+    return examples[example_name]["map_array"]
 
-@hydra.main(version_base=None, config_path="configs", config_name="rl_config")
+def load_ref_seq_from_example_dict(example_name: str) -> NDArray:
+    """
+    Load the reference seq from the example dictionary.
+
+    Parameters:
+        example_name: str
+            - The name of the example
+
+    Returns:
+        ref_seq: NDArray
+            - The array of reference sequences
+    """
+    return examples[example_name]["ref_seq"]
+
+def load_reward_vmin_vmax_from_example_dict(example_name: str) -> NDArray:
+    """
+    Load the reard vmin and vmax from the example dictionary.
+
+    Parameters:
+        example_name: str
+            - The name of the example
+
+    Returns:
+        reward_vmin: float
+            - The minimum value of the reward to receive in the environment
+        reward_vmax: float
+            - The maximum value of the reward to receive in the environment
+    """
+    return examples[example_name]["plot"]["reward_vmin"], examples[example_name]["plot"]["reward_vmax"]
+
+def get_output_folder_name(data_log_dir) -> str:
+    """
+    Return:
+        folder_name: str
+            - The name of the folder that holds all the logs/outputs for the current run
+            - Not a complete path
+    """
+    # Remove the path to the repo directory
+    folder_path = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir.replace(str(os.getcwd()),"")
+    # Remove the name of the folder that holds all the outputs
+    folder_name = folder_path.replace(data_log_dir, "").replace("/", "") # TODO: a hack
+    
+    return folder_name
+
+def get_output_path() -> str:
+    """
+    Return:
+        output_path: str
+            - The absolute path to the folder that holds all the logs/outputs for the current run
+    """
+    return hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
+
+@hydra.main(version_base=None, config_path="configs", config_name="train_rl_config")
 def train(cfg: DictConfig):
+    # Set the path for logging
+    cfg.logging.run_name = get_output_folder_name(cfg.log_folder)
+    cfg.logging.run_path = get_output_path()
+
+    logger.info(f"Logging to {cfg.logging.run_path}\nRun name: {cfg.logging.run_name}")
+
+    os.makedirs(os.path.join(cfg.logging.run_path, "eval"), exist_ok=True)
+
     # Initialize the environment
+    map_array = load_map_from_example_dict(cfg.env.example_name)
+    ref_seq = load_ref_seq_from_example_dict(cfg.env.example_name)
+    reward_vmin, reward_vmax = load_reward_vmin_vmax_from_example_dict(cfg.env.example_name)
+
+    make_env_fn = lambda: Monitor(GridNavigationEnv(map_array=np.copy(map_array), render_mode="rgb_array", episode_length=cfg.env.episode_length))
+
     training_env = make_vec_env(
-        lambda: GridNavigationEnv(map_config=dict(env.map_config), ref_seq=[], render_mode="rgb_array", max_episode_steps=cfg.env.episode_length),
+        make_env_fn,
         n_envs=cfg.compute.n_cpu_workers,
         seed=cfg.seed,
         vec_env_cls=SubprocVecEnv,
-        use_gpu_ids=list(range(cfg.compute.n_gpu_workers)),
     )
 
     # Define the model
     model = PPO("MlpPolicy", 
                 training_env, 
+                n_steps=cfg.env.episode_length,
+                n_epochs=cfg.rl_algo.n_epochs,
+                batch_size=cfg.rl_algo.batch_size,
                 learning_rate=cfg.rl_algo.lr,
-                rollout_buffer_class=
+                tensorboard_log=os.path.join(cfg.logging.run_path, "tensorboard"),
                 verbose=1)
     
     with wandb.init(
@@ -101,11 +139,30 @@ def train(cfg: DictConfig):
             verbose=2,
         )
 
-        callback_list = [wandb_callback]
+        video_callback = GridNavVideoRecorderCallback(
+            SubprocVecEnv([make_env_fn]),
+            rollout_save_path=os.path.join(cfg.logging.run_path, "eval"),
+            render_freq=cfg.logging.video_save_freq // cfg.compute.n_cpu_workers,
+            map_array = np.copy(map_array),
+            ref_seq = np.copy(ref_seq),
+            matching_fn_cfg = dict(cfg.seq_reward_model),
+            cost_fn_name = cfg.cost_fn,
+            reward_vmin = reward_vmin,
+            reward_vmax = reward_vmax,
+        )
+
+        seq_matching_callback = GridNavSeqRewardCallback(
+            map_array = np.copy(map_array),
+            ref_seq = np.copy(ref_seq),
+            matching_fn_cfg = dict(cfg.seq_reward_model),
+            cost_fn_name = cfg.cost_fn,
+        )
+
+        callback_list = [wandb_callback, video_callback, seq_matching_callback]
 
         # Train the model
         model.learn(
-            total_timesteps=cfg.total_timesteps,
+            total_timesteps=cfg.rl_algo.total_timesteps,
             progress_bar=True, 
             callback=CallbackList(callback_list))
 
@@ -118,24 +175,3 @@ def train(cfg: DictConfig):
 
 if __name__ == "__main__":
     train()
-    # env = GridNavigationEnv(map_config={"name": "3x3"}, ref_seq=[], render_mode="rgb_array")
-    # env.reset()
-    # env.render()
-    
-    # path = [RIGHT, RIGHT, DOWN, DOWN, LEFT, LEFT, UP, STAY]
-
-    # frames = []
-    # frames.append(env.render())
-
-    # for action in path:
-    #     env.step(action)
-    #     frames.append(env.render())
-
-    # imageio.mimsave("testing.gif", frames, duration=1/20, loop=0)
-
-    # writer = imageio.get_writer('testing.mp4', fps=20)
-
-    # for im in frames:
-    #     writer.append_data(im)
-    
-    # writer.close()
