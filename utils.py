@@ -38,6 +38,9 @@ def get_output_path() -> str:
 def use_vlm_for_reward(cfg: DictConfig) -> bool:
     return "hand_engineered" not in cfg.reward_model.name.lower() and "joint_wasserstein" not in cfg.reward_model.name.lower() and "joint_soft_dtw" not in cfg.reward_model.name.lower()
 
+def use_joint_vlm_for_reward(cfg: DictConfig) -> bool:
+    return "joint_pred" in cfg.reward_model.name.lower()
+
 def set_os_vars() -> None:
 
     os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
@@ -69,7 +72,7 @@ def validate_and_preprocess_cfg(cfg: DictConfig):
         if cfg.compute.n_gpu_workers == 1:
             assert cfg.reward_model.rank0_batch_size_pct == 1.0, f"When there's only one worker, rank0 has to handle the entire batch so {cfg.reward_model.rank0_batch_size_pct}"
         else:
-            assert cfg.reward_model.rank0_batch_size_pct < 1.0, f"When there are only one worker, rank0 should not have the entire batch so {cfg.reward_model.rank0_batch_size_pct} can't be 1."
+            assert cfg.reward_model.rank0_batch_size_pct < 1.0, f"When there are multiple workers, rank0 should not have the entire batch so {cfg.reward_model.rank0_batch_size_pct} can't be 1."
 
         if cfg.reward_model.rank0_batch_size_pct < 1.0:
             assert float(((1 - cfg.reward_model.rank0_batch_size_pct) * cfg.reward_model.reward_batch_size)).is_integer(), f"({cfg.reward_model.reward_batch_size=}) needs to be an integer when multiplying by {cfg.reward_model.rank0_batch_size_pct=}"

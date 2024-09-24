@@ -77,7 +77,7 @@ class CustomSAC(SAC):
 
     def collect_rollouts(self, *args, **kwargs):
         rollout = super().collect_rollouts(*args, **kwargs)
-
+        
         self.previous_num_timesteps = self.num_timesteps
         self.previous_num_episodes = self._episode_num
 
