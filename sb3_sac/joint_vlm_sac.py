@@ -60,6 +60,8 @@ def load_joint_prediction_model(device, checkpoint, output_dim):
     ]) 
 
     model.to(device) 
+    for param in model.parameters():
+        param.requires_grad_(False)
     model.eval()
 
     return model, transform
@@ -175,7 +177,7 @@ class JointVLMSAC(SAC):
         self.filter_rewards = False # whether or not to gaussian filter the rewards after computing
 
         self._add_to_gt_rewards = add_to_gt_rewards
-        self._ref_joint_states = ref_joint_states
+        self._ref_joint_states = ref_joint_states.cuda(0)
 
         if _init_setup_model:
             self._setup_model()
@@ -319,6 +321,15 @@ class JointVLMSAC(SAC):
 
         print(f"VLMRewardCallback took {time.time() - start_time} seconds")
 
+
+    def get_vram(self):
+        free = torch.cuda.mem_get_info()[0] / 1024 ** 3
+        total = torch.cuda.mem_get_info()[1] / 1024 ** 3
+        total_cubes = 24
+        free_cubes = int(total_cubes * free / total)
+        return f'VRAM: {total - free:.2f}/{total:.2f}GB\t VRAM:[' + (
+                total_cubes - free_cubes) * '▮' + free_cubes * '▯' + ']'
+                
     def _compute_joint_rewards(self, model, transform, frames, ref_joint_states, batch_size):
         """Only use the goal joint xpos states to calculate the reward
         - The reward is based on the euclidean distance between the current joint states and the reference joint states
@@ -330,27 +341,25 @@ class JointVLMSAC(SAC):
         batches = torch.split(frames, batch_size)
         all_preds = []
         for i, batch in enumerate(batches):
-            xpos_preds = model(transform(batch))
-            # TODO: figure out what data is, and how to replace upper body parts of it with joint_preds
+            batch_transformed = transform(batch)
+
+            xpos_preds = model(batch_transformed)
+
             all_preds.append(xpos_preds)
 
-        assert ref_joint_states.shape[0] == 1, "there should only be the goal image/joint position"
-
-        # Mimicking how they get the observation
-        # https://github.com/Farama-Foundation/Gymnasium/blob/b6046caeb30c9938789aeeec183147c7ffd1983b/gymnasium/envs/mujoco/humanoid_v4.py#L119
         curr_geom_xpos = torch.cat(all_preds, dim=0)
+
+        n, d = ref_joint_states.shape # n is the number of joints, d is the dimension of each joint vector
+        curr_geom_xpos = curr_geom_xpos.view(len(frames), n, d)
         # Normalize the current pose by the torso's position (which is at index 1)
-        curr_geom_xpos = curr_geom_xpos - curr_geom_xpos[1]
+        # curr_geom_xpos = curr_geom_xpos - curr_geom_xpos[:, 1, :]
 
-        # Only the arms are relevant
-        curr_geom_xpos_relevant = curr_geom_xpos[12:, :]
-        ref_joint_states_relevant = ref_joint_states[0, 12:, :]
+        joint_pos_relevant = curr_geom_xpos[:, 12:, :].flatten(start_dim=1)
+        target_joint_pos_relevant = ref_joint_states[None, 12:, :].flatten(start_dim=1)
 
-        reward = np.exp(-np.linalg.norm(curr_geom_xpos_relevant - ref_joint_states_relevant))
+        pose_matching_reward = torch.exp(-torch.linalg.vector_norm(target_joint_pos_relevant - joint_pos_relevant, dim=1))
 
-        terms_to_plot = {}
-        terms_to_plot["r"] = f"{reward:.2f}"
-        return reward, terms_to_plot
+        return pose_matching_reward
 
     def learn(self, *args, **kwargs):
         self.previous_num_timesteps = 0
