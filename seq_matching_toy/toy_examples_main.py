@@ -4,6 +4,7 @@ from seq_matching_toy.toy_examples.nav_3by3_0 import *
 from seq_matching_toy.toy_examples.nav_3by3_0_full_ref import *
 from seq_matching_toy.toy_examples.nav_3by3_1 import *
 from seq_matching_toy.toy_examples.nav_3by3_2 import *
+from seq_matching_toy.toy_examples.nav_3by3_2_remove_first import *
 
 examples = {
     "criss_cross_0": criss_cross_0,
@@ -12,4 +13,5 @@ examples = {
     "nav_3by3_0_full_ref": nav_3by3_0_full_ref,
     "nav_3by3_1": nav_3by3_1,
     "nav_3by3_2": nav_3by3_2,
+    "nav_3by3_2_remove_first": nav_3by3_2_remove_first,
 }
