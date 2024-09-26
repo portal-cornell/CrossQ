@@ -25,7 +25,7 @@ def load_reference_seq(seq_name: str, use_geom_xpos: bool) -> np.ndarray:
         ref_seq.append(loaded_joint_states)
     return np.stack(ref_seq)
 
-def compute_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1, modification_dict={}) -> np.ndarray:
+def compute_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1, gamma=0.01, modification_dict={}) -> np.ndarray:
     """
     Compute the Optimal Transport (OT) reward between the reference sequence and the observed sequence
 
@@ -75,7 +75,11 @@ def compute_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1, modifi
     # Calculate the OT plan between the reference sequence and the observed sequence
     obs_weight = np.ones(obs.shape[0]) / obs.shape[0]
     ref_weight = np.ones(ref.shape[0]) / ref.shape[0]
-    T = ot.sinkhorn(obs_weight, ref_weight, cost_matrix, reg=0.01, log=False)  # size: (train_freq, ref_seq_len)
+
+    if gamma == 0:
+        T = ot.emd(obs_weight, ref_weight, cost_matrix)  # size: (train_freq, ref_seq_len)
+    else:
+        T = ot.sinkhorn(obs_weight, ref_weight, cost_matrix, reg=gamma, log=False)  # size: (train_freq, ref_seq_len)
 
     # Normalize the path so that each row sums to 1
     normalized_T = T / np.expand_dims(np.sum(T, axis=1), 1)
@@ -293,7 +297,7 @@ def nav_shortest_path_distance(x, y):
             pos2 = np.argwhere(matrix2 == 1)[0]
 
             # Find the shortest path between pos1 and pos2 in matrix1, considering obstacles
-            cost_matrix[i, j] = a_star_shortest_path(matrix1, list(pos1), list(pos2))
+            cost_matrix[i, j] = a_star_shortest_path(matrix1, tuple(pos1), tuple(pos2))
 
     return cost_matrix
 

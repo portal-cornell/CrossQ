@@ -28,20 +28,21 @@ from seq_matching_toy.run_seq_matching_on_examples import plot_matrix_as_heatmap
 def set_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
     """
     """
-    assert  fn_config["name"] in ["optimal_transport", "dtw", "soft_dtw"], f"Currently only supporting ['optimal_transport', 'dtw', 'soft_dtw'], got {fn_config['name']}"
+    assert  fn_config["name"] in ["ot", "dtw", "soft_dtw"], f"Currently only supporting ['optimal_transport', 'dtw', 'soft_dtw'], got {fn_config['name']}"
     logger.info(f"[GridNavSeqRewardCallback] Using the following reward model:\n{fn_config}")
 
     cost_fn = COST_FN_DICT[cost_fn_name]
     scale = float(fn_config["scale"])
     fn_name = fn_config["name"]
 
-    if fn_name == "optimal_transport":
-        return lambda obs_seq, ref_seq: compute_ot_reward(obs_seq, ref_seq, cost_fn, scale), fn_name
+    if fn_name == "ot":
+        gamma = float(fn_config["gamma"])
+        return lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale: compute_ot_reward(obs_seq, ref_seq, cost_fn, scale, gamma), f"{fn_name}_g={gamma}"
     elif fn_name == "dtw":
-        return lambda obs_seq, ref_seq: compute_dtw_reward(obs_seq, ref_seq, cost_fn, scale), fn_name
+        return lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_dtw_reward(obs_seq, ref_seq, cost_fn, scale), fn_name
     elif fn_name == "soft_dtw":
         gamma = float(fn_config["gamma"])
-        return lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale: compute_soft_dtw_reward(obs_seq, ref_seq, cost_fn, gamma, scale), f"{fn_name}_gamma={gamma}"
+        return lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale: compute_soft_dtw_reward(obs_seq, ref_seq, cost_fn, gamma, scale), f"{fn_name}_g={gamma}"
     else:
         raise NotImplementedError(f"Unknown sequence matching function: {fn_name}")
     
@@ -191,12 +192,38 @@ class GridNavVideoRecorderCallback(BaseCallback):
         self._reward_vmin = reward_vmin
         self._reward_vmax = reward_vmax
 
+        self._gt_reward_fn = self.set_ground_truth_fn()
+
         if matching_fn_cfg != {}:
             self._calc_matching_reward = True
             self._matching_fn, self._matching_fn_name = set_matching_fn(matching_fn_cfg, cost_fn_name)
         else:
             self._calc_matching_reward = False
 
+    def set_ground_truth_fn(self):
+        """
+        Set the ground truth function for the matching function
+        """
+        def nav_key_point_following(obs_seq, ref_seq):
+            """
+            Counting the number of key points that the agent has followed
+            """
+            score = 0
+            j = 0
+
+            score_at_each_timestep = []
+
+            for i in range(len(obs_seq)):
+                if j < len(ref_seq):
+                    if np.array_equal(obs_seq[i], ref_seq[j]):
+                        score += 1
+                        j += 1
+
+                score_at_each_timestep.append(score/len(ref_seq))
+            
+            return score_at_each_timestep
+        
+        return nav_key_point_following
 
     def _on_step(self) -> bool:
         if self.n_calls % self._render_freq == 0:
@@ -240,11 +267,19 @@ class GridNavVideoRecorderCallback(BaseCallback):
             # Originally, states is a list of np.arrays size (1, env_obs_size)
             #   We want to concatenate them to get a single np.array size (n_timesteps, env_obs_size)
             states = np.concatenate(states)
-            rewards = np.concatenate(rewards)
+            
+            obs_seq = convert_obs_to_frames(self._map, states)
+
+            gt_rewards = self._gt_reward_fn(obs_seq, self._ref_seq)
+
+            for i in range(len(infos)):
+                infos[i]["gt_r"] = f"{gt_rewards[i]:.4f}"
+
+            self.logger.record("rollout/mean_gt_reward_per_epsisode", 
+                                np.mean(gt_rewards), 
+                                exclude=("stdout", "log", "json", "csv"))
 
             if self._calc_matching_reward:
-                obs_seq = convert_obs_to_frames(self._map, states)
-
                 matching_reward, info = self._matching_fn(obs_seq, self._ref_seq)
 
                 self.logger.record("rollout/avg_total_reward", 

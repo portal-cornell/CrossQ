@@ -85,13 +85,14 @@ def prepare_seq_matching_fns(seq_matching_fn_configs, cost_fn_name):
         scale = float(fn_config["scale"])
         fn_name = fn_config["name"]
 
-        if fn_name == "optimal_transport":
-            seq_matching_fns_dict[fn_name] = lambda obs_seq, ref_seq: compute_ot_reward(obs_seq, ref_seq, cost_fn, scale)
+        if fn_name == "ot":
+            gamma = float(fn_config["gamma"])
+            seq_matching_fns_dict[f"{fn_name}_gm={gamma}"] = lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale: compute_ot_reward(obs_seq, ref_seq, cost_fn, scale, gamma)
         elif fn_name == "dtw":
-            seq_matching_fns_dict[fn_name] = lambda obs_seq, ref_seq: compute_dtw_reward(obs_seq, ref_seq, cost_fn, scale)
+            seq_matching_fns_dict[fn_name] = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_dtw_reward(obs_seq, ref_seq, cost_fn, scale)
         elif fn_name == "soft_dtw":
             gamma = float(fn_config["gamma"])
-            seq_matching_fns_dict[f"{fn_name}_gamma={gamma}"] = lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale: compute_soft_dtw_reward(obs_seq, ref_seq, cost_fn, gamma, scale)
+            seq_matching_fns_dict[f"{fn_name}_gm={gamma}"] = lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale: compute_soft_dtw_reward(obs_seq, ref_seq, cost_fn, gamma, scale)
         else:
             raise NotImplementedError(f"Unknown sequence matching function: {fn_name}")
         

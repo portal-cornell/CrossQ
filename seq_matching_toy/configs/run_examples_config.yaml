@@ -3,7 +3,8 @@ example: criss_cross_0
 cost_fn: nav_shortest_path
 
 seq_matching_fns:
-  - name: optimal_transport
+  - name: ot
+    gamma: 0
     scale: 1
   - name: dtw
     scale: 1
@@ -12,6 +13,9 @@ seq_matching_fns:
     scale: 1
   - name: soft_dtw
     gamma: 100
+    scale: 1
+  - name: soft_dtw
+    gamma: 10000
     scale: 1
 
 plot:

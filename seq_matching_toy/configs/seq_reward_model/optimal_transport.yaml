@@ -1,2 +1,3 @@
-name: optimal_transport
+name: ot
 scale: 1
+gamma: 0
