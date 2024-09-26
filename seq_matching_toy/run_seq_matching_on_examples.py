@@ -11,9 +11,7 @@ from loguru import logger
 from tqdm import tqdm
 
 from seq_matching_toy.toy_examples_main import examples
-from vlm_reward.utils.optimal_transport import COST_FN_DICT, compute_ot_reward
-from vlm_reward.utils.soft_dtw import compute_soft_dtw_reward
-from vlm_reward.utils.dtw import compute_dtw_reward
+from seq_matching_toy.seq_utils import get_matching_fn
 
 def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, title:str, cmap: str, rolcol_size: int, vmin=None, vmax=None):
     """
@@ -81,20 +79,8 @@ def prepare_seq_matching_fns(seq_matching_fn_configs, cost_fn_name):
     seq_matching_fns_dict = {}
 
     for fn_config in seq_matching_fn_configs:
-        cost_fn = COST_FN_DICT[cost_fn_name]
-        scale = float(fn_config["scale"])
-        fn_name = fn_config["name"]
-
-        if fn_name == "ot":
-            gamma = float(fn_config["gamma"])
-            seq_matching_fns_dict[f"{fn_name}_gm={gamma}"] = lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale: compute_ot_reward(obs_seq, ref_seq, cost_fn, scale, gamma)
-        elif fn_name == "dtw":
-            seq_matching_fns_dict[fn_name] = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_dtw_reward(obs_seq, ref_seq, cost_fn, scale)
-        elif fn_name == "soft_dtw":
-            gamma = float(fn_config["gamma"])
-            seq_matching_fns_dict[f"{fn_name}_gm={gamma}"] = lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale: compute_soft_dtw_reward(obs_seq, ref_seq, cost_fn, gamma, scale)
-        else:
-            raise NotImplementedError(f"Unknown sequence matching function: {fn_name}")
+        fn, fn_name = get_matching_fn(fn_config, cost_fn_name)
+        seq_matching_fns_dict[fn_name] = fn
         
     return seq_matching_fns_dict
 

@@ -18,33 +18,8 @@ from loguru import logger
 
 import time
 
-from vlm_reward.utils.optimal_transport import COST_FN_DICT, compute_ot_reward
-from vlm_reward.utils.soft_dtw import compute_soft_dtw_reward
-from vlm_reward.utils.dtw import compute_dtw_reward
-
 from seq_matching_toy.run_seq_matching_on_examples import plot_matrix_as_heatmap_on_ax
-
-
-def set_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
-    """
-    """
-    assert  fn_config["name"] in ["ot", "dtw", "soft_dtw"], f"Currently only supporting ['optimal_transport', 'dtw', 'soft_dtw'], got {fn_config['name']}"
-    logger.info(f"[GridNavSeqRewardCallback] Using the following reward model:\n{fn_config}")
-
-    cost_fn = COST_FN_DICT[cost_fn_name]
-    scale = float(fn_config["scale"])
-    fn_name = fn_config["name"]
-
-    if fn_name == "ot":
-        gamma = float(fn_config["gamma"])
-        return lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale: compute_ot_reward(obs_seq, ref_seq, cost_fn, scale, gamma), f"{fn_name}_g={gamma}"
-    elif fn_name == "dtw":
-        return lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_dtw_reward(obs_seq, ref_seq, cost_fn, scale), fn_name
-    elif fn_name == "soft_dtw":
-        gamma = float(fn_config["gamma"])
-        return lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale: compute_soft_dtw_reward(obs_seq, ref_seq, cost_fn, gamma, scale), f"{fn_name}_g={gamma}"
-    else:
-        raise NotImplementedError(f"Unknown sequence matching function: {fn_name}")
+from seq_matching_toy.seq_utils import get_matching_fn, update_location, render_map_and_agent
     
 def convert_obs_to_frames(map_array, obs):
     """
@@ -80,7 +55,7 @@ class GridNavSeqRewardCallback(BaseCallback):
 
         logger.info(f"[GridNavSeqRewardCallback] Loaded reference sequence. self._ref_seq.shape={self._ref_seq.shape} self._ref_seq=\n{self._ref_seq}")
 
-        self._matching_fn, self._matching_fn_name = set_matching_fn(matching_fn_cfg, cost_fn_name)
+        self._matching_fn, self._matching_fn_name = get_matching_fn(matching_fn_cfg, cost_fn_name)
 
     def on_rollout_end(self) -> None:
         """
@@ -92,11 +67,21 @@ class GridNavSeqRewardCallback(BaseCallback):
 
         matching_reward_list = []
         for env_i in range(self.model.env.num_envs):
-            frames = convert_obs_to_frames(self._map, self.model.rollout_buffer.observations[:, env_i])
+            obs_to_use = self.model.rollout_buffer.observations[1:, env_i]  # Skip the first observation because we are calculating the reward based on what it looks like in the next state
+            final_obs = update_location(agent_pos=obs_to_use[-1].astype(np.int64), action=int(self.model.rollout_buffer.actions[-1, env_i]), map_array=self._map)
+            obs_to_use = np.concatenate([obs_to_use, np.expand_dims(final_obs, 0)], axis=0)
+            frames = convert_obs_to_frames(self._map, obs_to_use)
             
             matching_reward, _ = self._matching_fn(frames, self._ref_seq)  # size: (n_steps,)
 
             matching_reward_list.append(matching_reward)
+
+            # for i in range(len(frames)):
+            #     print(f"[{i}] action={self.model.rollout_buffer.actions[i, env_i]} matching_reward={matching_reward[i]}")
+            #     if i > 0:
+            #         print(f"before:\n{frames[i-1]}")
+            #     print(f"after:\n{frames[i]}")
+            #     input("stop")
 
         rewards = np.stack(matching_reward_list, axis=1)  # size: (n_steps, n_envs)
 
@@ -196,7 +181,7 @@ class GridNavVideoRecorderCallback(BaseCallback):
 
         if matching_fn_cfg != {}:
             self._calc_matching_reward = True
-            self._matching_fn, self._matching_fn_name = set_matching_fn(matching_fn_cfg, cost_fn_name)
+            self._matching_fn, self._matching_fn_name = get_matching_fn(matching_fn_cfg, cost_fn_name)
         else:
             self._calc_matching_reward = False
 
@@ -232,6 +217,7 @@ class GridNavVideoRecorderCallback(BaseCallback):
             states = []
             infos = []
             rewards = []
+            actions = []
 
             def grab_screens(_locals: Dict[str, Any], _globals: Dict[str, Any]) -> None:
                 """
@@ -252,6 +238,7 @@ class GridNavVideoRecorderCallback(BaseCallback):
 
                 states.append(_locals["observations"])
                 rewards.append(_locals["rewards"])
+                actions.append(_locals["actions"])
 
             evaluate_policy(
                 self.model,
@@ -261,15 +248,25 @@ class GridNavVideoRecorderCallback(BaseCallback):
                 deterministic=self._deterministic,
             )
 
-            # Save the raw_screens locally
-            imageio.mimsave(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts.gif"), raw_screens, duration=1/30, loop=0)
-
             # Originally, states is a list of np.arrays size (1, env_obs_size)
             #   We want to concatenate them to get a single np.array size (n_timesteps, env_obs_size)
             states = np.concatenate(states)
-            
-            obs_seq = convert_obs_to_frames(self._map, states)
+            actions = np.concatenate(actions)
 
+            obs_to_use = states[1:]  # Skip the first observation because we are calculating the reward based on what it looks like in the next state
+            final_obs = update_location(agent_pos=obs_to_use[-1].astype(np.int64), action=int(actions[-1]), map_array=self._map)
+            obs_to_use = np.concatenate([obs_to_use, np.expand_dims(final_obs, 0)], axis=0)
+            obs_seq = convert_obs_to_frames(self._map, obs_to_use)
+
+            # Add the first frame and replace final frame to the screens
+            raw_screens = [Image.fromarray(np.uint8(render_map_and_agent(self._map, states[0].astype(np.int64))))] + raw_screens
+            raw_screens[-1] = Image.fromarray(np.uint8(render_map_and_agent(self._map, final_obs)))
+            screens = [Image.fromarray(np.uint8(render_map_and_agent(self._map, states[0].astype(np.int64))))] + screens
+            screens[-1] = Image.fromarray(np.uint8(render_map_and_agent(self._map, final_obs)))
+
+            # Save the raw_screens locally
+            imageio.mimsave(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts.gif"), raw_screens, duration=1/30, loop=0)
+            
             gt_rewards = self._gt_reward_fn(obs_seq, self._ref_seq)
 
             for i in range(len(infos)):
@@ -280,7 +277,7 @@ class GridNavVideoRecorderCallback(BaseCallback):
                                 exclude=("stdout", "log", "json", "csv"))
 
             if self._calc_matching_reward:
-                matching_reward, info = self._matching_fn(obs_seq, self._ref_seq)
+                matching_reward, info = self._matching_fn(obs_seq, self._ref_seq)  # size: (n_steps,)
 
                 self.logger.record("rollout/avg_total_reward", 
                                 np.mean(matching_reward + rewards), 
@@ -340,8 +337,8 @@ class GridNavVideoRecorderCallback(BaseCallback):
                 plt.close(fig)
 
             # Plot info on the frames  
-            for i in range(len(screens)):
-                plot_info_on_frame(screens[i], infos[i])
+            for i in range(1, len(screens)):
+                plot_info_on_frame(screens[i], infos[i-1])
 
             screens = [np.uint8(s).transpose(2, 0, 1) for s in screens]
 

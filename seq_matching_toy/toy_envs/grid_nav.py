@@ -5,6 +5,8 @@ from gymnasium import spaces
 
 import imageio
 
+from seq_matching_toy.seq_utils import update_location, render_map_and_agent
+
 DOWN = 0
 RIGHT = 1
 UP = 2
@@ -15,7 +17,7 @@ STAY = 4
 class GridNavigationEnv(gym.Env):
     metadata = {"render_modes": ["rgb_array"]}
 
-    def __init__(self, map_array, render_mode=None, episode_length=10):
+    def __init__(self, map_array, starting_pos, render_mode=None, episode_length=10):
         self.grid_size = map_array.shape  # The size of the square grid
 
         # Observations is the agent's location in the grid
@@ -28,27 +30,14 @@ class GridNavigationEnv(gym.Env):
         self.episode_length = episode_length
         self._map = map_array
 
-        """
-        The following dictionary maps abstract actions from `self.action_space` to
-        the direction we will walk in if that action is taken.
-        I.e. 0 corresponds to "right", 1 to "up" etc.
-        """
-        self._action_to_direction = {
-            0: np.array([1, 0]), # Down
-            1: np.array([0, 1]), # Right
-            2: np.array([-1, 0]), # Up
-            3: np.array([0, -1]), # Left
-            4: np.array([0, 0]) # Stay in place
-        }
+        self._starting_pos = starting_pos
 
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
 
     
     def step(self, action):
-        direction = self._action_to_direction[action]
-
-        self._update_location(direction)
+        self._agent_pos = update_location(agent_pos=self._agent_pos, action=action, map_array=self._map)
 
         observation = self._get_obs()
         info = self._get_info()
@@ -58,24 +47,6 @@ class GridNavigationEnv(gym.Env):
         terminated = self.num_steps >= self.episode_length
 
         return observation, reward, terminated, False, info
-
-    def _update_location(self, direction):
-        new_pos = self._agent_pos + direction
-
-        if self._is_valid_location(new_pos):
-            self._agent_pos = new_pos
-        else:
-            self._agent_pos = self._agent_pos
-
-    def _is_valid_location(self, pos):
-        within_x_bounds = 0 <= pos[0] < self.grid_size[0]
-        within_y_bounds = 0 <= pos[1] < self.grid_size[1]
-
-        if within_x_bounds and within_y_bounds:
-            not_a_hole = self._map[pos[0], pos[1]] != -1
-            return  not_a_hole
-        else:
-            return False
 
     def _get_obs(self):
         return self._agent_pos
@@ -87,7 +58,7 @@ class GridNavigationEnv(gym.Env):
         """
         This is a deterministic environment, so we don't use the seed."""
         self.num_steps = 0
-        self._agent_pos = np.array([0, 0])
+        self._agent_pos = np.copy(self._starting_pos)
 
         return self._get_obs(), self._get_info()
 
@@ -97,20 +68,7 @@ class GridNavigationEnv(gym.Env):
         
         The agent is represented by a yellow square, empty cells are white, and holes are blue."""
         if self.render_mode == "rgb_array":
-            map_with_agent = self._map.copy()
-
-            map_with_agent[self._agent_pos[0], self._agent_pos[1]] = 1
-
-            # Convert the map (0: empty, 1: agent, -1: hole) to an RGB image
-            map_with_agent_rgb = np.zeros((self.grid_size[0], self.grid_size[1], 3), dtype=np.uint8)
-            map_with_agent_rgb[map_with_agent == 0] = [203, 71, 119]
-            map_with_agent_rgb[map_with_agent == 1] = [239, 248, 33]
-            map_with_agent_rgb[map_with_agent == -1] = [12, 7, 134]
-
-            # Increase the size of the image by a factor of 120
-            map_with_agent_rgb = np.kron(map_with_agent_rgb, np.ones((120, 120, 1), dtype=np.uint8))
-
-            return map_with_agent_rgb
+            return render_map_and_agent(self._map, self._agent_pos)
         else:
             return
     

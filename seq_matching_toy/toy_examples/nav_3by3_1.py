@@ -5,6 +5,7 @@ nav_3by3_1 = {
         "reward_vmin": -4,
         "reward_vmax": 0,
     },
+    "starting_pos": np.array([0, 0]),
     "map_array": np.array([
         [0, 0, 0],
         [0, -1, 0],

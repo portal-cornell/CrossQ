@@ -32,6 +32,20 @@ def load_map_from_example_dict(example_name: str) -> NDArray:
     """
     return examples[example_name]["map_array"]
 
+def load_starting_pos_from_example_dict(example_name: str) -> NDArray:
+    """
+    Load the starting position from the example dictionary.
+
+    Parameters:
+        example_name: str
+            - The name of the example
+
+    Returns:
+        starting_pos: NDArray
+            - The starting position of the agent
+    """
+    return examples[example_name]["starting_pos"]
+
 def load_ref_seq_from_example_dict(example_name: str) -> NDArray:
     """
     Load the reference seq from the example dictionary.
@@ -96,10 +110,11 @@ def train(cfg: DictConfig):
 
     # Initialize the environment
     map_array = load_map_from_example_dict(cfg.env.example_name)
+    starting_pos = load_starting_pos_from_example_dict(cfg.env.example_name)
     ref_seq = load_ref_seq_from_example_dict(cfg.env.example_name)
     reward_vmin, reward_vmax = load_reward_vmin_vmax_from_example_dict(cfg.env.example_name)
 
-    make_env_fn = lambda: Monitor(GridNavigationEnv(map_array=np.copy(map_array), render_mode="rgb_array", episode_length=cfg.env.episode_length))
+    make_env_fn = lambda: Monitor(GridNavigationEnv(map_array=np.copy(map_array), starting_pos=starting_pos, render_mode="rgb_array", episode_length=cfg.env.episode_length))
 
     training_env = make_vec_env(
         make_env_fn,
