@@ -76,7 +76,7 @@ class GeomXposReplayBuffer(ReplayBuffer):
             optimize_memory_usage,
             handle_timeout_termination,
         )
-        self.render_arrays: List[NDArray] = []
+        self.geom_xpos: List[NDArray] = []
 
     def add(
         self,
