@@ -21,9 +21,9 @@ SEQ_DICT = {
 
         "left_arm_extend_wave_lower_final_only": ["/share/portal/hw575/CrossQ/create_demo/demos/left-arm-extend-wave-lower_joint-state.npy"],
 
-        "right_arm_extend_wave_higher_final_only": ["/share/portal/hw575/CrossQ/create_demo/demos/left-arm-extend-wave-higher_joint-state.npy"],
+        "right_arm_extend_wave_higher_final_only": ["/share/portal/hw575/CrossQ/create_demo/demos/right-arm-extend-wave-higher_joint-state.npy"],
 
-        "right_arm_extend_wave_lower_final_only": ["/share/portal/hw575/CrossQ/create_demo/demos/left-arm-extend-wave-lower_joint-state.npy"],
+        "right_arm_extend_wave_lower_final_only": ["/share/portal/hw575/CrossQ/create_demo/demos/right-arm-extend-wave-lower_joint-state.npy"],
 
         "both_arms_out_final_only": ["/share/portal/hw575/CrossQ/create_demo/demos/both-arms-out_joint-state.npy"],
         "both_arms_out_with_intermediate": ["/share/portal/hw575/CrossQ/create_demo/demos/left-arm-out_joint-state.npy", "/share/portal/hw575/CrossQ/create_demo/demos/both-arms-out_joint-state.npy"],

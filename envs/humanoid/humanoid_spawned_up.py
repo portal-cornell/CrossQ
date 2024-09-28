@@ -441,9 +441,9 @@ def reward_goal_only_euclidean_geom_xpos(data, **kwargs):
 
     pose_matching_reward = np.exp(-np.linalg.norm(curr_geom_xpos_relevant - ref_joint_states_relevant))
     # pose_matching_reward = np.exp(-np.linalg.norm(curr_geom_xpos - ref_joint_states[0]))
-    pose_matching_reward_w = 2
+    pose_matching_reward_w = 1
 
-    if kwargs.get("num_steps", 0) == 0:
+    if kwargs.get("num_steps", 0) == 0 and pose_matching_reward_w != 1:
         print(f"pose_matching_reward_w: {pose_matching_reward_w:.2f}")
     
     reward = basic_standing_reward + pose_matching_reward_w * pose_matching_reward
