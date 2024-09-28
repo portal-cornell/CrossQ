@@ -18,6 +18,16 @@ from seq_matching_toy.toy_examples_main import examples
 from seq_matching_toy.gridnav_rl_callbacks import WandbCallback, GridNavVideoRecorderCallback, GridNavSeqRewardCallback
 
 
+# Define sweep config
+sweep_configuration = {
+    "method": "random",
+    "name": "sweep",
+    "metric": {"goal": "maximize", "name": "rollout/mean_gt_reward_per_epsisode"},
+    "parameters": {
+        "lr": {"max": 0.001, "min": 0.00001},
+    },
+}
+
 def load_map_from_example_dict(example_name: str) -> NDArray:
     """
     Load the map from the example dictionary.
@@ -99,13 +109,21 @@ def get_output_path() -> str:
     return hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
 
 @hydra.main(version_base=None, config_path="configs", config_name="train_rl_config")
-def train(cfg: DictConfig):
+def train_or_sweep(cfg: DictConfig):
     # Set the path for logging
     cfg.logging.run_name = get_output_folder_name(cfg.log_folder)
     cfg.logging.run_path = get_output_path()
 
     logger.info(f"Logging to {cfg.logging.run_path}\nRun name: {cfg.logging.run_name}")
 
+    if cfg.sweep.enabled:
+        sweep_id = wandb.sweep(sweep=sweep_configuration, project=f"sweep_{cfg.env.example_name}")
+        wandb.agent(sweep_id, function=lambda cfg=cfg: train(cfg), count=cfg.sweep.n_trails)
+    else:
+        train(cfg)
+
+
+def train(cfg: DictConfig):
     os.makedirs(os.path.join(cfg.logging.run_path, "eval"), exist_ok=True)
 
     # Initialize the environment
@@ -123,16 +141,6 @@ def train(cfg: DictConfig):
         vec_env_cls=SubprocVecEnv,
     )
 
-    # Define the model
-    model = PPO("MlpPolicy", 
-                training_env, 
-                n_steps=cfg.env.episode_length,
-                n_epochs=cfg.rl_algo.n_epochs,
-                batch_size=cfg.rl_algo.batch_size,
-                learning_rate=cfg.rl_algo.lr,
-                tensorboard_log=os.path.join(cfg.logging.run_path, "tensorboard"),
-                verbose=1)
-    
     with wandb.init(
         project=cfg.logging.wandb_project,
         name=cfg.logging.run_name,
@@ -142,8 +150,26 @@ def train(cfg: DictConfig):
         mode=cfg.logging.wandb_mode,
         monitor_gym=True,  # auto-upload the videos of agents playing the game
     ) as wandb_run:
+        if cfg.sweep.enabled:
+            logger.info(f"Running sweep with lr={wandb.config.lr}")
+            lr = wandb.config.lr
+        else:
+            lr = cfg.rl_algo.lr
+            
+        # Define the model
+        model = PPO("MlpPolicy", 
+                    training_env, 
+                    n_steps=cfg.env.episode_length,
+                    n_epochs=cfg.rl_algo.n_epochs,
+                    batch_size=cfg.rl_algo.batch_size,
+                    learning_rate=lr,
+                    tensorboard_log=os.path.join(cfg.logging.run_path, "tensorboard"),
+                    gamma=cfg.rl_algo.gamma,
+                    ent_coef=cfg.rl_algo.ent_coef,
+                    verbose=1)
+    
         # Make an alias for the wandb in the run_path
-        if cfg.logging.wandb_mode != "disabled":
+        if cfg.logging.wandb_mode != "disabled" and not cfg.sweep.enabled:
             os.symlink(os.path.abspath(wandb_run.dir), os.path.join(cfg.logging.run_path, "wandb"), target_is_directory=True)
 
         checkpoint_dir = os.path.join(cfg.logging.run_path, "checkpoint")
@@ -189,4 +215,4 @@ def train(cfg: DictConfig):
 
 
 if __name__ == "__main__":
-    train()
+    train_or_sweep()
