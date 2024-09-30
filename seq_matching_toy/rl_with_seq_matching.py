@@ -34,9 +34,14 @@ sweep_configuration = {
         # "ent_coef": {"max": 2.0, "min": 0.1},
         # "episode_length": {"values": [9, 10, 11, 12]},
 
-        "lr": {"values": [2.5e-4]},
-        "ent_coef": {"max": 1.5, "min": 0.25},
-        "episode_length": {"values": [9]},
+        # "lr": {"values": [2.5e-4]},
+        # "ent_coef": {"max": 1.5, "min": 0.25},
+        # "episode_length": {"values": [9]},
+        
+        # REINFORCE tuning
+        "lr": {"values": [0.01, 0.001, 0.0001]},
+        "ent_coef": {"max": 10, "min": 1},
+        "episode_length": {"values": [8]},
     },
 }
 
@@ -183,6 +188,7 @@ def train(cfg: DictConfig):
             model = REINFORCE(
                         env = env,
                         learning_rate=lr,
+                        ent_coef=ent_coef,
                         video_save_freq=cfg.logging.video_save_freq)
         else:
             # Define the model
