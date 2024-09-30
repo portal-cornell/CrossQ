@@ -26,6 +26,7 @@ env:
   episode_length: 10
 
 rl_algo:
+  name: ppo
   total_timesteps: 100000
   n_epochs: 10
   lr: 2.5e-4
@@ -47,4 +48,4 @@ defaults:
 
 hydra:
   run:
-    dir: ${log_folder}/${now:%Y-%m-%d-%H%M%S}_map=${env.example_name}_rm=${seq_reward_model.name}_epochs=${rl_algo.n_epochs}-eplen=${env.episode_length}_s=${seed}_nt=${run_notes}
+    dir: ${log_folder}/${now:%Y-%m-%d-%H%M%S}_map=${env.example_name}_rm=${seq_reward_model.name}_rl=${rl_algo.name}-epochs=${rl_algo.n_epochs}-eplen=${env.episode_length}_s=${seed}_nt=${run_notes}

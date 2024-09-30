@@ -13,6 +13,7 @@ from stable_baselines3.common.callbacks import CallbackList
 from loguru import logger
 
 from custom_sb3 import PPO
+from reinforce_model import REINFORCE
 from seq_matching_toy.toy_envs.grid_nav import *
 from seq_matching_toy.toy_examples_main import examples
 from seq_matching_toy.gridnav_rl_callbacks import WandbCallback, GridNavVideoRecorderCallback, GridNavSeqRewardCallback
@@ -24,7 +25,18 @@ sweep_configuration = {
     "name": "sweep",
     "metric": {"goal": "maximize", "name": "rollout/mean_gt_reward_per_epsisode"},
     "parameters": {
-        "lr": {"max": 0.001, "min": 0.00001},
+        # "lr": {"max": 0.001, "min": 0.00001},
+
+        # "lr": {"values": [2.5e-4]},
+        # "ent_coef": {"max": 2.0, "min": 0.1},
+
+        # "lr": {"values": [2.5e-4]},
+        # "ent_coef": {"max": 2.0, "min": 0.1},
+        # "episode_length": {"values": [9, 10, 11, 12]},
+
+        "lr": {"values": [2.5e-4]},
+        "ent_coef": {"max": 1.5, "min": 0.25},
+        "episode_length": {"values": [9]},
     },
 }
 
@@ -126,20 +138,13 @@ def train_or_sweep(cfg: DictConfig):
 def train(cfg: DictConfig):
     os.makedirs(os.path.join(cfg.logging.run_path, "eval"), exist_ok=True)
 
+    reinforce = cfg.rl_algo.name.lower() == "reinforce"
+
     # Initialize the environment
     map_array = load_map_from_example_dict(cfg.env.example_name)
     starting_pos = load_starting_pos_from_example_dict(cfg.env.example_name)
     ref_seq = load_ref_seq_from_example_dict(cfg.env.example_name)
     reward_vmin, reward_vmax = load_reward_vmin_vmax_from_example_dict(cfg.env.example_name)
-
-    make_env_fn = lambda: Monitor(GridNavigationEnv(map_array=np.copy(map_array), starting_pos=starting_pos, render_mode="rgb_array", episode_length=cfg.env.episode_length))
-
-    training_env = make_vec_env(
-        make_env_fn,
-        n_envs=cfg.compute.n_cpu_workers,
-        seed=cfg.seed,
-        vec_env_cls=SubprocVecEnv,
-    )
 
     with wandb.init(
         project=cfg.logging.wandb_project,
@@ -151,22 +156,46 @@ def train(cfg: DictConfig):
         monitor_gym=True,  # auto-upload the videos of agents playing the game
     ) as wandb_run:
         if cfg.sweep.enabled:
-            logger.info(f"Running sweep with lr={wandb.config.lr}")
             lr = wandb.config.lr
+            ent_coef = wandb.config.ent_coef
+            episode_length = wandb.config.episode_length
+
+            logger.info(f"Running sweep with lr={wandb.config.lr}, ent_coef={wandb.config.ent_coef}, episode_length={wandb.config.episode_length}")
         else:
             lr = cfg.rl_algo.lr
-            
-        # Define the model
-        model = PPO("MlpPolicy", 
-                    training_env, 
-                    n_steps=cfg.env.episode_length,
-                    n_epochs=cfg.rl_algo.n_epochs,
-                    batch_size=cfg.rl_algo.batch_size,
-                    learning_rate=lr,
-                    tensorboard_log=os.path.join(cfg.logging.run_path, "tensorboard"),
-                    gamma=cfg.rl_algo.gamma,
-                    ent_coef=cfg.rl_algo.ent_coef,
-                    verbose=1)
+            ent_coef = cfg.rl_algo.ent_coef
+            episode_length = cfg.env.episode_length
+
+        if reinforce:
+            env = GridNavigationEnv(map_array=np.copy(map_array), starting_pos=starting_pos, render_mode="rgb_array", episode_length=episode_length)
+        else:
+            make_env_fn = lambda: Monitor(GridNavigationEnv(map_array=np.copy(map_array), starting_pos=starting_pos, render_mode="rgb_array", episode_length=episode_length))
+
+            training_env = make_vec_env(
+                make_env_fn,
+                n_envs=cfg.compute.n_cpu_workers,
+                seed=cfg.seed,
+                vec_env_cls=SubprocVecEnv,
+            )
+
+        if reinforce:
+            # model = None # TODO: Define the simple MLP model for REINFORCE
+            model = REINFORCE(
+                        env = env,
+                        learning_rate=lr,
+                        video_save_freq=cfg.logging.video_save_freq)
+        else:
+            # Define the model
+            model = PPO("MlpPolicy", 
+                        training_env, 
+                        n_steps=cfg.env.episode_length,
+                        n_epochs=cfg.rl_algo.n_epochs,
+                        batch_size=cfg.rl_algo.batch_size,
+                        learning_rate=lr,
+                        tensorboard_log=os.path.join(cfg.logging.run_path, "tensorboard"),
+                        gamma=cfg.rl_algo.gamma,
+                        ent_coef=ent_coef,
+                        verbose=1)
     
         # Make an alias for the wandb in the run_path
         if cfg.logging.wandb_mode != "disabled" and not cfg.sweep.enabled:
@@ -181,7 +210,7 @@ def train(cfg: DictConfig):
         )
 
         video_callback = GridNavVideoRecorderCallback(
-            SubprocVecEnv([make_env_fn]),
+            SubprocVecEnv([make_env_fn]) if not reinforce else env,
             rollout_save_path=os.path.join(cfg.logging.run_path, "eval"),
             render_freq=cfg.logging.video_save_freq // cfg.compute.n_cpu_workers,
             map_array = np.copy(map_array),
@@ -205,7 +234,7 @@ def train(cfg: DictConfig):
         model.learn(
             total_timesteps=cfg.rl_algo.total_timesteps,
             progress_bar=True, 
-            callback=CallbackList(callback_list))
+            callback=CallbackList(callback_list) if not reinforce else callback_list)
 
         logger.info("Saving final model")
         model.save(str(os.path.join(checkpoint_dir, "final_model")))

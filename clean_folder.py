@@ -58,4 +58,15 @@ if __name__ == "__main__":
         if has_gif:
             has_gif_folder_list.append(os.path.join(folder_path, f, "eval"))
 
-    print(has_gif_folder_list)
+    # print(has_gif_folder_list)
+
+
+    # print("==============")
+    # print([f for f in has_gif_folder_list if "both_arms_out" in f or "left_arm_out" in f or "right_arm_out" in f or "left_arm_extend_wave_higher" in f or "right_arm_extend_wave_higher" in f])
+    # print()
+    # print(len([f for f in has_gif_folder_list if "both_arms_out" in f or "left_arm_out" in f or "right_arm_out" in f or "left_arm_extend_wave_higher" in f or "right_arm_extend_wave_higher" in f]))
+
+    print("==============")
+    print([f for f in has_gif_folder_list if ("both_arms_out" in f or "left_arm_out" in f or "right_arm_out" in f or "left_arm_extend_wave_higher" in f or "right_arm_extend_wave_higher" in f) and ("09-24" in f or "09-26" in f) and ("2xArm+1xStanding" not in f)])
+    print()
+    print(len([f for f in has_gif_folder_list if ("both_arms_out" in f or "left_arm_out" in f or "right_arm_out" in f or "left_arm_extend_wave_higher" in f or "right_arm_extend_wave_higher" in f) and ("09-24" in f or "09-26" in f) and ("2xArm+1xStanding" not in f)]))

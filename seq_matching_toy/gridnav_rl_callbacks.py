@@ -2,6 +2,7 @@ import os
 from typing import Any, Dict, Optional
 import imageio
 import gymnasium
+import wandb
 import torch as th
 import numpy as np
 from numpy import array
@@ -88,6 +89,17 @@ class GridNavSeqRewardCallback(BaseCallback):
         self.model.rollout_buffer.rewards += rewards
 
         # print(f"GridNavSeqRewardCallback took {time.time() - start_time} seconds")
+
+    
+    def on_rollout_end_no_buffer(self, states, actions, rewards):
+        obs_to_use = states[1:]  # Skip the first observation because we are calculating the reward based on what it looks like in the next state
+        final_obs = update_location(agent_pos=obs_to_use[-1].astype(np.int64), action=int(actions[-1]), map_array=self._map)
+        obs_to_use = np.concatenate([obs_to_use, np.expand_dims(final_obs, 0)], axis=0)
+        frames = convert_obs_to_frames(self._map, obs_to_use)
+        
+        matching_rewards, _ = self._matching_fn(frames, self._ref_seq)  # size: (n_steps,)
+
+        return rewards + matching_rewards
 
 
     def _on_step(self) -> bool:
@@ -358,6 +370,101 @@ class GridNavVideoRecorderCallback(BaseCallback):
 
         return True
 
+
+    def _on_step_no_buffer(self, raw_screens, screens, states, actions, rewards, infos, num_timesteps) -> bool:
+        obs_to_use = states[1:]  # Skip the first observation because we are calculating the reward based on what it looks like in the next state
+        final_obs = update_location(agent_pos=obs_to_use[-1].astype(np.int64), action=int(actions[-1]), map_array=self._map)
+        obs_to_use = np.concatenate([obs_to_use, np.expand_dims(final_obs, 0)], axis=0)
+        obs_seq = convert_obs_to_frames(self._map, obs_to_use)
+
+        # Add the first frame and replace final frame to the screens
+        raw_screens = [Image.fromarray(np.uint8(render_map_and_agent(self._map, states[0].astype(np.int64))))] + raw_screens
+        raw_screens[-1] = Image.fromarray(np.uint8(render_map_and_agent(self._map, final_obs)))
+        screens = [Image.fromarray(np.uint8(render_map_and_agent(self._map, states[0].astype(np.int64))))] + screens
+        screens[-1] = Image.fromarray(np.uint8(render_map_and_agent(self._map, final_obs)))
+
+        # Save the raw_screens locally
+        imageio.mimsave(os.path.join(self._rollout_save_path, f"{num_timesteps}_rollouts.gif"), raw_screens, duration=1/30, loop=0)
+        
+        gt_rewards = self._gt_reward_fn(obs_seq, self._ref_seq)
+
+        for i in range(len(infos)):
+            infos[i]["gt_r"] = f"{gt_rewards[i]:.4f}"
+        
+        log_dict = {"rollout/mean_gt_reward_per_epsisode": np.mean(gt_rewards)}
+
+        if self._calc_matching_reward:
+            matching_reward, info = self._matching_fn(obs_seq, self._ref_seq)  # size: (n_steps,)
+
+            log_dict["rollout/avg_total_reward"] = np.mean(matching_reward + rewards)
+            # Add the matching_reward to the infos so that we can plot it
+            for i in range(len(infos)):
+                infos[i]["matching_reward"] = f"{matching_reward[i]:.2f}"
+
+            # Save the matching_rewards locally    
+            with open(os.path.join(self._rollout_save_path, f"{num_timesteps}_rollouts_matching_rewards.npy"), "wb") as f:
+                np.save(f, np.array(states))
+
+            # TODO: messy code taken from seq_matching_toy/run_seq_matching_on_examples.py
+            #   Basically allows us to visualizing the matching function on a rollout
+            rolcol_size = 1
+
+            # 3 * because we have 3 figure columns
+            #   In each figure columns, we have len(ref_seq) for the reference sequence/cost matrix, 1 column for the vertical stack of obs seq, and 1 column for the colorbar
+            fig_width = 3 * (rolcol_size * (len(self._ref_seq) + 2))
+
+            #  We have len(obs_seq) for the observed sequence/cost matrix, 1 row for the horizontal stack of ref seq
+            fig_height = rolcol_size * (len(obs_seq) + 1)
+
+            # Create the figure (2 columns, and the number of rows will be the number of sequence matching algorithms)
+            fig, axs = plt.subplots(1, 3, figsize=(fig_width, fig_height))
+
+            # Plot the cost matrix
+            ax = axs[0]
+            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, self._ref_seq, info["cost_matrix"], f"{self._matching_fn_name} Cost Matrix", cmap="gray_r", rolcol_size=rolcol_size)
+
+            # Plot the assignment matrix
+            ax = axs[1]
+            
+            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, self._ref_seq, info["assignment"], f"{self._matching_fn_name} Assignment Matrix", cmap="Greens", rolcol_size=rolcol_size, vmin=0, vmax=1)
+
+            # Plot the reward
+            ax = axs[2]
+            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, self._ref_seq, np.expand_dims(matching_reward,1), f"{self._matching_fn_name} Reward (Sum = {np.sum(matching_reward):.2f})", cmap="Greens", rolcol_size=rolcol_size,  
+                                        vmin=self._reward_vmin, vmax=self._reward_vmax)
+            
+
+            plt.tight_layout()
+
+            img_path = os.path.join(self._rollout_save_path, f"{num_timesteps}_matching_fn_viz.png")
+            plt.savefig(img_path)
+
+            img = Image.open(img_path)
+
+            # Log to wandb
+            log_dict["trajectory/matching_fn_viz"] = wandb.Image(np.array(img))
+
+            plt.close(fig)
+
+        # Plot info on the frames  
+        for i in range(1, len(screens)):
+            plot_info_on_frame(screens[i], infos[i-1])
+
+        screens = [np.uint8(s).transpose(2, 0, 1) for s in screens]
+
+        # Log to wandb
+        log_dict["trajectory/video"] = wandb.Video(th.ByteTensor(array([screens])), fps=40)
+
+        # Save the rollouts locally    
+        with open(os.path.join(self._rollout_save_path, f"{num_timesteps}_rollouts_states.npy"), "wb") as f:
+            np.save(f, np.array(states))
+        
+        with open(os.path.join(self._rollout_save_path, f"{num_timesteps}_rollouts_rewards.npy"), "wb") as f:
+            np.save(f, np.array(rewards))
+
+        wandb.log(log_dict, step=num_timesteps)
+
+        return True
 
 class WandbCallback(SB3WandbCallback):
     def __init__(
