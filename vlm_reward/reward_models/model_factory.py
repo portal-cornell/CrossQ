@@ -7,10 +7,12 @@ import numpy as np
 from loguru import logger
 
 from vlm_reward.reward_models.model_interface import RewardModel
-from vlm_reward.reward_models.dino import load_dino_wasserstein_reward_model, load_dino_pooled_reward_model
-from vlm_reward.reward_models.lpips import load_lpips_reward_model
-from vlm_reward.reward_models.dreamsim import load_dreamsim_reward_model
-from vlm_reward.reward_models.sam2 import load_sam2_mean_feature_reward_model, load_sam2_wasserstein_reward_model
+# TODO: Temporarily commented out to avoid long import times
+# from vlm_reward.reward_models.dino import load_dino_wasserstein_reward_model, load_dino_pooled_reward_model
+# from vlm_reward.reward_models.lpips import load_lpips_reward_model
+# from vlm_reward.reward_models.dreamsim import load_dreamsim_reward_model
+# from vlm_reward.reward_models.sam2 import load_sam2_mean_feature_reward_model, load_sam2_wasserstein_reward_model
+
 
 def load_reward_model(
                     rank: int,

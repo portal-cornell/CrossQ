@@ -1,0 +1,2 @@
+name: left_arm_out_final_only  # This needs to match the key in SEQ_DICT
+sequence_and_reward_dir: /share/portal/hw575/CrossQ/train_logs/2024-09-07-140805_sb3_sac_envr=left_arm_out_goal_only_euclidean_geom_xpos_rm=hand_engineered_s=9_nt=arms-only-geom/eval

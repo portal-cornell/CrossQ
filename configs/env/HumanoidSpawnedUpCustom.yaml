@@ -1,5 +1,6 @@
 name: HumanoidSpawnedUpCustom
 reward_type: original
+pose_matching_stage_threshold: 0.4
 episode_length: 120
 render_dim: 
   - 480

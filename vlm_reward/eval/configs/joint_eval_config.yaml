@@ -1,8 +1,10 @@
 skip_gifs: 10
+use_geom_xpos: True
 run_notes: null
 
 defaults:
   - reward_model: joint_wasserstein
+  - reward_model/modification: nothing
   - joint_eval_data: both_arms_out 
   - _self_
 
@@ -10,5 +12,5 @@ hydra:
   searchpath:
     - file://../../configs
   run:
-    dir: ./joint_eval_logs/${now:%Y-%m-%d-%H%M%S}_rm=${reward_model.name}_src=${joint_eval_data.name}_nt=${run_notes}
+    dir: ./joint_eval_logs/${now:%Y-%m-%d-%H%M%S}_rm=${reward_model.name}_geom-xpos=${use_geom_xpos}_src=${joint_eval_data.name}_nt=${run_notes}
 
