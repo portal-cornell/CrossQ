@@ -170,12 +170,13 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             render_freq=cfg.logging.video_save_freq // cfg.compute.n_cpu_workers,
             # This allow us to calculate the unifying reward/metric that all methods are compared against
             #   i.e. it defines "rollout/sum_total_reward_per_epsisode" in wandb
-            goal_seq_name=REWARDS_TO_ENTRY_IN_SEQ[cfg.env.reward_type] if "reward_type" in cfg.env and cfg.env["reward_type"] in REWARDS_TO_ENTRY_IN_SEQ else "",
+            goal_seq_name=goal_seq_name,
             threshold=cfg.env.pose_matching_stage_threshold,
             use_geom_xpos="geom_xpos" in cfg.env.reward_type if "reward_type" in cfg.env else False,
             # For joint based reward (this allow us to visualize the sequence matching reward in a rollout
             seq_name=cfg.reward_model.seq_name if cfg.reward_model.name == "joint_wasserstein" or cfg.reward_model.name == "joint_soft_dtw" else "",
             matching_fn_cfg=dict(cfg.reward_model) if cfg.reward_model.name == "joint_wasserstein" or cfg.reward_model.name == "joint_soft_dtw" else {},
+            calc_visual_reward=use_vlm_for_reward or use_joint_vlm_for_reward,
         )
 
         callback_list = [wandb_callback, video_callback]

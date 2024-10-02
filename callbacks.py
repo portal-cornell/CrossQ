@@ -294,6 +294,7 @@ class VideoRecorderCallback(BaseCallback):
         use_geom_xpos: bool = False,
         seq_name: str = "",
         matching_fn_cfg: dict = {}, 
+        calc_visual_reward: bool = False,
         verbose=0
     ):
         """
@@ -320,6 +321,7 @@ class VideoRecorderCallback(BaseCallback):
         self._rollout_save_path = rollout_save_path  # Save the state of the environment
         self._use_geom_xpos = use_geom_xpos
         self._threshold = threshold
+        self._calc_visual_reward = calc_visual_reward
 
         # TODO: Figure out how to calculate the joint matching reward for sequence following tasks
         #   For now, we will just support calculating the ground-truth reward for matching the goal joint state
@@ -475,19 +477,26 @@ class VideoRecorderCallback(BaseCallback):
                                     exclude=("stdout", "log", "json", "csv"))
 
             frames = th.from_numpy(np.array(screens)).float().cuda(0).permute(0,3,1,2) / 255.0
-             
-            logger.info("Evaluating rollout for recorder callback")
-            self.model.reward_model.requires_grad_(False)
-            vlm_rewards = self.model._compute_joint_rewards(
-                        model=self.model.reward_model,
-                        transform=self.model.image_transform,
-                        frames=frames,
-                        ref_joint_states=self.model._ref_joint_states,
-                        batch_size=self.model.reward_model_config["reward_batch_size"],
-                        ).detach().cpu().numpy()
+            
+            if self._calc_visual_reward:
+                logger.info("Evaluating rollout for recorder callback")
+                self.model.reward_model.requires_grad_(False)
+                vlm_rewards = self.model._compute_joint_rewards(
+                            model=self.model.reward_model,
+                            transform=self.model.image_transform,
+                            frames=frames,
+                            ref_joint_states=self.model._ref_joint_states,
+                            batch_size=self.model.reward_model_config["reward_batch_size"],
+                            ).detach().cpu().numpy()
 
-            for i in range(len(infos)):
-                infos[i]["vlm_joint_match_r"] = f"{vlm_rewards[i]:.4f}"
+                # To write the values on the rollout frames
+                for i in range(len(infos)):
+                    infos[i]["vlm_joint_match_r"] = f"{vlm_rewards[i]:.4f}"
+
+                self.logger.record("rollout/avg_vlm_total_reward", 
+                                np.mean(vlm_rewards + rewards), 
+                                exclude=("stdout", "log", "json", "csv"))
+
 
             # TODO: We can potentially also do VLM reward calculation
             if self._calc_matching_reward:
@@ -505,10 +514,6 @@ class VideoRecorderCallback(BaseCallback):
                                 np.mean(matching_reward/self._scale + rewards), 
                                 exclude=("stdout", "log", "json", "csv"))
                 
-                self.logger.record("rollout/avg_vlm_total_reward", 
-                                np.mean(vlm_rewards + rewards), 
-                                exclude=("stdout", "log", "json", "csv"))
-
                 self.logger.record("rollout/avg_matching_total_reward", 
                                 np.mean(matching_reward + rewards), 
                                 exclude=("stdout", "log", "json", "csv"))
