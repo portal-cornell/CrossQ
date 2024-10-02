@@ -1,3 +1,6 @@
 name: soft_dtw
 gamma: 100
-scale: 1
+scale: 5
+# This does not exist by default
+#  You can specify this in the command line: 
+#    +seq_reward_model.post_processing_method=stage_reward_based_on_last_state

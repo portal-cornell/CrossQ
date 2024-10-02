@@ -15,12 +15,12 @@ seq_matching_fns:
     gamma: 5
     scale: 1
     post_processing_method: stage_reward_based_on_last_state
-  # - name: soft_dtw
-  #   gamma: 10
-  #   scale: 1
-  # - name: soft_dtw
-  #   gamma: 100
-  #   scale: 1
+    # - name: soft_dtw
+    #   gamma: 10
+    #   scale: 1
+    # - name: soft_dtw
+    #   gamma: 100
+    #   scale: 1
   - name: soft_dtw
     gamma: 10000
     scale: 1

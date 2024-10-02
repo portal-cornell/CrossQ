@@ -32,8 +32,8 @@ rl_algo:
   lr: 2.5e-4
   batch_size: 64
   gamma: 0.99
-  ent_coef: 0.0
-  vf_coef: 0.5
+  ent_coef: 0.25  # Entropy coefficient in the loss function (best values we found for PPO for the navigation grid env)
+  vf_coef: 1.0  # Value function coefficient in the loss function (best values we found for PPO for the navigation grid env)
   # Used by REINFORCE/Policy Gradient
   n: null
   use_relative_rewards: false
