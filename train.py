@@ -130,19 +130,25 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             verbose=2,
         )
         
-        goal_seq_name = REWARDS_TO_ENTRY_IN_SEQ[cfg.env.reward_type] if "reward_type" in cfg.env else ""
+        goal_seq_name = REWARDS_TO_ENTRY_IN_SEQ[cfg.env.reward_type] if "reward_type" in cfg.env and cfg.env.reward_type in REWARDS_TO_ENTRY_IN_SEQ else ""
 
         # If it's a goal reaching task
-        # For non-goal reaching reward, we should set the goal sequence name to be the final imag only
+        # For non-goal reaching reward, we should set the goal sequence name to be the final image only
         if not ("goal_only" in cfg.env.reward_type):
             if "basic_r" in cfg.env.reward_type:
                 goal_only_reward_type = cfg.env.reward_type.replace("_basic_r", "_goal_only_euclidean")
             elif "seq" in cfg.env.reward_type:
                 base_name = cfg.env.reward_type.split("_seq")[0]
                 goal_only_reward_type = base_name + "_goal_only_euclidean"
+            else:
+                goal_only_reward_type = ""
 
             if goal_only_reward_type in REWARDS_TO_ENTRY_IN_SEQ:
                 goal_seq_name = REWARDS_TO_ENTRY_IN_SEQ[goal_only_reward_type]
+            else:
+                goal_seq_name = ""
+        else:
+            goal_seq_name = ""
 
         video_callback = VideoRecorderCallback(
             SubprocVecEnv([make_env_fn], render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3)),

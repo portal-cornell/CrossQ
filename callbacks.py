@@ -323,10 +323,15 @@ class VideoRecorderCallback(BaseCallback):
 
         # TODO: Figure out how to calculate the joint matching reward for sequence following tasks
         #   For now, we will just support calculating the ground-truth reward for matching the goal joint state
-        self._goal_ref_seq = custom_ot.load_reference_seq(goal_seq_name, use_geom_xpos)
-        logger.info(f"[VideoRecorderCallback] Loaded reference sequence. seq_name={seq_name}, use_geom_xpos={use_geom_xpos}")
+        if goal_seq_name != "":
+            self._goal_ref_seq = custom_ot.load_reference_seq(goal_seq_name, use_geom_xpos)
+            logger.info(f"[VideoRecorderCallback] Loaded reference sequence. seq_name={seq_name}, use_geom_xpos={use_geom_xpos}")
 
-        self.set_ground_truth_goal_matching_fn(goal_seq_name, use_geom_xpos)
+            self.set_ground_truth_goal_matching_fn(goal_seq_name, use_geom_xpos)
+
+            self._calc_gt_reward = True
+        else:
+            self._calc_gt_reward = False
 
         if matching_fn_cfg != {}:
             self._ref_seq = custom_ot.load_reference_seq(seq_name, use_geom_xpos)
@@ -452,22 +457,23 @@ class VideoRecorderCallback(BaseCallback):
             #   We want to concatenate them to get a single np.array size (n_timesteps, env_obs_size)
             states = np.concatenate(states)
             rewards = np.concatenate(rewards)
+            
+            if self._calc_gt_reward:
+                # Calculate the goal matching reward
+                if self._use_geom_xpos:
+                    # Don't need to do anything here, geom_xpos is getting normalized in the grab_screens function
+                    goal_matching_reward = self._gt_goal_matching_fn(np.array(geom_xposes))
+                else:
+                    goal_matching_reward = self._gt_goal_matching_fn(np.array(states)[:, :22])
 
-            # Calculate the goal matching reward
-            if self._use_geom_xpos:
-                # Don't need to do anything here, geom_xpos is getting normalized in the grab_screens function
-                goal_matching_reward = self._gt_goal_matching_fn(np.array(geom_xposes))
-            else:
-                goal_matching_reward = self._gt_goal_matching_fn(np.array(states)[:, :22])
+                for i in range(len(infos)):
+                    infos[i]["gt_joint_match_r"] = f"{goal_matching_reward[i]:.4f}"
 
-            for i in range(len(infos)):
-                infos[i]["gt_joint_match_r"] = f"{goal_matching_reward[i]:.4f}"
-
-            with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_goal_matching_reward.npy"), "wb") as f:
-                np.save(f, np.array(goal_matching_reward))
-            self.logger.record("rollout/sum_total_reward_per_epsisode", 
-                                np.sum(goal_matching_reward), 
-                                exclude=("stdout", "log", "json", "csv"))
+                with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_goal_matching_reward.npy"), "wb") as f:
+                    np.save(f, np.array(goal_matching_reward))
+                self.logger.record("rollout/sum_total_reward_per_epsisode", 
+                                    np.sum(goal_matching_reward), 
+                                    exclude=("stdout", "log", "json", "csv"))
 
             # TODO: We can potentially also do VLM reward calculation
             if self._calc_matching_reward:
