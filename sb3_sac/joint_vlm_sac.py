@@ -240,20 +240,17 @@ class JointVLMSAC(SAC):
 
         cur_height = np.zeros_like(rewards_np)
         if replay_buffer_pos - env_episode_timesteps >= 0:
-            cur_height = self.replay_buffer.observations[
-                replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, 0
-            ] 
+            cur_height = self.replay_buffer.observations[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :, 0] 
         else:
             # Split reward assignment (circular buffer)
-            cur_height[: env_episode_timesteps - replay_buffer_pos, :] = self.replay_buffer.rewards[
-                -(env_episode_timesteps - replay_buffer_pos) :, 0
+            cur_height[: env_episode_timesteps - replay_buffer_pos, :] = self.replay_buffer.observations[
+                -(env_episode_timesteps - replay_buffer_pos) :, :, 0
             ]
             cur_height[
                 env_episode_timesteps - replay_buffer_pos :, :
-            ] = self.replay_buffer.rewards[:replay_buffer_pos, 0]
+            ] = self.replay_buffer.observations[:replay_buffer_pos,:, 0]
 
-        rewards_np = rewards_np * (cur_height > .8) # only take vlm rewards when the gt rewards are large (so it is standing)
-        print(self._add_to_gt_rewards)
+        rewards_np = rewards_np * (cur_height > 1.1) # only take vlm rewards when the gt rewards are large (so it is standing)
         ### Update the rewards
         # import pdb; pdb.set_trace()
         if self._add_to_gt_rewards:
@@ -261,9 +258,7 @@ class JointVLMSAC(SAC):
             # Convert rewards tensor to np array for compatibility with self.replay_buffer.rewards
             # Add the VLM reward to existing rewards
             if replay_buffer_pos - env_episode_timesteps >= 0:
-                self.replay_buffer.rewards[
-                    replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
-                ] += rewards_np[:, :]
+                self.replay_buffer.rewards[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :] += rewards_np[:, :]
             else:
                 # Split reward assignment (circular buffer)
                 self.replay_buffer.rewards[
