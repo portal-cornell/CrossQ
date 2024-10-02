@@ -1,1 +1,7 @@
-python -m train "reward_model=joint_pred_resnet" "compute.n_gpu_workers=1" "logging.wandb_tags=['resnet', 'goal_reaching', 'geom_xpos', 'right_arm_extend_wave_higher']" "env.reward_type=right_arm_extend_wave_higher_basic_r_geom_xpos"
+python -m train "reward_model=joint_pred_resnet" "compute.n_gpu_workers=1" "logging.wandb_tags=['resnet', 'goal_reaching', 'geom_xpos', 'left_arm_extend_wave_higher']" "reward_model.target_joint_state=/share/portal/hw575/CrossQ/create_demo/demos/left-arm-extend-wave-higher_geom-xpos.npy" "env.reward_type=left_arm_extend_wave_higher_basic_r_geom_xpos" "logging.wandb_mode=disabled"
+
+# python -m train "reward_model=joint_pred_resnet" "compute.n_gpu_workers=1" "logging.wandb_tags=['resnet', 'conf', 'goal_reaching', 'geom_xpos', 'both_arms_out']"  "reward_model.target_joint_state=/share/portal/hw575/CrossQ/create_demo/demos/left-arm-extend-wave-higher_geom-xpos.npy" "env.reward_type=both_arms_out_basic_r_geom_xpos"
+
+# python -m train "reward_model=joint_pred_resnet" "compute.n_gpu_workers=1" "logging.wandb_tags=['resnet', 'conf', 'goal_reaching', 'geom_xpos', 'left_arm_out']"  "reward_model.target_joint_state=/share/portal/hw575/CrossQ/create_demo/demos/left-arm-extend-wave-higher_geom-xpos.npy" "env.reward_type=left_arm_out_basic_r_geom_xpos"
+
+# python -m train "reward_model=joint_pred_resnet" "compute.n_gpu_workers=1" "logging.wandb_tags=['resnet', 'conf', 'goal_reaching', 'geom_xpos', 'right_arm_out']"  "reward_model.target_joint_state=/share/portal/hw575/CrossQ/create_demo/demos/left-arm-extend-wave-higher_geom-xpos.npy" "env.reward_type=right_arm_out_basic_r_geom_xpos"

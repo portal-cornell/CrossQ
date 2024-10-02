@@ -30,41 +30,8 @@ from torch import nn
 
 from vlm_reward.vlm_buffer import VLMReplayBuffer
 from vlm_reward.reward_transforms import half_gaussian_filter_1d
+from vlm_reward.reward_models.joint_pred import load_joint_prediction_model
 
-
-def load_joint_prediction_model(device, checkpoint, output_dim):
-    """
-    Load a resnet50 pretrained model. model_cfg should contain output_dim, checkpoint_path
-
-    Inputs:
-        pretrained: if the model should pretrained (on ImageNetV2) or not
-    Outputs:
-        torch.nn.Module: resnet50 torch model
-        torch.transforms.Transform: transform to apply to PIL images before input
-    """
-    # Initialize pre-trained model
-    model = models.resnet50(pretrained=False)
-
-    # Replace the class prediction head with an embedding prediction head
-    model.fc = nn.Linear(model.fc.in_features, output_dim) 
-
-    state_dict = torch.load(checkpoint)
-    model.load_state_dict(state_dict)
-
-    # from the resnet50 code, this is the image format expected
-    # transform does not convert to tensor (since we are not loading images from paths here)
-    transform = transforms.Compose([
-        transforms.Resize(256),
-        transforms.CenterCrop(224),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ]) 
-
-    model.to(device) 
-    for param in model.parameters():
-        param.requires_grad_(False)
-    model.eval()
-
-    return model, transform
 
 class JointVLMSAC(SAC):
     def __init__(
@@ -178,6 +145,8 @@ class JointVLMSAC(SAC):
 
         self._add_to_gt_rewards = add_to_gt_rewards
         self._ref_joint_states = ref_joint_states.cuda(0)
+        self.uncertainty_stats = RunningNormalStats(alpha=.99)
+        self.kappa = 2 # from wvn (higher -> relaxed uncertainty)
 
         if _init_setup_model:
             self._setup_model()
@@ -197,7 +166,8 @@ class JointVLMSAC(SAC):
 
         reward_model, transform = load_joint_prediction_model(device='cuda:0', 
                                     checkpoint=self.reward_model_config["checkpoint"],
-                                    output_dim=self.reward_model_config["output_dim"]
+                                    output_dim=self.reward_model_config["output_dim"],
+                                    is_reco=True
                                     )
         
         self.reward_model = reward_model
@@ -252,7 +222,7 @@ class JointVLMSAC(SAC):
 
         frames = rearrange(frames, "n_steps n_envs h w c -> (n_steps n_envs) c h w")
  
-        rewards = self._compute_joint_rewards(
+        rewards = (1 - .999**self.get_episode_num()) * self._compute_joint_rewards(
             model=self.reward_model,
             transform=self.image_transform,
             frames=frames,
@@ -268,6 +238,22 @@ class JointVLMSAC(SAC):
         self.replay_buffer.clear_render_arrays()
         rewards_np = rewards.cpu().numpy()
 
+        cur_height = np.zeros_like(rewards_np)
+        if replay_buffer_pos - env_episode_timesteps >= 0:
+            cur_height = self.replay_buffer.observations[
+                replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, 0
+            ] 
+        else:
+            # Split reward assignment (circular buffer)
+            cur_height[: env_episode_timesteps - replay_buffer_pos, :] = self.replay_buffer.rewards[
+                -(env_episode_timesteps - replay_buffer_pos) :, 0
+            ]
+            cur_height[
+                env_episode_timesteps - replay_buffer_pos :, :
+            ] = self.replay_buffer.rewards[:replay_buffer_pos, 0]
+
+        rewards_np = rewards_np * (cur_height > .8) # only take vlm rewards when the gt rewards are large (so it is standing)
+        print(self._add_to_gt_rewards)
         ### Update the rewards
         # import pdb; pdb.set_trace()
         if self._add_to_gt_rewards:
@@ -340,14 +326,35 @@ class JointVLMSAC(SAC):
         """
         batches = torch.split(frames, batch_size)
         all_preds = []
+        all_uncertainties = []
         for i, batch in enumerate(batches):
+
             batch_transformed = transform(batch)
 
-            xpos_preds = model(batch_transformed)
+            #xpos_preds = model(batch_transformed)
 
+            xpos_preds, emb, emb_reco = model(batch_transformed)
+            uncertainty = torch.linalg.vector_norm(emb - emb_reco, dim=1)
+            
             all_preds.append(xpos_preds)
-
+            all_uncertainties.append(uncertainty)
+        
+        def gaussian_likelihood(l, mu, std, kappa):
+            return torch.exp(- (l - mu) ** 2 / (2 * (std * kappa) ** 2))
         curr_geom_xpos = torch.cat(all_preds, dim=0)
+        xpos_uncertainties = torch.cat(all_uncertainties, dim=0)
+        self.uncertainty_stats.update(xpos_uncertainties.mean().item()) # update before calculating confidence for now (problem: how to assign the first values for confidence?)
+
+        mu = self.uncertainty_stats.get_mean()
+        std = self.uncertainty_stats.get_std()
+        scale = 1# - .99 ** self.uncertainty_stats.count 
+        
+        if mu is None:
+            confidence = torch.ones_like(xpos_uncertainties)
+        else:
+            confidence = gaussian_likelihood(xpos_uncertainties, mu, std, self.kappa)
+            confidence[xpos_uncertainties < mu] = 1.0
+        confidence *= scale
 
         n, d = ref_joint_states.shape # n is the number of joints, d is the dimension of each joint vector
         curr_geom_xpos = curr_geom_xpos.view(len(frames), n, d)
@@ -357,8 +364,8 @@ class JointVLMSAC(SAC):
         joint_pos_relevant = curr_geom_xpos[:, 12:, :].flatten(start_dim=1)
         target_joint_pos_relevant = ref_joint_states[None, 12:, :].flatten(start_dim=1)
 
-        pose_matching_reward = torch.exp(-torch.linalg.vector_norm(target_joint_pos_relevant - joint_pos_relevant, dim=1))
-
+        pose_matching_reward = confidence * torch.exp(-torch.linalg.vector_norm(target_joint_pos_relevant - joint_pos_relevant, dim=1))
+        
         return pose_matching_reward
 
     def learn(self, *args, **kwargs):
@@ -533,3 +540,68 @@ class JointVLMSAC(SAC):
         if model.use_sde:
             model.policy.reset_noise()  # type: ignore[operator]
         return model
+
+class RunningNormalStats:
+    def __init__(self, alpha=0.98):
+        """
+        Initialize the RunningStats object.
+        
+        Args:
+            alpha (float): The smoothing factor. Default is 0.98.
+                           Higher values give more weight to past observations.
+        """
+        self.alpha = alpha
+        self.mean = None
+        self.squared_mean = None
+        self.count = 0
+
+    def update(self, value):
+        """
+        Update the running statistics with a new value.
+        
+        Args:
+            value (torch.Tensor or float): The new value to incorporate.
+        
+        Returns:
+            tuple: (mean, std) The updated mean and standard deviation.
+        """
+        self.count += 1
+        
+        if isinstance(value, (int, float)):
+            value = torch.tensor(value, dtype=torch.float32)
+        
+        if self.mean is None:
+            self.mean = value.clone().detach()
+            self.squared_mean = value.pow(2).clone().detach()
+        else:
+            if self.count > 1/(1-self.alpha):
+                self.mean = self.alpha * self.mean + (1 - self.alpha) * value
+                self.squared_mean = self.alpha * self.squared_mean + (1 - self.alpha) * value.pow(2)
+            else:
+                self.mean = (self.mean * (self.count - 1) + value) / self.count
+                self.squared_mean = (self.squared_mean * (self.count - 1) + value.pow(2)) / self.count
+    
+    def get_mean(self):
+        """
+        Get the current running mean 
+        
+        Returns:
+            tuple: (mean, std) The current mean and standard deviation,
+                   or (None, None) if no updates have been made.
+        """
+
+        return self.mean
+
+    def get_std(self):
+        """
+        Get the current running stdev 
+        
+        Returns:
+            tuple: (mean, std) The current mean and standard deviation,
+                   or (None, None) if no updates have been made.
+        """
+
+        variance = self.squared_mean - self.mean.pow(2)
+        # Clamp to prevent negative variance due to numerical instability
+        std = torch.sqrt(torch.clamp(variance, min=1e-8))
+        return std
