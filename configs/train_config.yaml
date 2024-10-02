@@ -25,7 +25,8 @@ logging:
 
 defaults:
   - env: HumanoidSpawnedUpCustom
-  - reward_model: joint_pred_resnet #hand_engineered
+  - reward_model: joint_pred_resnet
+  - reward_model/modification: nothing
   - rl_algo: sb3_sac
   - _self_
 

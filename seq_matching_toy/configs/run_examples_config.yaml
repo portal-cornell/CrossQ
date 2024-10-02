@@ -1,0 +1,40 @@
+example: criss_cross_0
+
+cost_fn: nav_shortest_path
+
+seq_matching_fns:
+  - name: ot
+    gamma: 0
+    scale: 1
+  - name: dtw
+    scale: 1
+  - name: soft_dtw
+    gamma: 5
+    scale: 1
+  - name: soft_dtw
+    gamma: 5
+    scale: 1
+    post_processing_method: stage_reward_based_on_last_state
+    # - name: soft_dtw
+    #   gamma: 10
+    #   scale: 1
+    # - name: soft_dtw
+    #   gamma: 100
+    #   scale: 1
+  - name: soft_dtw
+    gamma: 10000
+    scale: 1
+  - name: soft_dtw
+    gamma: 10000
+    scale: 1
+    post_processing_method: stage_reward_based_on_last_state
+
+plot:
+  rolcol_size: 2
+
+run_notes: null
+
+hydra:
+  run:
+    dir: ./seq_matching_toy/toy_examples_logs/${now:%Y-%m-%d-%H%M%S}_ex=${example}_cf=${cost_fn}_nt=${run_notes}
+

@@ -18,7 +18,7 @@ import torch.distributed as dist
 
 from stable_baselines3.common.callbacks import CallbackList
 
-from sb3_sac import SAC, VLM_SAC, JOINT_VLM_SAC
+from custom_sb3 import SAC, VLM_SAC, JOINT_VLM_SAC
 from stable_baselines3.sac.policies import MultiInputPolicy
 
 from sbx.common.make_vec_env import make_vec_env
@@ -33,7 +33,7 @@ import multiprocess
 from envs.base import get_make_env
 from vlm_reward.reward_models.model_factory import load_reward_model
 from vlm_reward.reward_main import dist_worker_compute_reward
-from sbx.common.callbacks import VideoRecorderCallback, WandbCallback, JointBasedSeqRewardCallback
+from callbacks import VideoRecorderCallback, WandbCallback, JointBasedSeqRewardCallback
 from constants import REWARDS_TO_ENTRY_IN_SEQ
 
 def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] = None):
@@ -143,6 +143,26 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             model_save_freq=cfg.logging.model_save_freq // cfg.compute.n_cpu_workers,
             verbose=2,
         )
+        
+        goal_seq_name = REWARDS_TO_ENTRY_IN_SEQ[cfg.env.reward_type] if "reward_type" in cfg.env and cfg.env.reward_type in REWARDS_TO_ENTRY_IN_SEQ else ""
+
+        # If it's a goal reaching task
+        # For non-goal reaching reward, we should set the goal sequence name to be the final image only
+        if not ("goal_only" in cfg.env.reward_type):
+            if "basic_r" in cfg.env.reward_type:
+                goal_only_reward_type = cfg.env.reward_type.replace("_basic_r", "_goal_only_euclidean")
+            elif "seq" in cfg.env.reward_type:
+                base_name = cfg.env.reward_type.split("_seq")[0]
+                goal_only_reward_type = base_name + "_goal_only_euclidean"
+            else:
+                goal_only_reward_type = ""
+
+            if goal_only_reward_type in REWARDS_TO_ENTRY_IN_SEQ:
+                goal_seq_name = REWARDS_TO_ENTRY_IN_SEQ[goal_only_reward_type]
+            else:
+                goal_seq_name = ""
+        else:
+            goal_seq_name = ""
 
         video_callback = VideoRecorderCallback(
             SubprocVecEnv([make_env_fn], render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3)),
@@ -151,6 +171,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             # This allow us to calculate the unifying reward/metric that all methods are compared against
             #   i.e. it defines "rollout/sum_total_reward_per_epsisode" in wandb
             goal_seq_name=REWARDS_TO_ENTRY_IN_SEQ[cfg.env.reward_type] if "reward_type" in cfg.env and cfg.env["reward_type"] in REWARDS_TO_ENTRY_IN_SEQ else "",
+            threshold=cfg.env.pose_matching_stage_threshold,
             use_geom_xpos="geom_xpos" in cfg.env.reward_type if "reward_type" in cfg.env else False,
             # For joint based reward (this allow us to visualize the sequence matching reward in a rollout
             seq_name=cfg.reward_model.seq_name if cfg.reward_model.name == "joint_wasserstein" or cfg.reward_model.name == "joint_soft_dtw" else "",
@@ -164,6 +185,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             callback_list.append(JointBasedSeqRewardCallback(
                                     seq_name = cfg.reward_model.seq_name,
                                     matching_fn_cfg = dict(cfg.reward_model),
+                                    use_geom_xpos = "geom_xpos" in cfg.env.reward_type
             ))
 
         model.learn(

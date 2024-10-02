@@ -11,7 +11,7 @@ import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
 
-from sb3_sac import SAC, VLM_SAC
+from custom_sb3 import SAC, VLM_SAC
 
 from vlm_reward.utils.utils import rewards_matrix_heatmap, rewards_line_plot, pad_to_longest_sequence
 from vlm_reward.reward_main import compute_rewards

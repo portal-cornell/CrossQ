@@ -143,17 +143,21 @@ def create_empty_file(fp):
 
 
 def gt_vs_source_heatmap(gt, source, fp):
+    # Compute the global min and max for both arrays
+    vmin = min(np.min(gt), np.min(source))
+    vmax = max(np.max(gt), np.max(source))
+
     # Create a figure and axis
     fig, ax = plt.subplots(2, figsize=(5, 5))
 
     # Display heatmap for the first sequence
-    heatmap1 = ax[0].imshow([gt], aspect='auto', cmap=plt.cm.hot, interpolation='nearest')
+    heatmap1 = ax[0].imshow([gt], aspect='auto', cmap=plt.cm.hot, interpolation='nearest', vmin=vmin, vmax=vmax)
     ax[0].set_title('Ground Truth')
     ax[0].set_xlabel('Frame')
     ax[0].set_yticks([])  # Remove y-axis ticks for a cleaner look
 
     # Display heatmap for the second sequence
-    heatmap2 = ax[1].imshow([source], aspect='auto', cmap=plt.cm.hot, interpolation='nearest')
+    heatmap2 = ax[1].imshow([source], aspect='auto', cmap=plt.cm.hot, interpolation='nearest', vmin=vmin, vmax=vmax)
     ax[1].set_title('Model')
     ax[1].set_xlabel('Frame')
     ax[1].set_yticks([])  # Remove y-axis ticks for a cleaner look
