@@ -27,8 +27,10 @@ sweep_configuration = {
     "parameters": {
         # "lr": {"max": 0.001, "min": 0.00001},
 
-        # "lr": {"values": [2.5e-4]},
-        # "ent_coef": {"max": 2.0, "min": 0.1},
+        "lr": {"values": [2.5e-4]},
+        "ent_coef": {"values": [0.25, 0.5, 1.0, 1.5, 2.0]},
+        "vf_coef": {"values": [0.5, 1.0, 1.5, 2.0]},
+        "episode_length": {"values": [8]},
 
         # "lr": {"values": [2.5e-4]},
         # "ent_coef": {"max": 2.0, "min": 0.1},
@@ -39,9 +41,9 @@ sweep_configuration = {
         # "episode_length": {"values": [9]},
         
         # REINFORCE tuning
-        "lr": {"values": [0.01, 0.001, 0.0001]},
-        "ent_coef": {"max": 10, "min": 1},
-        "episode_length": {"values": [8]},
+        # "lr": {"values": [0.01, 0.001, 0.0001]},
+        # "ent_coef": {"max": 1.0, "min": 0.1},
+        # "episode_length": {"values": [8]},
     },
 }
 
@@ -144,6 +146,7 @@ def train(cfg: DictConfig):
     os.makedirs(os.path.join(cfg.logging.run_path, "eval"), exist_ok=True)
 
     reinforce = cfg.rl_algo.name.lower() == "reinforce"
+    policy_gradient = cfg.rl_algo.name.lower() == "policy_gradient"
 
     # Initialize the environment
     map_array = load_map_from_example_dict(cfg.env.example_name)
@@ -163,15 +166,17 @@ def train(cfg: DictConfig):
         if cfg.sweep.enabled:
             lr = wandb.config.lr
             ent_coef = wandb.config.ent_coef
+            vf_coef = wandb.config.vf_coef
             episode_length = wandb.config.episode_length
 
-            logger.info(f"Running sweep with lr={wandb.config.lr}, ent_coef={wandb.config.ent_coef}, episode_length={wandb.config.episode_length}")
+            logger.info(f"Running sweep with lr={wandb.config.lr}, ent_coef={wandb.config.ent_coef}, vf_coef={wandb.config.vf_coef}, episode_length={wandb.config.episode_length}")
         else:
             lr = cfg.rl_algo.lr
             ent_coef = cfg.rl_algo.ent_coef
+            vf_coef = cfg.rl_algo.vf_coef
             episode_length = cfg.env.episode_length
 
-        if reinforce:
+        if reinforce or policy_gradient:
             env = GridNavigationEnv(map_array=np.copy(map_array), starting_pos=starting_pos, render_mode="rgb_array", episode_length=episode_length)
         else:
             make_env_fn = lambda: Monitor(GridNavigationEnv(map_array=np.copy(map_array), starting_pos=starting_pos, render_mode="rgb_array", episode_length=episode_length))
@@ -183,12 +188,15 @@ def train(cfg: DictConfig):
                 vec_env_cls=SubprocVecEnv,
             )
 
-        if reinforce:
-            # model = None # TODO: Define the simple MLP model for REINFORCE
+        if reinforce or policy_gradient:
             model = REINFORCE(
                         env = env,
+                        n=cfg.rl_algo.n,
                         learning_rate=lr,
                         ent_coef=ent_coef,
+                        gamma=cfg.rl_algo.gamma,
+                        policy_gradient=policy_gradient,
+                        use_relative_reward=cfg.rl_algo.use_relative_reward if "use_relative_reward" in cfg.rl_algo else False,
                         video_save_freq=cfg.logging.video_save_freq)
         else:
             # Define the model
@@ -201,6 +209,7 @@ def train(cfg: DictConfig):
                         tensorboard_log=os.path.join(cfg.logging.run_path, "tensorboard"),
                         gamma=cfg.rl_algo.gamma,
                         ent_coef=ent_coef,
+                        vf_coef=vf_coef,
                         verbose=1)
     
         # Make an alias for the wandb in the run_path
@@ -215,13 +224,17 @@ def train(cfg: DictConfig):
             verbose=2,
         )
 
+        matching_fn_cfg = dict(cfg.seq_reward_model)
+        matching_fn_cfg["reward_vmin"] = reward_vmin
+        matching_fn_cfg["reward_vmax"] = reward_vmax
+
         video_callback = GridNavVideoRecorderCallback(
-            SubprocVecEnv([make_env_fn]) if not reinforce else env,
+            SubprocVecEnv([make_env_fn]) if not (reinforce or policy_gradient) else env,
             rollout_save_path=os.path.join(cfg.logging.run_path, "eval"),
             render_freq=cfg.logging.video_save_freq // cfg.compute.n_cpu_workers,
             map_array = np.copy(map_array),
             ref_seq = np.copy(ref_seq),
-            matching_fn_cfg = dict(cfg.seq_reward_model),
+            matching_fn_cfg = matching_fn_cfg,
             cost_fn_name = cfg.cost_fn,
             reward_vmin = reward_vmin,
             reward_vmax = reward_vmax,
@@ -230,7 +243,7 @@ def train(cfg: DictConfig):
         seq_matching_callback = GridNavSeqRewardCallback(
             map_array = np.copy(map_array),
             ref_seq = np.copy(ref_seq),
-            matching_fn_cfg = dict(cfg.seq_reward_model),
+            matching_fn_cfg = matching_fn_cfg,
             cost_fn_name = cfg.cost_fn,
         )
 
@@ -240,7 +253,7 @@ def train(cfg: DictConfig):
         model.learn(
             total_timesteps=cfg.rl_algo.total_timesteps,
             progress_bar=True, 
-            callback=CallbackList(callback_list) if not reinforce else callback_list)
+            callback=CallbackList(callback_list) if not (reinforce or policy_gradient) else callback_list)
 
         logger.info("Saving final model")
         model.save(str(os.path.join(checkpoint_dir, "final_model")))

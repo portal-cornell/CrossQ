@@ -71,7 +71,7 @@ def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, 
     ax.axis('off')
 
 
-def prepare_seq_matching_fns(seq_matching_fn_configs, cost_fn_name):
+def prepare_seq_matching_fns(seq_matching_fn_configs, cost_fn_name, reward_vmin, reward_vmax):
     """
     Return:
         a dictionary that maps the function to its name
@@ -79,6 +79,10 @@ def prepare_seq_matching_fns(seq_matching_fn_configs, cost_fn_name):
     seq_matching_fns_dict = {}
 
     for fn_config in seq_matching_fn_configs:
+        fn_config = dict(fn_config)
+        fn_config["reward_vmin"] = reward_vmin
+        fn_config["reward_vmax"] = reward_vmax
+
         fn, fn_name = get_matching_fn(fn_config, cost_fn_name)
         seq_matching_fns_dict[fn_name] = fn
         
@@ -106,10 +110,14 @@ def run_examples_from_config(cfg: DictConfig):
 
     logger.info(f"Saving the plots to {data_save_dir}")
 
-    n_seq_matching_fns = len(cfg.seq_matching_fns)
-    seq_matching_fns_dict = prepare_seq_matching_fns(cfg.seq_matching_fns, cfg.cost_fn)
-
     example_name = cfg.example
+
+    n_seq_matching_fns = len(cfg.seq_matching_fns)
+    
+    reward_vmin = examples[example_name]["plot"]["reward_vmin"]
+    reward_vmax = examples[example_name]["plot"]["reward_vmax"]
+
+    seq_matching_fns_dict = prepare_seq_matching_fns(cfg.seq_matching_fns, cfg.cost_fn, reward_vmin, reward_vmax)
 
     for obs_id in tqdm(examples[example_name]["obs_seqs"].keys()):
         ref_seq = np.array(examples[example_name]["ref_seq"])

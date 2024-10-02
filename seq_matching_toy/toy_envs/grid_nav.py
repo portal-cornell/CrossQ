@@ -28,7 +28,7 @@ class GridNavigationEnv(gym.Env):
         
         self.num_steps = 0
         self.episode_length = episode_length
-        self._map = map_array
+        self.map = map_array
 
         self._starting_pos = starting_pos
 
@@ -37,7 +37,7 @@ class GridNavigationEnv(gym.Env):
 
     
     def step(self, action):
-        self._agent_pos = update_location(agent_pos=self._agent_pos, action=action, map_array=self._map)
+        self._agent_pos = update_location(agent_pos=self._agent_pos, action=action, map_array=self.map)
 
         observation = self._get_obs()
         info = self._get_info()
@@ -68,7 +68,7 @@ class GridNavigationEnv(gym.Env):
         
         The agent is represented by a yellow square, empty cells are white, and holes are blue."""
         if self.render_mode == "rgb_array":
-            return render_map_and_agent(self._map, self._agent_pos)
+            return render_map_and_agent(self.map, self._agent_pos)
         else:
             return
     

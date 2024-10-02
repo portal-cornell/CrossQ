@@ -12,9 +12,6 @@ nav_3by3_0 = {
         [0, 0, 0],
     ]),
     "ref_seq": [
-        np.array([[1, 0, 0], 
-                  [0, -1, 0],
-                  [0, 0, 0]]),
         np.array([[0, 0, 0], 
                   [0, -1, 0],
                   [0, 0, 1]]),
@@ -26,9 +23,6 @@ nav_3by3_0 = {
         0: {
             "descriptions": "Hypothesis: OT will be happy to reach the 2nd idx before 1st idx",
             "seq": [
-                np.array([[1, 0, 0], 
-                          [0, -1, 0],
-                          [0, 0, 0]]),
                 np.array([[0, 0, 0], 
                           [1, -1, 0],
                           [0, 0, 0]]),
@@ -41,14 +35,20 @@ nav_3by3_0 = {
                 np.array([[0, 0, 0], 
                           [0, -1, 0],
                           [0, 0, 1]]),
+                np.array([[0, 0, 0], 
+                          [0, -1, 0],
+                          [0, 0, 1]]),
+                np.array([[0, 0, 0], 
+                          [0, -1, 0],
+                          [0, 0, 1]]),
+                np.array([[0, 0, 0], 
+                          [0, -1, 0],
+                          [0, 0, 1]]),
             ],
         },
         1: {
             "descriptions": "The correct rollout",
             "seq": [
-                np.array([[1, 0, 0], 
-                          [0, -1, 0],
-                          [0, 0, 0]]),
                 np.array([[0, 1, 0], 
                           [0, -1, 0],
                           [0, 0, 0]]),

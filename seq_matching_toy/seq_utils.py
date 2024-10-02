@@ -45,6 +45,8 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
 
                 rewards = []
 
+                max_reward_range = fn_config["reward_vmax"] - fn_config["reward_vmin"]
+
                 # print(f"reward={reward}")
                 # print(f"matching_matrix={matching_matrix}")
 
@@ -56,7 +58,7 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
                     if assignment != previous_step_assignment:
                         # Since reward[i] is the last reward at the end of the current stage, the reward bonus for 
                         #   the next stage should get updated
-                        reward_bonus += -(-6/2) + reward[i-1]
+                        reward_bonus += -(-max_reward_range/2) + reward[i-1]
                     
                     new_reward = reward[i] + reward_bonus
 

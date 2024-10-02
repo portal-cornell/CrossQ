@@ -33,6 +33,10 @@ rl_algo:
   batch_size: 64
   gamma: 0.99
   ent_coef: 0.0
+  vf_coef: 0.5
+  # Used by REINFORCE/Policy Gradient
+  n: null
+  use_relative_rewards: false
 
 sweep:
   enabled: false
