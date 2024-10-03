@@ -13,7 +13,7 @@ from vlm_reward.utils.optimal_transport import load_reference_seq, euclidean_dis
 
 from envs.humanoid.reward_helpers import *
 
-from constants import REWARDS_TO_ENTRY_IN_SEQ
+from constants import TASK_SEQ_DICT
 
 def mass_center(model, data):
     mass = np.expand_dims(model.body_mass, axis=1)
@@ -33,6 +33,7 @@ class HumanoidEnvCustom(GymHumanoidEnv):
         self,
         episode_length=240,
         reward_type="remain_standing",
+        task_name=None,
         render_mode: str = "rgb_array",
         forward_reward_weight: float = 1.25,
         ctrl_cost_weight: float = 0.1,
@@ -102,16 +103,22 @@ class HumanoidEnvCustom(GymHumanoidEnv):
         assert reward_type in REWARD_FN_MAPPING.keys()
         self.reward_fn = REWARD_FN_MAPPING[reward_type]
 
+        self._use_geom_xpos = "geom_xpos" in reward_type
+
         self._ref_joint_states = np.array([])
 
-        if reward_type in REWARDS_TO_ENTRY_IN_SEQ:
-            # If it's using the relative joint states, size (num_of_ref_joint_states, 22)
-            # If it's using the geom_xpos, size (num_of_ref_joint_states, 18, 3)
-            use_geom_xpos = "geom_xpos" in reward_type
-            self._ref_joint_states = load_reference_seq(REWARDS_TO_ENTRY_IN_SEQ[reward_type], use_geom_xpos=use_geom_xpos)
-            logger.info(f"[Env] Loaded reference sequence for {reward_type}. seq_name={REWARDS_TO_ENTRY_IN_SEQ[reward_type]} and use_geom_xpos={use_geom_xpos}")
+        # Determine the references to use
+        #   Either to calculate the reward (when the reward_type is goal_only_euclidean_geom_xpos)
+        #   Or to evaluate how well the agent is doing wrt the references (when the reward_type is basic_r_geom_xpos)
+        if task_name in list(TASK_SEQ_DICT.keys()) and "key_frames" in list(TASK_SEQ_DICT[task_name]["sequences"].keys()):
+            # We can do this because both the goal_only_euclidean_geom_xpos and basic_r_geom_xpos use the same reference sequence
+            ref_seq_to_load = "key_frames"
+            
+            self._ref_joint_states = load_reference_seq(task_name, ref_seq_to_load, use_geom_xpos=self._use_geom_xpos)
+
+            logger.info(f"[Env] Loaded reference sequence for {reward_type}. task_name={task_name}. seq_name={ref_seq_to_load}. shape={self._ref_joint_states.shape}")
         else:
-            logger.info(f"[Env] Warning: {reward_type} is not in the REWARDS_TO_ENTRY_IN_SEQ. No reference joint states loaded.")
+            logger.info(f"[Env] Warning: {task_name} is not in TASK_SEQ_DICT.")
 
         # Spawned the humanoid not so high
         self.init_qpos[2] = 1.3
@@ -372,42 +379,6 @@ def reward_splitting(data, **kwargs):
 
     return reward, terms_to_plot
 
-# TODO: Remove (We stopped using qpos because agent cannot learn well with this)
-# def reward_goal_only_euclidean(data, **kwargs):
-#     """Only use the goal joint states to calculate the reward
-#     - The reward is based on the euclidean distance between the current joint states and the reference joint states
-
-#     Final goal: Both arms out
-
-#     This task is a goal-reaching task (i.e. doesn't matter how you get to the goal, as long as you get to the goal)
-#     """
-#     basic_standing_reward, terms_to_plot = basic_remain_standing_rewards(data, 
-#                                                             upward_reward_w=1, 
-#                                                             ctrl_cost_w=1, 
-#                                                             **kwargs)
-
-#     # Calculate the reward based on the euclidean distance between the current joint states and the goal joint states
-#     assert "ref_joint_states" in kwargs, "ref_joint_states must be passed in as part of the kwargs"
-#     ref_joint_states = kwargs.get('ref_joint_states', None)
-
-#     assert ref_joint_states.shape[0] == 1, "there should only be the goal image/joint position"
-
-#     # Mimicking how they get the observation
-#     # https://github.com/Farama-Foundation/Gymnasium/blob/b6046caeb30c9938789aeeec183147c7ffd1983b/gymnasium/envs/mujoco/humanoid_v4.py#L119
-#     curr_qpos = data.qpos.flat.copy()[2:]
-
-#     pose_matching_reward = np.exp(-np.linalg.norm(curr_qpos - ref_joint_states[0]))
-#     pose_matching_reward_w = 1
-    
-#     reward = basic_standing_reward + pose_matching_reward_w * pose_matching_reward
-
-#     terms_to_plot["pose_r"] = f"{pose_matching_reward:.2f}"
-#     terms_to_plot["r"] = f"{reward:.2f}"
-#     terms_to_plot["steps"] = kwargs.get("num_steps", 0)
-
-#     return reward, terms_to_plot
-
-
 def reward_goal_only_euclidean_geom_xpos(data, **kwargs):
     """Only use the goal joint states to calculate the reward
     - The reward is based on the euclidean distance between the current joint states and the reference joint states
@@ -425,8 +396,8 @@ def reward_goal_only_euclidean_geom_xpos(data, **kwargs):
     #   Assume ref_joint_states are already normalized when they are loaded
     assert "ref_joint_states" in kwargs, "ref_joint_states must be passed in as part of the kwargs"
     ref_joint_states = kwargs.get('ref_joint_states', None)
-
-    assert ref_joint_states.shape[0] == 1, "there should only be the goal image/joint position"
+    
+    assert ref_joint_states.shape[0] == 1, f"there should only be the goal image/joint position, but got shape: {ref_joint_states.shape}"
 
     # Mimicking how they get the observation
     # https://github.com/Farama-Foundation/Gymnasium/blob/b6046caeb30c9938789aeeec183147c7ffd1983b/gymnasium/envs/mujoco/humanoid_v4.py#L119
@@ -576,34 +547,6 @@ def reward_seq_avg(data, **kwargs):
     
     return reward, terms_to_plot
 
-# TODO: Remove (We stopped using qpos because agent cannot learn well with this)
-# def reward_only_basic_r(data, **kwargs):
-#     """Only provide basic reward to remain standing and control cost
-#     """
-#     basic_standing_reward, terms_to_plot = basic_remain_standing_rewards(data, 
-#                                                             upward_reward_w=1, 
-#                                                             ctrl_cost_w=1, 
-#                                                             **kwargs)
-    
-#     reward = basic_standing_reward
-
-#     # Still calculating the pose matching reward (to individual poses) to show in the terms_to_plot
-#     assert "ref_joint_states" in kwargs, "ref_joint_states must be passed in as part of the kwargs"
-#     ref_joint_states = kwargs.get('ref_joint_states', None)
-
-#     num_ref_joint_states = ref_joint_states.shape[0]
-
-#     curr_qpos = data.qpos.flat.copy()[2:]
-
-#     unweighted_reward_for_each_ref = np.exp(-euclidean_distance_advanced(curr_qpos, ref_joint_states))
-
-#     terms_to_plot["pose_r_l"] = str([f"{unweighted_reward_for_each_ref[i]:.2f}" for i in range(num_ref_joint_states)])
-#     terms_to_plot["r"] = f"{reward:.2f}"
-#     terms_to_plot["steps"] = kwargs.get("num_steps", 0)
-    
-#     return reward, terms_to_plot
-
-
 def remain_standing_reward(data, **kwargs):
     """Only provide basic reward to remain standing and control cost
     """
@@ -652,65 +595,16 @@ def reward_only_basic_r_geom_xpos(data, **kwargs):
 
 
 REWARD_FN_MAPPING = dict(
+        # Hand engineered reward functions
         original = reward_original,
-
         remain_standing = remain_standing_reward,
-
         best_standing_up = best_standing_from_lying_down,
-
-        # Goal reaching tasks
         kneeling = reward_kneeling,
-
         splitting = reward_splitting,
 
-        arms_bracket_left_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
-        arms_bracket_left_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
-
-        arms_bracket_right_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
-        arms_bracket_right_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
-
-        arms_bracket_down_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
-        arms_bracket_down_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
-
-        arms_bracket_up_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
-        arms_bracket_up_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
-
-        arms_crossed_high_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
-        arms_crossed_high_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
-
-        left_arm_out_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
-        left_arm_out_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
-
-        right_arm_out_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
-        right_arm_out_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
-
-        left_arm_extend_wave_higher_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
-        left_arm_extend_wave_higher_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
-
-        left_arm_extend_wave_lower_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
-        left_arm_extend_wave_lower_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
-
-        right_arm_extend_wave_higher_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
-        right_arm_extend_wave_higher_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
-
-        right_arm_extend_wave_lower_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
-        right_arm_extend_wave_lower_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
-
-        both_arms_out_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
-        both_arms_out_seq_euclidean = reward_seq_euclidean,
-        both_arms_out_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
-
-        both_arms_up_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
-        both_arms_up_seq_euclidean = reward_seq_euclidean,
-        both_arms_up_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
-
-        default_but_arms_up_goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,
-        default_but_arms_up_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
-
-        # Sequence matching tasks
-        arms_up_then_down_seq_euclidean = reward_seq_euclidean,
-        arms_up_then_down_seq_stage_detector = reward_seq_stage_detector,
-        arms_up_then_down_seq_avg = reward_seq_avg,
-        arms_up_then_down_basic_r_geom_xpos = reward_only_basic_r_geom_xpos,
+        # Generic reward functions used for tasks that have reference
+        #   reference can either be just a final goal or a sequence to follow
+        goal_only_euclidean_geom_xpos = reward_goal_only_euclidean_geom_xpos,  # Only works when reference is just a final goal
+        basic_r_geom_xpos = reward_only_basic_r_geom_xpos,  # Only supplies the basic remain standing reward (but also plots how well the agent does wrt the reference)
     )
     

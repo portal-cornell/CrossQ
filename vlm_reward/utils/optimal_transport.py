@@ -1,29 +1,75 @@
 import numpy as np
 import ot
 from scipy.spatial.distance import cdist
-from constants import SEQ_DICT
+from constants import TASK_SEQ_DICT
 import heapq
 import matplotlib.pyplot as plt
 
-def load_reference_seq(seq_name: str, use_geom_xpos: bool) -> np.ndarray:
-    """
-    Load the reference sequence for the given sequence name
-    """
-    ref_seq = []
-    for joint in SEQ_DICT[seq_name]:
-        if use_geom_xpos:
-            new_fp = str(joint).replace("joint-state", "geom-xpos")
-        else:
-            new_fp = joint
+from loguru import logger
 
+def load_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bool = False) -> np.ndarray:
+    """
+    Load the reference sequence for the given task name and sequence name from constants.TASK_SEQ_DICT
+
+    Parameters:
+        task_name: str
+            Specifies the specific task that we want to load the reference sequence for
+        seq_name: str
+            Specifies the specific sequence that we want to load the reference sequence for
+            (e.g. "key_frames")
+        use_qpos: bool
+            True then we load path that ends with "joint-state.npy"
+            False then we load path that ends with "geom-xpos.npy"
+    """
+    assert task_name in TASK_SEQ_DICT, f"Unknown task name: {task_name}"
+
+    ref_defined_via_a_list = type(TASK_SEQ_DICT[task_name]["sequences"][seq_name]) == list
+
+    if ref_defined_via_a_list:
+        # TODO: We assume that when ref is defined via the list, it doesn't not contain the initial state
+        ref_seq = []
+
+        for joint in TASK_SEQ_DICT[task_name]["sequences"][seq_name]:
+            new_fp = joint
+            if use_geom_xpos:
+                if "joint-state" in new_fp:
+                    new_fp = new_fp.replace("joint-state", "geom-xpos")
+            else:
+                # Using qpos (labeled as joint-state)
+                if "geom-xpos" in new_fp:
+                    new_fp = new_fp.replace("geom-xpos", "joint-state")
+
+            loaded_joint_states = np.load(new_fp)
+
+            if use_geom_xpos:
+                # Because we are using geom_xpos
+                #    Normalize the joint states based on the torso (index 1)
+                loaded_joint_states = loaded_joint_states - loaded_joint_states[1]
+
+            ref_seq.append(loaded_joint_states)
+        
+        return np.stack(ref_seq)
+    else:
+        assert type(TASK_SEQ_DICT[task_name]["sequences"][seq_name]) == str, f"Unknown type for TASK_SEQ_DICT[{task_name}]['sequences'][{seq_name}]. Has to be either a list or a string, but got {type(TASK_SEQ_DICT[task_name]['sequences'][seq_name])}"
+        
+        new_fp = TASK_SEQ_DICT[task_name]["sequences"][seq_name]
+        if use_geom_xpos:
+            if "joint-state" in new_fp:
+                new_fp = new_fp.replace("joint-state", "geom-xpos")
+        else:
+            # Using qpos (labeled as joint-state)
+            if "geom-xpos" in new_fp:
+                new_fp = new_fp.replace("geom-xpos", "joint-state")
+        
         loaded_joint_states = np.load(new_fp)
 
         if use_geom_xpos:
-            # Normalize the joint states based on the torso (index 1)
+            # Because we are using geom_xpos
+            #    Normalize the joint states based on the torso (index 1)
             loaded_joint_states = loaded_joint_states - loaded_joint_states[1]
 
-        ref_seq.append(loaded_joint_states)
-    return np.stack(ref_seq)
+        # Because of how these sequences are generated, we need to remove the 1st frame (which is the initial state)
+        return loaded_joint_states[1:]
 
 def compute_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1, gamma=0.01, modification_dict={}) -> np.ndarray:
     """

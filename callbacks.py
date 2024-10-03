@@ -26,16 +26,17 @@ import time
 
 from vlm_reward.reward_main import compute_rewards
 from vlm_reward.reward_transforms import half_gaussian_filter_1d
+from constants import TASK_SEQ_DICT
 
 class JointBasedSeqRewardCallback(BaseCallback):
     """
     Custom callback for calculating joint based sequence matching rewards after rollouts are collected.
     """
-    def __init__(self, seq_name, matching_fn_cfg, use_geom_xpos, verbose=0):
+    def __init__(self, task_name, matching_fn_cfg, use_geom_xpos, verbose=0):
         super(JointBasedSeqRewardCallback, self).__init__(verbose)
 
-        self._ref_seq = custom_ot.load_reference_seq(seq_name, use_geom_xpos=use_geom_xpos)
-        logger.info(f"[JointBasedSeqRewardCallback] Loaded reference sequence. seq_name={seq_name}, use_geom_xpos={use_geom_xpos}, self._ref_seq.shape={self._ref_seq.shape}")
+        self._ref_seq = custom_ot.load_reference_seq(task_name=task_name, seq_name=matching_fn_cfg["seq_name"], use_geom_xpos=use_geom_xpos)
+        logger.info(f"[JointBasedSeqRewardCallback] Loaded reference sequence. task_name={task_name}, seq_name={matching_fn_cfg['seq_name']}, use_geom_xpos={use_geom_xpos}, self._ref_seq.shape={self._ref_seq.shape}")
 
         self._scale = matching_fn_cfg['scale']
         self._use_geom_xpos = use_geom_xpos
@@ -289,9 +290,9 @@ class VideoRecorderCallback(BaseCallback):
         render_freq: int,
         n_eval_episodes: int = 1,
         deterministic: bool = True,
-        goal_seq_name: str = "",
+        use_geom_xpos: bool = True,
+        task_name: str = "",
         threshold: float = 0.5,
-        use_geom_xpos: bool = False,
         seq_name: str = "",
         matching_fn_cfg: dict = {}, 
         calc_visual_reward: bool = False,
@@ -323,20 +324,20 @@ class VideoRecorderCallback(BaseCallback):
         self._threshold = threshold
         self._calc_visual_reward = calc_visual_reward
 
-        # TODO: Figure out how to calculate the joint matching reward for sequence following tasks
-        #   For now, we will just support calculating the ground-truth reward for matching the goal joint state
-        if goal_seq_name != "":
-            self._goal_ref_seq = custom_ot.load_reference_seq(goal_seq_name, use_geom_xpos)
-            logger.info(f"[VideoRecorderCallback] Loaded reference sequence. seq_name={seq_name}, use_geom_xpos={use_geom_xpos}")
+        if task_name != "":
+            self._goal_ref_seq = custom_ot.load_reference_seq(task_name=task_name, seq_name="key_frames", use_geom_xpos=self._use_geom_xpos)
+            logger.info(f"[VideoRecorderCallback] Loaded reference sequence. task_name={task_name} seq_name=key_frames, use_geom_xpos={self._use_geom_xpos}")
 
-            self.set_ground_truth_goal_matching_fn(goal_seq_name, use_geom_xpos)
+            self.set_ground_truth_goal_matching_fn(task_name, use_geom_xpos)
 
             self._calc_gt_reward = True
         else:
             self._calc_gt_reward = False
 
         if matching_fn_cfg != {}:
-            self._ref_seq = custom_ot.load_reference_seq(seq_name, use_geom_xpos)
+            # The reference sequence that is used to calculate the sequence matching reward
+            self._seq_matching_ref_seq = custom_ot.load_reference_seq(task_name=task_name, seq_name=matching_fn_cfg["seq_name"], use_geom_xpos=self._use_geom_xpos)
+            
             self._calc_matching_reward = True
             self._scale = matching_fn_cfg['scale']
             self.set_matching_fn(matching_fn_cfg)
@@ -344,15 +345,17 @@ class VideoRecorderCallback(BaseCallback):
             self._calc_matching_reward = False
         
 
-    def set_ground_truth_goal_matching_fn(self, goal_seq_name: str, use_geom_xpos: bool):
+    def set_ground_truth_goal_matching_fn(self, task_name: str, use_geom_xpos: bool):
         """Set the ground-truth goal matching function based on the goal_seq_name.
 
         This will be unifying metric that we measure the performance of different methods against.
 
         The function will return an reward array of size (n_timesteps,) where each element is the reward for the corresponding timestep.
         """
-        if "final_only" in goal_seq_name:
-            logger.info(f"The ground-truth reward will be calculated based on the final joint state only: {goal_seq_name}")
+        is_goal_reaching_task = TASK_SEQ_DICT[task_name]["task_type"].lower() == "goal_reaching"
+
+        if is_goal_reaching_task:
+            logger.info(f"Goal Reaching Task. The ground-truth reward will be calculated based on the final joint state only. Task name = {task_name}")
 
             assert len(self._goal_ref_seq) == 1, f"Expected only 1 reference sequence, got {len(self._goal_ref_seq)}"
             

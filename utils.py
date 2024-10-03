@@ -101,5 +101,8 @@ def get_make_env_kwargs(cfg: DictConfig):
         )
     if "custom" in cfg.env.name.lower():
         make_env_kwargs["reward_type"] = cfg.env.reward_type
+        if cfg.env.task_name:
+            make_env_kwargs["task_name"] = cfg.env.task_name
 
     return make_env_kwargs
+
