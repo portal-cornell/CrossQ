@@ -123,6 +123,7 @@ if not args.gen_traj:
 else:
     seq_name_to_subgoal_list = {
         "right-arm-extend-wave-higher": ["right-arm-extend-wave-higher"],
+        "left-arm-out": ["left-arm-out"],
         "left-arm-out_to_both-arms-out": ["left-arm-out", "both-arms-out"],
         "left-arm-out_to_right-arm-out": ["left-arm-out", "right-arm-out"],
         "right-arm-out_to_left-arm-out": ["right-arm-out", "left-arm-out"],
@@ -199,7 +200,7 @@ else:
         print(f"qposes_to_save: {np.array(qposes_to_save).shape}")
         np.save(fout, np.array(qposes_to_save))
 
-    with open(os.path.join("create_demo/seq_demos", f"{seq_name}_{num_of_steps_per_subgoal}-frames_geom-xpos.npy.npy"), "wb") as fout:
+    with open(os.path.join("create_demo/seq_demos", f"{seq_name}_{num_of_steps_per_subgoal}-frames_geom-xpos.npy"), "wb") as fout:
         print(f"geom_xposes_to_save: {np.array(geom_xposes_to_save).shape}")
         np.save(fout, np.array(geom_xposes_to_save))
 

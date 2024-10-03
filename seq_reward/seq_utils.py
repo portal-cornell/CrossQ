@@ -3,10 +3,77 @@ from loguru import logger
 
 import matplotlib.gridspec as gridspec
 
-from seq_reward.optimal_transport import COST_FN_DICT, compute_ot_reward
+from seq_reward.optimal_transport import compute_ot_reward
 from seq_reward.soft_dtw import compute_soft_dtw_reward
 from seq_reward.dtw import compute_dtw_reward
+from seq_reward.cost_fns import COST_FN_DICT
 
+from constants import TASK_SEQ_DICT
+
+def load_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bool = False) -> np.ndarray:
+    """
+    Load the reference sequence for the given task name and sequence name from constants.TASK_SEQ_DICT
+
+    Parameters:
+        task_name: str
+            Specifies the specific task that we want to load the reference sequence for
+        seq_name: str
+            Specifies the specific sequence that we want to load the reference sequence for
+            (e.g. "key_frames")
+        use_qpos: bool
+            True then we load path that ends with "joint-state.npy"
+            False then we load path that ends with "geom-xpos.npy"
+    """
+    assert task_name in TASK_SEQ_DICT, f"Unknown task name: {task_name}"
+
+    ref_defined_via_a_list = type(TASK_SEQ_DICT[task_name]["sequences"][seq_name]) == list
+
+    if ref_defined_via_a_list:
+        # TODO: We assume that when ref is defined via the list, it doesn't not contain the initial state
+        ref_seq = []
+
+        for joint in TASK_SEQ_DICT[task_name]["sequences"][seq_name]:
+            new_fp = joint
+            if use_geom_xpos:
+                if "joint-state" in new_fp:
+                    new_fp = new_fp.replace("joint-state", "geom-xpos")
+            else:
+                # Using qpos (labeled as joint-state)
+                if "geom-xpos" in new_fp:
+                    new_fp = new_fp.replace("geom-xpos", "joint-state")
+
+            loaded_joint_states = np.load(new_fp)
+
+            if use_geom_xpos:
+                # Because we are using geom_xpos
+                #    Normalize the joint states based on the torso (index 1)
+                loaded_joint_states = loaded_joint_states - loaded_joint_states[1]
+
+            ref_seq.append(loaded_joint_states)
+        
+        return np.stack(ref_seq)
+    else:
+        assert type(TASK_SEQ_DICT[task_name]["sequences"][seq_name]) == str, f"Unknown type for TASK_SEQ_DICT[{task_name}]['sequences'][{seq_name}]. Has to be either a list or a string, but got {type(TASK_SEQ_DICT[task_name]['sequences'][seq_name])}"
+        
+        new_fp = TASK_SEQ_DICT[task_name]["sequences"][seq_name]
+        if use_geom_xpos:
+            if "joint-state" in new_fp:
+                new_fp = new_fp.replace("joint-state", "geom-xpos")
+        else:
+            # Using qpos (labeled as joint-state)
+            if "geom-xpos" in new_fp:
+                new_fp = new_fp.replace("geom-xpos", "joint-state")
+        
+        loaded_joint_states = np.load(new_fp)
+
+        if use_geom_xpos:
+            # Because we are using geom_xpos
+            #    Normalize the joint states based on the torso (index 1)
+            loaded_joint_states = loaded_joint_states - loaded_joint_states[1]
+
+        # Because of how these sequences are generated, we need to remove the 1st frame (which is the initial state)
+        return loaded_joint_states[1:]
+    
 def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
     """
     Return
@@ -19,7 +86,7 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
             - The name of the function
     """
     assert  fn_config["name"] in ["ot", "dtw", "soft_dtw"], f"Currently only supporting ['optimal_transport', 'dtw', 'soft_dtw'], got {fn_config['name']}"
-    logger.info(f"[GridNavSeqRewardCallback] Using the following reward model:\n{fn_config}")
+    logger.info(f"Loading the following reward model:\n{fn_config}")
 
     cost_fn = COST_FN_DICT[cost_fn_name]
     scale = float(fn_config["scale"])
@@ -94,7 +161,7 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
         return fn, fn_name
 
 
-def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, title:str, cmap: str, rolcol_size: int, vmin=None, vmax=None):
+def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, title:str, seq_cmap: str, matrix_cmap: str, rolcol_size: int, vmin=None, vmax=None):
     """
     Plot the Matrix with obs_seq on the left and ref_seq on top of the heatmap.
     """
@@ -115,7 +182,7 @@ def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, 
     # Plot the matrices from array `a` on the left (aligned vertically)
     for i in range(obs_seq.shape[0]):
         ax_a = fig.add_subplot(gs[i + 1, 0])  # Move down 1 row to align with the heatmap
-        ax_a.imshow(obs_seq[i], cmap='plasma')
+        ax_a.imshow(obs_seq[i], cmap=seq_cmap)
         ax_a.axis('off')
 
     # Plot the heatmap (cost matrix) in the center
@@ -143,7 +210,7 @@ def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, 
     # Plot the matrices from array `b` on the top (aligned horizontally)
     for j in range(ref_seq.shape[0]):
         ax_b = fig.add_subplot(gs[0, 1 + j])
-        ax_b.imshow(ref_seq[j], cmap='plasma')
+        ax_b.imshow(ref_seq[j], cmap=seq_cmap)
         ax_b.axis('off')
 
     ax.set_title(title, fontsize=15*rolcol_size)

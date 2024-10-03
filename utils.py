@@ -36,7 +36,7 @@ def get_output_path() -> str:
     return hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
 
 def use_vlm_for_reward(cfg: DictConfig) -> bool:
-    return "hand_engineered" not in cfg.reward_model.name.lower() and "joint_wasserstein" not in cfg.reward_model.name.lower() and "joint_soft_dtw" not in cfg.reward_model.name.lower()
+    return "hand_engineered" not in cfg.reward_model.name.lower() and "ot" not in cfg.reward_model.name.lower() and "dtw" not in cfg.reward_model.name.lower()
 
 def use_joint_vlm_for_reward(cfg: DictConfig) -> bool:
     return "joint_pred" in cfg.reward_model.name.lower()
@@ -91,14 +91,18 @@ def get_make_env_kwargs(cfg: DictConfig):
         cfg: DictConfig
             - The hydra config object
     """
-    if use_vlm_for_reward(cfg):
-        make_env_kwargs = dict(
+    # if use_vlm_for_reward(cfg):
+    #     make_env_kwargs = dict(
+    #         episode_length = cfg.env.episode_length,
+    #     )
+    # else:
+    #     make_env_kwargs = dict(
+    #         max_episode_steps = cfg.env.episode_length,
+    #     )
+    make_env_kwargs = dict(
             episode_length = cfg.env.episode_length,
         )
-    else:
-        make_env_kwargs = dict(
-            max_episode_steps = cfg.env.episode_length,
-        )
+    
     if "custom" in cfg.env.name.lower():
         make_env_kwargs["reward_type"] = cfg.env.reward_type
         if cfg.env.task_name:

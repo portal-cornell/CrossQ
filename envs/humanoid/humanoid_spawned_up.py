@@ -9,7 +9,8 @@ from gymnasium.spaces import Box
 from numpy.typing import NDArray
 import copy
 
-from seq_reward.optimal_transport import load_reference_seq, euclidean_distance_advanced
+from seq_reward.seq_utils import load_reference_seq
+from seq_reward.cost_fns import euclidean_distance_advanced
 
 from envs.humanoid.reward_helpers import *
 
@@ -139,11 +140,20 @@ class HumanoidEnvCustom(GymHumanoidEnv):
                                         forward_reward_weight=self._forward_reward_weight,
                                         ref_joint_states=self._ref_joint_states)
         
-        info["geom_xpos"] = copy.deepcopy(self.data.geom_xpos)  # Allows us to access geom_xpos during evaluation
+        # Allows us to access geom_xpos during evaluation
+        #   Because we store the geom_xpos after the step, we don't need to do any post-processing
+        info["geom_xpos"] = copy.deepcopy(self.data.geom_xpos) 
 
         self.num_steps += 1
         self.stage = int(info.get("stage", 0))
         terminated = self.num_steps >= self.episode_length
+
+        if terminated:
+            # TODO: We need to verify that this is actually render the last array 
+            #   (Should be slighltly different from the last frame you can get from ReplayBuffer's render_arrays)
+            #   (Should not be the initial frame)
+            info["last_render_array"] = self.render()
+
         return (
             obs,
             reward,

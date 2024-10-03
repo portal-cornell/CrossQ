@@ -1,4 +1,5 @@
 import os
+import time
 from typing import Any, Dict, Optional
 import imageio
 import gymnasium
@@ -20,9 +21,8 @@ from numbers import Number
 from loguru import logger
 from einops import rearrange
 
-import seq_reward.optimal_transport as custom_ot
-import seq_reward.soft_dtw as custom_sdtw
-import time
+from seq_reward.seq_utils import get_matching_fn, load_reference_seq, plot_matrix_as_heatmap_on_ax
+from seq_reward.cost_fns import euclidean_distance_advanced
 
 from vlm_reward.reward_main import compute_rewards
 from vlm_reward.reward_transforms import half_gaussian_filter_1d
@@ -35,26 +35,16 @@ class JointBasedSeqRewardCallback(BaseCallback):
     def __init__(self, task_name, matching_fn_cfg, use_geom_xpos, verbose=0):
         super(JointBasedSeqRewardCallback, self).__init__(verbose)
 
-        self._ref_seq = custom_ot.load_reference_seq(task_name=task_name, seq_name=matching_fn_cfg["seq_name"], use_geom_xpos=use_geom_xpos)
+        self._ref_seq = load_reference_seq(task_name=task_name, seq_name=matching_fn_cfg["seq_name"], use_geom_xpos=use_geom_xpos)
         logger.info(f"[JointBasedSeqRewardCallback] Loaded reference sequence. task_name={task_name}, seq_name={matching_fn_cfg['seq_name']}, use_geom_xpos={use_geom_xpos}, self._ref_seq.shape={self._ref_seq.shape}")
 
         self._scale = matching_fn_cfg['scale']
         self._use_geom_xpos = use_geom_xpos
 
-        self.set_matching_fn(matching_fn_cfg)
+        self._matching_fn, self._matching_fn_name = get_matching_fn(matching_fn_cfg, matching_fn_cfg["cost_fn"])
 
-    def set_matching_fn(self, matching_fn_cfg):
-        assert "joint_wasserstein" == matching_fn_cfg["name"] or "joint_soft_dtw", f"Currently only supporting joint_wasserstein or joint soft dynamic time warping, got {matching_fn_cfg['name']}"
-        logger.info(f"[JointBasedSeqRewardCallback] Using the following reward model:\n{matching_fn_cfg}")
+        logger.info(f"[JointBasedSeqRewardCallback] Loaded matching fn {self._matching_fn_name} with {matching_fn_cfg}")
 
-        matching_fn_name = matching_fn_cfg["name"]
-
-        if matching_fn_name == "joint_wasserstein":
-            self._matching_fn = lambda rollout, ref: custom_ot.compute_ot_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], self._scale, modification_dict=dict(matching_fn_cfg['modification']))
-        elif matching_fn_name == "joint_soft_dtw":
-            self._matching_fn = lambda rollout, ref: custom_sdtw.compute_soft_dtw_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], matching_fn_cfg['gamma'], self._scale, modification_dict=dict(matching_fn_cfg['modification']))
-
-        logger.info(f"Set matching function to {matching_fn_name} with cost_fn={matching_fn_cfg['cost_fn']} and scale={self._scale}")
 
     def on_rollout_end(self) -> None:
         """
@@ -325,8 +315,8 @@ class VideoRecorderCallback(BaseCallback):
         self._calc_visual_reward = calc_visual_reward
 
         if task_name != "":
-            self._goal_ref_seq = custom_ot.load_reference_seq(task_name=task_name, seq_name="key_frames", use_geom_xpos=self._use_geom_xpos)
-            logger.info(f"[VideoRecorderCallback] Loaded reference sequence. task_name={task_name} seq_name=key_frames, use_geom_xpos={self._use_geom_xpos}")
+            self._goal_ref_seq = load_reference_seq(task_name=task_name, seq_name="key_frames", use_geom_xpos=self._use_geom_xpos)
+            logger.info(f"[VideoRecorderCallback] Loaded reference sequence. task_name={task_name}, seq_name=key_frames, use_geom_xpos={self._use_geom_xpos}, shape={self._goal_ref_seq.shape}")
 
             self.set_ground_truth_goal_matching_fn(task_name, use_geom_xpos)
 
@@ -336,11 +326,13 @@ class VideoRecorderCallback(BaseCallback):
 
         if matching_fn_cfg != {}:
             # The reference sequence that is used to calculate the sequence matching reward
-            self._seq_matching_ref_seq = custom_ot.load_reference_seq(task_name=task_name, seq_name=matching_fn_cfg["seq_name"], use_geom_xpos=self._use_geom_xpos)
+            self._seq_matching_ref_seq = load_reference_seq(task_name=task_name, seq_name=matching_fn_cfg["seq_name"], use_geom_xpos=self._use_geom_xpos)
             
             self._calc_matching_reward = True
             self._scale = matching_fn_cfg['scale']
-            self.set_matching_fn(matching_fn_cfg)
+            self._matching_fn, self._matching_fn_name = get_matching_fn(matching_fn_cfg, matching_fn_cfg["cost_fn"])
+
+            logger.info(f"[VideoRecorderCallback] Loaded reference sequence for seq level matching. task_name={task_name}, seq_name={matching_fn_cfg['seq_name']}, use_geom_xpos={self._use_geom_xpos}, shape={self._seq_matching_ref_seq.shape}")
         else:
             self._calc_matching_reward = False
         
@@ -372,7 +364,7 @@ class VideoRecorderCallback(BaseCallback):
                         The rollout sequence to calculate the reward
                 """
                 # Calculate reward from the rollout to self.goal_ref_seq
-                reward_matrix = np.exp(-custom_ot.euclidean_distance_advanced(rollout, ref))
+                reward_matrix = np.exp(-euclidean_distance_advanced(rollout, ref))
 
                 # Detect when a stage is completed (the rollout is close to the goal_ref_seq) (under self._threshold)
                 stage_completed = 0
@@ -395,20 +387,6 @@ class VideoRecorderCallback(BaseCallback):
                 return reward
             
             self._gt_goal_matching_fn = lambda rollout: seq_matching_fn(self._goal_ref_seq, rollout, self._threshold)
-
-
-    def set_matching_fn(self, matching_fn_cfg):
-        assert "joint_wasserstein" == matching_fn_cfg["name"] or "joint_soft_dtw", f"Currently only supporting joint_wasserstein or joint soft dynamic time warping, got {matching_fn_cfg['name']}"
-        logger.info(f"[VideoRecorderCallback] Using the following reward model:\n{matching_fn_cfg}")
-        
-        matching_fn_name = matching_fn_cfg["name"]
-
-        if matching_fn_name == "joint_wasserstein":
-            self._matching_fn = lambda rollout, ref: custom_ot.compute_ot_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], self._scale, modification_dict=dict(matching_fn_cfg['modification']))
-        elif matching_fn_name == "joint_soft_dtw":
-            self._matching_fn = lambda rollout, ref: custom_sdtw.compute_soft_dtw_reward(rollout, ref, custom_ot.COST_FN_DICT[matching_fn_cfg['cost_fn']], matching_fn_cfg['gamma'], self._scale, modification_dict=dict(matching_fn_cfg['modification']))
-
-        logger.info(f"Set matching function to {matching_fn_name} with cost_fn={matching_fn_cfg['cost_fn']} and scale={self._scale}")
 
 
     def _on_step(self) -> bool:
@@ -500,14 +478,13 @@ class VideoRecorderCallback(BaseCallback):
                                 np.mean(vlm_rewards + rewards), 
                                 exclude=("stdout", "log", "json", "csv"))
 
-
             # TODO: We can potentially also do VLM reward calculation
             if self._calc_matching_reward:
                 if self._use_geom_xpos:
                     # Don't need to do anything here, geom_xpos is getting normalized in the grab_screens function
-                    matching_reward, _ = self._matching_fn(np.array(geom_xposes), self._ref_seq)
+                    matching_reward, _ = self._matching_fn(np.array(geom_xposes), self._seq_matching_ref_seq)
                 else:
-                    matching_reward, _ = self._matching_fn(np.array(states)[:, :22], self._ref_seq)
+                    matching_reward, _ = self._matching_fn(np.array(states)[:, :22], self._seq_matching_ref_seq)
 
                 self.logger.record("rollout/avg_matching_reward_unscaled", 
                                 np.mean(matching_reward)/self._scale, 

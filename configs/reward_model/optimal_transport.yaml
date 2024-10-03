@@ -1,4 +1,5 @@
 name: ot
+cost_fn: euclidean_arms_only
 scale: 1
 gamma: 0
 seq_name: null
