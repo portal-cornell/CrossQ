@@ -42,6 +42,7 @@ TASK_SEQ_DICT = {
         "task_type": "goal_reaching",
         "sequences": {
             "key_frames": ["/share/portal/hw575/CrossQ/create_demo/demos/right-arm-extend-wave-higher_geom-xpos.npy"],
+            "intermediate_3_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_3-frames_geom-xpos.npy",
             "intermediate_5_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_5-frames_geom-xpos.npy",
         }
     },

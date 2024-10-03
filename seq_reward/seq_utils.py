@@ -1,7 +1,8 @@
 import numpy as np
 from loguru import logger
-
+from PIL import Image
 import matplotlib.gridspec as gridspec
+import matplotlib.pyplot as plt
 
 from seq_reward.optimal_transport import compute_ot_reward
 from seq_reward.soft_dtw import compute_soft_dtw_reward
@@ -74,6 +75,27 @@ def load_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bool = False
         # Because of how these sequences are generated, we need to remove the 1st frame (which is the initial state)
         return loaded_joint_states[1:]
     
+
+def load_images_from_reference_seq(task_name:str, seq_name: str) -> (np.ndarray):
+    assert task_name in TASK_SEQ_DICT, f"Unknown task name: {task_name}"
+    assert seq_name in TASK_SEQ_DICT[task_name]["sequences"], f"Unknown sequence name: {seq_name}."
+
+    if type(TASK_SEQ_DICT[task_name]["sequences"][seq_name]) == str:
+        gif_path = TASK_SEQ_DICT[task_name]["sequences"][seq_name]
+
+        if "joint-state" in gif_path:
+            gif_path = gif_path.replace("_joint-state.npy", ".gif")
+        elif "geom-xpos" in gif_path:
+            gif_path = gif_path.replace("_geom-xpos.npy", ".gif")
+        
+        gif_obj = Image.open(gif_path)
+        frames = [gif_obj.seek(frame_index) or gif_obj.convert("RGB") for frame_index in range(gif_obj.n_frames)]
+
+        return np.stack([np.array(frame) for frame in frames])
+    else:
+        # This is a list of image paths (likely only one image in that list)
+        return np.array([])
+
 def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
     """
     Return
@@ -103,62 +125,101 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
     else:
         raise NotImplementedError(f"Unknown sequence matching function: {fn_name}")
     
-    post_processing_method = fn_config.get("post_processing_method", None)
+    post_processing_method = fn_config.get("post_processing_method", [])
 
     if post_processing_method:
-        if post_processing_method == "stage_reward_based_on_last_state":
-            fn_name += "_stg_lst"
+        augmented_fn = fn
 
-            def post_processor(reward, matching_matrix):
-                """
-                Assuming the matching_matrix is time consistent.
-
-                Parameters:
-                    reward: np.ndarray (obs_seq_len, )
-                    matching_matrix: np.ndarray (obs_seq_len, ref_seq_len)
-                """
-                previous_step_assignment = 0
-                reward_bonus = 0
-
-                rewards = []
-
-                max_reward_range = fn_config["reward_vmax"] - fn_config["reward_vmin"]
-
-                # print(f"reward={reward}")
-                # print(f"matching_matrix={matching_matrix}")
-
-                for i in range(len(reward)):
-                    assignment = matching_matrix[i].argmax()
-
-                    # print(f"i={i} assignment={assignment} previous_step_assignment={previous_step_assignment}")
-
-                    if assignment != previous_step_assignment:
-                        # Since reward[i] is the last reward at the end of the current stage, the reward bonus for 
-                        #   the next stage should get updated
-                        reward_bonus += -(-max_reward_range/2) + reward[i-1]
-                    
-                    new_reward = reward[i] + reward_bonus
-
-                    rewards.append(new_reward)
-
-                    previous_step_assignment = assignment
-
-                    # print(f"i={i} reward[i]={reward[i]} reward_bonus={reward_bonus} new_reward={new_reward}")
-                    # input("stop")
-                
-                return np.array(rewards)
-                    
-            def augmented_fn(*args, **kwargs):
-                reward, info = fn(*args, **kwargs)
-                new_reward = post_processor(reward, info["assignment"])
-
-                return new_reward, info
-
-            return augmented_fn, fn_name
-        else:
-            raise NotImplementedError(f"Unknown post processing method: {post_processing_method}")
+        for method in post_processing_method:
+            if method == "exp_reward":
+                augmented_fn, fn_name = augment_fn_with_exp_reward(
+                    original_fn=augmented_fn, 
+                    original_fn_name=fn_name)
+            elif method == "stage_reward_based_on_last_state":
+                augmented_fn, fn_name = augment_fn_with_stage_reward_based_on_last_state(
+                    original_fn=augmented_fn, 
+                    original_fn_name=fn_name, 
+                    stage_bonus=float(fn_config.get("stage_bonus", 0)))
+            else:
+                raise NotImplementedError(f"Unknown post processing method: {post_processing_method}")
+            
+        return augmented_fn, fn_name
     else:
         return fn, fn_name
+
+
+def augment_fn_with_exp_reward(original_fn, original_fn_name):
+    new_fn_name = original_fn_name + "_exp"
+
+    def post_processor(reward):
+        """
+        The reward is - cost right now. We can exponentiate it to make it positive and between 0 and 1.
+        """
+        return np.exp(reward)
+    
+    def new_fn(*args, **kwargs):
+        reward, info = original_fn(*args, **kwargs)
+        new_reward = post_processor(reward)
+
+        return new_reward, info
+    
+    return new_fn, new_fn_name
+
+
+def augment_fn_with_stage_reward_based_on_last_state(original_fn, original_fn_name, stage_bonus):
+    """
+    Parameters:
+        stage_bonus: float
+            The bonus that we add to the reward when we progress from one stage to another stage.
+    """
+    new_fn_name = original_fn_name + "_stg_lst"
+
+    def post_processor(reward, matching_matrix):
+        """
+        Assuming the matching_matrix is time consistent.
+
+        When the assignment changes (progress from one ref frame to another ref frame), we add a bonus to the reward.
+
+        Parameters:
+            reward: np.ndarray (obs_seq_len, )
+            matching_matrix: np.ndarray (obs_seq_len, ref_seq_len)
+        """
+        previous_step_assignment = 0
+        reward_bonus = 0
+
+        rewards = []
+
+        # print(f"reward={reward}")
+        # print(f"matching_matrix={matching_matrix}")
+
+        for i in range(len(reward)):
+            assignment = matching_matrix[i].argmax()
+
+            # print(f"i={i} assignment={assignment} previous_step_assignment={previous_step_assignment}")
+
+            if assignment != previous_step_assignment:
+                # Since reward[i] is the last reward at the end of the current stage, the reward bonus for 
+                #   the next stage should get updated
+                reward_bonus += stage_bonus + reward[i-1]
+            
+            new_reward = reward[i] + reward_bonus
+
+            rewards.append(new_reward)
+
+            previous_step_assignment = assignment
+
+            # print(f"i={i} reward[i]={reward[i]} reward_bonus={reward_bonus} new_reward={new_reward}")
+            # input("stop")
+        
+        return np.array(rewards)
+                        
+    def new_fn(*args, **kwargs):
+        reward, info = original_fn(*args, **kwargs)
+        new_reward = post_processor(reward, info["assignment"])
+
+        return new_reward, info
+    
+    return new_fn, new_fn_name
 
 
 def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, title:str, seq_cmap: str, matrix_cmap: str, rolcol_size: int, vmin=None, vmax=None):
@@ -187,7 +248,7 @@ def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, 
 
     # Plot the heatmap (cost matrix) in the center
     ax_heatmap = fig.add_subplot(gs[1:obs_len+1, 1:ref_len+1])
-    im = ax_heatmap.imshow(matrix, cmap=cmap, aspect='auto', vmin=vmin, vmax=vmax)
+    im = ax_heatmap.imshow(matrix, cmap=matrix_cmap, aspect='auto', vmin=vmin, vmax=vmax)
 
     if vmin is not None and vmax is not None:
         mid_val = (vmin + vmax) / 2
@@ -217,3 +278,37 @@ def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, 
 
     # Turn off the axis
     ax.axis('off')
+
+
+def seq_matching_viz(matching_fn_name, obs_seq, ref_seq, matching_reward, info, reward_vmin, reward_vmax, path_to_save_fig, seq_cmap=None, rolcol_size=1):
+    # TODO: messy code taken from seq_matching_toy/run_seq_matching_on_examples.py
+    #   Basically allows us to visualizing the matching function on a rollout
+    rolcol_size = 1
+
+    # 3 * because we have 3 figure columns
+    #   In each figure columns, we have len(ref_seq) for the reference sequence/cost matrix, 1 column for the vertical stack of obs seq, and 1 column for the colorbar
+    fig_width = 3 * (rolcol_size * (len(ref_seq) + 2))
+
+    #  We have len(obs_seq) for the observed sequence/cost matrix, 1 row for the horizontal stack of ref seq
+    fig_height = rolcol_size * (len(obs_seq) + 1)
+
+    # Create the figure (2 columns, and the number of rows will be the number of sequence matching algorithms)
+    fig, axs = plt.subplots(1, 3, figsize=(fig_width, fig_height))
+
+    # Plot the cost matrix
+    ax = axs[0]
+    plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, info["cost_matrix"], f"{matching_fn_name} Cost", seq_cmap=seq_cmap,  matrix_cmap="gray_r", rolcol_size=rolcol_size)
+    
+    # Plot the assignment matrix
+    ax = axs[1]
+    plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, info["assignment"], f"{matching_fn_name} Assign", seq_cmap=seq_cmap, matrix_cmap="Greens", rolcol_size=rolcol_size, vmin=0, vmax=1)
+
+    # Plot the reward
+    ax = axs[2]
+    plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, np.expand_dims(matching_reward,1), f"{matching_fn_name} Reward (Sum = {np.sum(matching_reward):.2f})", seq_cmap=seq_cmap, matrix_cmap="Greens", rolcol_size=rolcol_size, vmin=reward_vmin, vmax=reward_vmax)
+
+    plt.tight_layout()
+
+    plt.savefig(path_to_save_fig)
+
+    plt.close(fig)

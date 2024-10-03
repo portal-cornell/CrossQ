@@ -12,6 +12,7 @@ from stable_baselines3.common.callbacks import (
 )
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.logger import Video
+from stable_baselines3.common.logger import Image as LogImage  # To avoid conflict with PIL.Image
 from wandb.integration.sb3 import WandbCallback as SB3WandbCallback
 from stable_baselines3.common.base_class import BaseAlgorithm
 
@@ -21,7 +22,7 @@ from numbers import Number
 from loguru import logger
 from einops import rearrange
 
-from seq_reward.seq_utils import get_matching_fn, load_reference_seq, plot_matrix_as_heatmap_on_ax
+from seq_reward.seq_utils import get_matching_fn, load_reference_seq, load_images_from_reference_seq, seq_matching_viz
 from seq_reward.cost_fns import euclidean_distance_advanced
 
 from vlm_reward.reward_main import compute_rewards
@@ -327,12 +328,19 @@ class VideoRecorderCallback(BaseCallback):
         if matching_fn_cfg != {}:
             # The reference sequence that is used to calculate the sequence matching reward
             self._seq_matching_ref_seq = load_reference_seq(task_name=task_name, seq_name=matching_fn_cfg["seq_name"], use_geom_xpos=self._use_geom_xpos)
-            
+            # For the frames, we remove the initial frame which matches the initial position
+            self._seq_matching_ref_seq_frames = load_images_from_reference_seq(task_name=task_name, seq_name=matching_fn_cfg["seq_name"])[1:]
+            # TODO: For now, we can only visualize this when the reference frame is defined via a gif
+            self._plot_matching_visualization = len(self._seq_matching_ref_seq_frames) > 0
+
             self._calc_matching_reward = True
             self._scale = matching_fn_cfg['scale']
             self._matching_fn, self._matching_fn_name = get_matching_fn(matching_fn_cfg, matching_fn_cfg["cost_fn"])
 
-            logger.info(f"[VideoRecorderCallback] Loaded reference sequence for seq level matching. task_name={task_name}, seq_name={matching_fn_cfg['seq_name']}, use_geom_xpos={self._use_geom_xpos}, shape={self._seq_matching_ref_seq.shape}")
+            self._reward_vmin = matching_fn_cfg.get("reward_vmin", -1)
+            self._reward_vmax = matching_fn_cfg.get("reward_vmax", 0)
+
+            logger.info(f"[VideoRecorderCallback] Loaded reference sequence for seq level matching. task_name={task_name}, seq_name={matching_fn_cfg['seq_name']}, use_geom_xpos={self._use_geom_xpos}, shape={self._seq_matching_ref_seq.shape}, image_frames_shape={self._seq_matching_ref_seq_frames.shape}")
         else:
             self._calc_matching_reward = False
         
@@ -482,9 +490,9 @@ class VideoRecorderCallback(BaseCallback):
             if self._calc_matching_reward:
                 if self._use_geom_xpos:
                     # Don't need to do anything here, geom_xpos is getting normalized in the grab_screens function
-                    matching_reward, _ = self._matching_fn(np.array(geom_xposes), self._seq_matching_ref_seq)
+                    matching_reward, matching_reward_info = self._matching_fn(np.array(geom_xposes), self._seq_matching_ref_seq)
                 else:
-                    matching_reward, _ = self._matching_fn(np.array(states)[:, :22], self._seq_matching_ref_seq)
+                    matching_reward, matching_reward_info = self._matching_fn(np.array(states)[:, :22], self._seq_matching_ref_seq)
 
                 self.logger.record("rollout/avg_matching_reward_unscaled", 
                                 np.mean(matching_reward)/self._scale, 
@@ -505,6 +513,29 @@ class VideoRecorderCallback(BaseCallback):
                 # Save the matching_rewards locally    
                 with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_matching_rewards.npy"), "wb") as f:
                     np.save(f, np.array(states))
+
+                if self._plot_matching_visualization:
+                    # TODO: For now, we can only visualize this when the reference frame is defined via a gif
+                    matching_reward_viz_save_path = os.path.join(self._rollout_save_path, f"{self.num_timesteps}_matching_fn_viz.png")
+
+                    seq_matching_viz(
+                        matching_fn_name=self._matching_fn_name,
+                        obs_seq=np.array(raw_screens),
+                        ref_seq=self._seq_matching_ref_seq_frames,
+                        matching_reward=matching_reward,
+                        info=matching_reward_info,
+                        reward_vmin=self._reward_vmin,
+                        reward_vmax=self._reward_vmax,
+                        path_to_save_fig=matching_reward_viz_save_path,
+                    )
+
+                    # Log the image to wandb
+                    img = Image.open(matching_reward_viz_save_path)
+                    self.logger.record(
+                        "trajectory/matching_fn_viz",
+                        LogImage(np.array(img), dataformats="HWC"),
+                        exclude=("stdout", "log", "json", "csv"),
+                    )
 
             # Plot info on the frames  
             for i in range(len(screens)):

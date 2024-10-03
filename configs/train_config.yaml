@@ -8,7 +8,7 @@ model_base_path: null  # Folder to load the model from
 model_checkpoint: null  # Model checkpoint zip file name (without .zip) to load
 
 compute:
-  n_gpu_workers: 2
+  n_gpu_workers: 1
   n_cpu_workers: 8  # One gym env per cpu
 
 logging:

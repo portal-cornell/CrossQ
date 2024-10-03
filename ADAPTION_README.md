@@ -72,20 +72,38 @@ pip install nvidia-cublas-cu12==12.4.2.65 nvidia-cuda-cupti-cu12==12.4.99 nvidia
 # How to train
 
 ## Training
-Using all default hydra parameters
+### Hand-engineered reward
+To train with ground-truth geom xpos (only the arm's joint position), you have to specify
+- the env's task name
+- the env's reward type
 ```bash
-python train.py 
+python train.pyreward_model=hand_engineered env.reward_type="goal_only_euclidean_geom_xpos" env.task_name='right_arm_extend_wave_higher'
+``` 
+
+### Seq-matching reward
+To train with a seq-matching reward, you have to specify
+- the env's task name
+- the env's reward type (which is just the standing up reward)
+- the reward model
+    - the gamma of the reward model
+    - the reward model's cost function
+    - the reward model's seq name
+    - the reward model's reward vmin and vmax
+        Only used to visualize the reward as the heat map (It allows us to visualize the reward across different rollouts with the same scale)
+    - If we are doing post processing
+        - "exp_reward" is taking the exponential of the cost from the sequence matching function
+        - "stage_reward_based_on_last_state" is giving a bonus reward if the last state is the same as the last state of the sequence
+            Warning: You must define a stage_bonus
+```bash
+python train.py env.reward_type="basic_r_geom_xpos" reward_model=soft_dtw reward_model.gamma=5 reward_model.cost_fn=euclidean_arms_only +reward_model.stage_bonus=0 reward_model.reward_vmin=0 reward_model.reward_vmax=1 '+reward_model.post_processing_method=["​​exp_reward", "stage_reward_based_on_last_state"]' env.task_name='right_arm_extend_wave_higher' reward_model.seq_name='key_frames' 
+``` 
+
+**[An example use case for using stage_bonus != 0]**
+Because the seq matching fn outputs - cost, the reward is negative. When we give the bonus reward, the code does `reward_bonus += stage_bonus + reward[i-1]`. If reward[i-1] is negative, the bonus reward is negative, which is not great. Instead, we can set a stage_bonus to be positive, so that the bonus reward can be more positive.
+
+```bash
+python train.py env.reward_type="basic_r_geom_xpos" reward_model=soft_dtw reward_model.gamma=5 reward_model.cost_fn=euclidean_arms_only '+reward_model.post_processing_method=["stage_reward_based_on_last_state"]' +reward_mode.stage_bonus=2  reward_model.seq_name='key_frames' 'run_notes="debug-with-key-frames"'
 ```
-
-For training with hand-engineered reward, you can edit the yaml or directly pass the arguments in the command line.
-```bash
-python train.py env.reward_type="both_arms_out_goal_only_euclidean"
-``` 
-
-For training VLM, you can edit the yaml or directly pass the arguments in the command line.
-```bash
-python train.py env.reward_type="both_arms_out_goal_only_euclidean" reward_model=dino_patch_wasserstein
-``` 
 
 ## Inference
 The rollouts/videos are saved in training logs.
