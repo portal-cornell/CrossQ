@@ -20,8 +20,8 @@ from numbers import Number
 from loguru import logger
 from einops import rearrange
 
-import vlm_reward.utils.optimal_transport as custom_ot
-import vlm_reward.utils.soft_dtw as custom_sdtw
+import seq_reward.optimal_transport as custom_ot
+import seq_reward.soft_dtw as custom_sdtw
 import time
 
 from vlm_reward.reward_main import compute_rewards

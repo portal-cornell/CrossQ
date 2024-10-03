@@ -4,72 +4,12 @@ from hydra.core.hydra_config import HydraConfig
 
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-import copy
 import os
 from loguru import logger
 from tqdm import tqdm
 
 from seq_matching_toy.toy_examples_main import examples
-from seq_matching_toy.seq_utils import get_matching_fn
-
-def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, title:str, cmap: str, rolcol_size: int, vmin=None, vmax=None):
-    """
-    Plot the Matrix with obs_seq on the left and ref_seq on top of the heatmap.
-    """
-    obs_len = len(obs_seq)
-    ref_len = len(ref_seq)
-
-    # Create a GridSpec layout for each subplot
-    #   nrows: the number of frames in obs_seq + 1 (for the top row for ref_seq)
-    #   ncols: the number of frames in ref_seq + 1 (for the left column for obs_seq) + 1 (for the colorbar)
-    #   width_ratios: the width of each column
-    #       the first column is for the obs_seq
-    #       the 2nd to 1 + ref_len columns are for the ref_seq
-    #       the last column is for the colorbar
-    #           so (ref_len + 1) has the size of 0.2 and the last one (for the colorbar) has the size of 0.05
-    #   height_ratios: the height of each row
-    gs = gridspec.GridSpecFromSubplotSpec(1 + obs_len, 2 + ref_len, subplot_spec=ax.get_subplotspec(), width_ratios=[0.2] * (ref_len + 1) + [0.05], height_ratios=[0.2] * (obs_len + 1))
-    
-    # Plot the matrices from array `a` on the left (aligned vertically)
-    for i in range(obs_seq.shape[0]):
-        ax_a = fig.add_subplot(gs[i + 1, 0])  # Move down 1 row to align with the heatmap
-        ax_a.imshow(obs_seq[i], cmap='plasma')
-        ax_a.axis('off')
-
-    # Plot the heatmap (cost matrix) in the center
-    ax_heatmap = fig.add_subplot(gs[1:obs_len+1, 1:ref_len+1])
-    im = ax_heatmap.imshow(matrix, cmap=cmap, aspect='auto', vmin=vmin, vmax=vmax)
-
-    if vmin is not None and vmax is not None:
-        mid_val = (vmin + vmax) / 2
-    else:
-        mid_val = (np.max(matrix) + np.min(matrix)) / 2
-
-    # Add text annotations (numbers) on each cell in the heatmap
-    for i in range(matrix.shape[0]):
-        for j in range(matrix.shape[1]):
-            text_color = 'white' if matrix[i, j] > mid_val else 'black'
-            ax_heatmap.text(j, i, f'{matrix[i, j]:.2f}', ha='center', va='center', color=text_color, fontsize=10*rolcol_size)
-
-    ax_colorbar = fig.add_subplot(gs[1:obs_len+1, ref_len + 1])
-    cbar = fig.colorbar(im, cax=ax_colorbar, fraction=0.046, pad=0.04)
-    cbar.ax.tick_params(labelsize=5*rolcol_size)  # Adjust the colorbar tick labels if neede
-
-    # # Adjust the layout and remove padding
-    # plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
-
-    # Plot the matrices from array `b` on the top (aligned horizontally)
-    for j in range(ref_seq.shape[0]):
-        ax_b = fig.add_subplot(gs[0, 1 + j])
-        ax_b.imshow(ref_seq[j], cmap='plasma')
-        ax_b.axis('off')
-
-    ax.set_title(title, fontsize=15*rolcol_size)
-
-    # Turn off the axis
-    ax.axis('off')
-
+from seq_reward.seq_utils import get_matching_fn, plot_matrix_as_heatmap_on_ax
 
 def prepare_seq_matching_fns(seq_matching_fn_configs, cost_fn_name, reward_vmin, reward_vmax):
     """

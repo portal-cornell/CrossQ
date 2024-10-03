@@ -9,7 +9,7 @@ from gymnasium.spaces import Box
 from numpy.typing import NDArray
 import copy
 
-from vlm_reward.utils.optimal_transport import load_reference_seq, euclidean_distance_advanced
+from seq_reward.optimal_transport import load_reference_seq, euclidean_distance_advanced
 
 from envs.humanoid.reward_helpers import *
 

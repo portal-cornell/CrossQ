@@ -4,8 +4,8 @@ from hydra.core.hydra_config import HydraConfig
 
 from typing import Callable, List, Tuple, Dict, Optional
 
-from vlm_reward.utils.optimal_transport import load_reference_seq, compute_ot_reward, plot_matrix_as_heatmap, COST_FN_DICT, euclidean_distance_advanced
-from vlm_reward.utils.soft_dtw import compute_soft_dtw_reward
+from seq_reward.optimal_transport import load_reference_seq, compute_ot_reward, plot_matrix_as_heatmap, COST_FN_DICT, euclidean_distance_advanced
+from seq_reward.soft_dtw import compute_soft_dtw_reward
 
 from vlm_reward.eval.eval_utils import gt_vs_source_heatmap
 
