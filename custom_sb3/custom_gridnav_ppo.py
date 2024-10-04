@@ -55,6 +55,7 @@ class CustomPPO(PPO):
             with th.no_grad():
                 # Convert to pytorch tensor or to TensorDict
                 obs_tensor = obs_as_tensor(self._last_obs, self.device)
+                print(obs_tensor.shape)
                 actions, values, log_probs = self.policy(obs_tensor)
             actions = actions.cpu().numpy()
 
@@ -110,6 +111,7 @@ class CustomPPO(PPO):
         
         # TODO (Yuki): a hacky way to do post-hoc reward calculation before returns and advantages are computed
         callback.on_rollout_end()
+        #callback.on_rollout_end_history()
 
         rollout_buffer.compute_returns_and_advantage(last_values=values, dones=dones)
         

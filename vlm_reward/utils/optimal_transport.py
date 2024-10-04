@@ -281,7 +281,13 @@ def nav_shortest_path_distance(x, y):
     Given two binary matrices M_1 (size (A, B)) and M_2 (size (A, B)), 
     with 1 as the agent, -1 as obstacles, and 0 as empty space, 
     calculates the shortest path distance considering obstacles using A* algorithm.
+    
+    TODO: WILL
+    modify this to create reward instead of cost
+    - find maximum possible distance (using matrix shape, just height*width)
+    - subtract the cost from this distance to get a reward
     """
+
     x_batch_size = x.shape[0]
     y_batch_size = y.shape[0]
 
@@ -292,12 +298,16 @@ def nav_shortest_path_distance(x, y):
             matrix1 = x[i]
             matrix2 = y[j]
 
+            max_cost = matrix1.shape[0] * matrix1.shape[1] # never will have to visit more than every state
+
             # Get the positions of the agent (marked as 1)
             pos1 = np.argwhere(matrix1 == 1)[0]
             pos2 = np.argwhere(matrix2 == 1)[0]
 
             # Find the shortest path between pos1 and pos2 in matrix1, considering obstacles
-            cost_matrix[i, j] = a_star_shortest_path(matrix1, tuple(pos1), tuple(pos2))
+            sp_length = a_star_shortest_path(matrix1, tuple(pos1), tuple(pos2))
+            
+            cost_matrix[i, j] = max_cost - sp_length
 
     return cost_matrix
 
