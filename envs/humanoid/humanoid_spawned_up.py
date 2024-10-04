@@ -166,17 +166,6 @@ class HumanoidEnvCustom(GymHumanoidEnv):
         self.num_steps = 0
         self.stage = 0
         return super().reset(seed=seed, options=options)
-
-
-    # TODO: temporary hack to spawn the humanoid at the same position as the ref humanoid
-    def reset_model(self):
-        qpos = self.init_qpos
-        qvel = self.init_qvel
-        
-        self.set_state(qpos, qvel)
-
-        observation = self._get_obs()
-        return observation
     
     def get_obs(self):
         return self._get_obs()

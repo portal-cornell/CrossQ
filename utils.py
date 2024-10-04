@@ -1,6 +1,7 @@
 import datetime
 import secrets
 import os
+import numpy as np
 
 from omegaconf import DictConfig
 from loguru import logger
@@ -110,3 +111,30 @@ def get_make_env_kwargs(cfg: DictConfig):
 
     return make_env_kwargs
 
+def calc_iqm(results):
+    """
+    Parameters:
+        results: List (len = n_eval_env)
+            The list of results to calculate the IQM from
+
+    Return:
+        The IQM of the results
+        The std of the trimmed results that fall within the 25th and 75th percentile
+    """
+    # Step 1: Sort the results
+    sorted_results = np.sort(results)
+    
+    # Step 2: Compute the 25th and 75th percentiles (interquartile range)
+    q25 = np.percentile(sorted_results, 25)
+    q75 = np.percentile(sorted_results, 75)
+    
+    # Step 3: Select data within the interquartile range
+    trimmed_results = sorted_results[(sorted_results >= q25) & (sorted_results <= q75)]
+    
+    # Step 4: Compute the Interquartile Mean (IQM)
+    iqm = np.mean(trimmed_results)
+    
+    # Step 5: Compute the standard deviation or variance (for trimmed data)
+    std = np.std(trimmed_results)  # If you need the variance, use np.var(trimmed_results)
+    
+    return iqm, std

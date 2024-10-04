@@ -81,10 +81,6 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         sac_class = VLM_SAC
     else:
         sac_class = SAC
-    
-    
-
-
 
     model = sac_class(
         MultiInputPolicy if isinstance(training_env.observation_space, gym.spaces.Dict) else "MlpPolicy",
@@ -147,14 +143,27 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         )
         
         video_callback = VideoRecorderCallback(
-            SubprocVecEnv([make_env_fn], render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3)),
+            make_vec_env(
+                make_env_fn,
+                n_envs=cfg.compute.n_cpu_workers,
+                seed=42,
+                vec_env_cls=SubprocVecEnv,
+                use_gpu_ids=list(range(cfg.compute.n_gpu_workers)),
+                vec_env_kwargs=dict(render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3)),
+            ),
+            # SubprocVecEnv([make_env_fn], render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3)),
             rollout_save_path=os.path.join(cfg.logging.run_path, "eval"),
             render_freq=cfg.logging.video_save_freq // cfg.compute.n_cpu_workers,
+            render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3),
+            # n_eval_episodes=cfg.success_eval.n_eval_episodes,
+            n_eval_episodes=cfg.compute.n_cpu_workers,
             use_geom_xpos="geom_xpos" in cfg.env.reward_type if "reward_type" in cfg.env else False,
             # This allow us to calculate the unifying reward/metric that all methods are compared against
             #   i.e. it defines "rollout/sum_total_reward_per_epsisode" in wandb
             task_name=cfg.env.task_name if "task_name" in cfg.env else "",
             threshold=cfg.env.pose_matching_stage_threshold,
+            # For calculating success rate
+            success_fn_cfg=dict(cfg.success_eval),
             # For joint based reward (this allow us to visualize the sequence matching reward in a rollout
             matching_fn_cfg=dict(cfg.reward_model) if cfg.reward_model.name == "ot" or "dtw" in cfg.reward_model.name else {},
             calc_visual_reward=use_vlm_for_reward or use_joint_vlm_for_reward,

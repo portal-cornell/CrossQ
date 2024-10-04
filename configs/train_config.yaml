@@ -23,6 +23,11 @@ logging:
   run_name: null
   run_path: null
 
+success_eval:
+  threshold_for_all_pos: 0.50
+  threshold_for_arm_pos: 0.55
+  n_eval_episodes: 10
+
 defaults:
   - env: HumanoidSpawnedUpCustom
   - reward_model: joint_pred_resnet

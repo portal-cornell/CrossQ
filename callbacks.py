@@ -1,5 +1,6 @@
 import os
 import time
+import json
 from typing import Any, Dict, Optional
 import imageio
 import gymnasium
@@ -28,6 +29,7 @@ from seq_reward.cost_fns import euclidean_distance_advanced
 from vlm_reward.reward_main import compute_rewards
 from vlm_reward.reward_transforms import half_gaussian_filter_1d
 from constants import TASK_SEQ_DICT
+from utils import calc_iqm
 
 class JointBasedSeqRewardCallback(BaseCallback):
     """
@@ -279,12 +281,13 @@ class VideoRecorderCallback(BaseCallback):
         eval_env: gymnasium.Env,
         rollout_save_path: str,
         render_freq: int,
+        render_dim: tuple = (480, 480, 3),
         n_eval_episodes: int = 1,
         deterministic: bool = True,
         use_geom_xpos: bool = True,
         task_name: str = "",
         threshold: float = 0.5,
-        seq_name: str = "",
+        success_fn_cfg: dict = {},
         matching_fn_cfg: dict = {}, 
         calc_visual_reward: bool = False,
         verbose=0
@@ -308,6 +311,7 @@ class VideoRecorderCallback(BaseCallback):
         super().__init__(verbose)
         self._eval_env = eval_env
         self._render_freq = render_freq
+        self._render_dim = render_dim
         self._n_eval_episodes = n_eval_episodes
         self._deterministic = deterministic
         self._rollout_save_path = rollout_save_path  # Save the state of the environment
@@ -320,6 +324,7 @@ class VideoRecorderCallback(BaseCallback):
             logger.info(f"[VideoRecorderCallback] Loaded reference sequence. task_name={task_name}, seq_name=key_frames, use_geom_xpos={self._use_geom_xpos}, shape={self._goal_ref_seq.shape}")
 
             self.set_ground_truth_goal_matching_fn(task_name, use_geom_xpos)
+            self.set_success_fn(success_fn_cfg)
 
             self._calc_gt_reward = True
         else:
@@ -397,14 +402,74 @@ class VideoRecorderCallback(BaseCallback):
             self._gt_goal_matching_fn = lambda rollout: seq_matching_fn(self._goal_ref_seq, rollout, self._threshold)
 
 
+    def set_success_fn(self, success_fn_cfg):
+        """
+        Whether the entire body is above an threshold (0.5)
+        Whether the arm is above an threshold (0.55)
+
+        Binary success: whether at any point has the key poses have been hit
+            # of the key poses that have been hit (in the right order)
+        The percentage of time that it's holding the key pose
+            For each key pose, we find the time interval that each key poses hold
+        """
+        def success_fn(obs_seq, ref_seq, threshold):
+            """
+            Calculate the binary success based on the rollout and the reference sequence
+
+            Parameters:
+                rollout: np.array (rollout_length, ...)
+                    The rollout sequence to calculate the reward
+
+            Return:
+                pct_stage_completed: float
+                    The percentage of stages that are completed
+                pct_timesteps_completing_the_stages: float
+                    The percentage of timesteps that are completing the stages
+            """
+            # Calculate reward from the rollout to self.goal_ref_seq
+            reward_matrix = np.exp(-euclidean_distance_advanced(obs_seq, ref_seq))
+
+            # Detect when a stage is completed (the rollout is close to the goal_ref_seq) (under self._threshold)
+            stage_completed = 0
+            # Track the number of steps where a stage is being completed
+            n_steps_completing_each_stage = [0] * len(ref_seq)
+
+            for i in range(len(reward_matrix)):  # Iterate through the timestep
+                if stage_completed > 1:
+                    # Once at least 1 stage is counted, if it's still above the threshold for the current stage, we will add to the count
+                    n_steps_completing_each_stage[stage_completed-1] += 1
+
+                if reward_matrix[i][stage_completed] > threshold and stage_completed < len(ref_seq) - 1:
+                    stage_completed += 1
+                    # stage_completed-1 because stage_completed is counting the number of stages completed
+                    n_steps_completing_each_stage[stage_completed-1] += 1
+
+            pct_stage_completed = stage_completed/len(ref_seq)
+
+            # The last pose is never reached
+            if n_steps_completing_each_stage[-1] == 0:
+                # We don't count any of the previous stage's steps
+                pct_timesteps_completing_the_stages = 0
+            else:
+                pct_timesteps_completing_the_stages = np.sum(n_steps_completing_each_stage)/len(obs_seq)
+
+            return pct_stage_completed, pct_timesteps_completing_the_stages
+        
+        self._success_fn_based_on_all_pos = lambda obs_seq, ref_seq=self._goal_ref_seq, threshold=success_fn_cfg["threshold_for_all_pos"]: success_fn(obs_seq, ref_seq, threshold)
+
+        self._success_fn_based_on_only_arm_pos = lambda obs_seq, ref_seq=self._goal_ref_seq, threshold=success_fn_cfg["threshold_for_arm_pos"]: success_fn(obs_seq[:, 12:], ref_seq[:, 12:], threshold)
+
     def _on_step(self) -> bool:
         if self.n_calls % self._render_freq == 0:
+            # Saving for only one env (the first env)
+            #   Because we are using this to plot
             raw_screens = []
             screens = []
-            states = []
-            geom_xposes = []
             infos = []
+            # Saving for each env
+            states = []
             rewards = []
+            geom_xposes = [[] for _ in range(self._n_eval_episodes)]
 
             def grab_screens(_locals: Dict[str, Any], _globals: Dict[str, Any]) -> None:
                 """
@@ -416,21 +481,25 @@ class VideoRecorderCallback(BaseCallback):
                 :param _globals: A dictionary containing all global variables of the
                  callback's scope
                 """
-                screen = self._eval_env.render()
+                env_i = _locals['i']
 
-                image_int = np.uint8(screen)
+                if env_i == 0:
+                    screen = self._eval_env.render()
 
-                raw_screens.append(Image.fromarray(image_int))
-                screens.append(Image.fromarray(image_int))  # The frames here will get plotted with info later
-                infos.append(_locals.get('info', {}))
-                states.append(_locals["observations"])
-                rewards.append(_locals["rewards"])
+                    image_int = np.uint8(screen)[:self._render_dim[0], :self._render_dim[1], :]
+
+                    raw_screens.append(Image.fromarray(image_int))
+                    screens.append(Image.fromarray(image_int))  # The frames here will get plotted with info later
+                    infos.append(_locals.get('info', {}))
+
+                    states.append(_locals["observations"][:, :22])
+                    rewards.append(_locals["rewards"])
 
                 geom_xpos = _locals.get('info', {})["geom_xpos"]
 
                 # Normalize the joint states based on the torso (index 1)
                 geom_xpos = geom_xpos - geom_xpos[1]
-                geom_xposes.append(geom_xpos)
+                geom_xposes[env_i].append(geom_xpos)
             
             evaluate_policy(
                 self.model,
@@ -443,27 +512,68 @@ class VideoRecorderCallback(BaseCallback):
             # Save the raw_screens locally
             imageio.mimsave(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts.gif"), raw_screens, duration=1/30, loop=0)
 
-            # Originally, states is a list of np.arrays size (1, env_obs_size)
-            #   We want to concatenate them to get a single np.array size (n_timesteps, env_obs_size)
-            states = np.concatenate(states)
-            rewards = np.concatenate(rewards)
-            
+            states = np.array(states)  # size: (rollout_length, n_eval_episodes, 22)
+            rewards = np.array(rewards) # size: (rollout_length, n_eval_episodes)
+            geom_xposes = np.array(geom_xposes) # (n_eval_episodes, rollout_length, 18, 3)
+
             if self._calc_gt_reward:
                 # Calculate the goal matching reward
-                if self._use_geom_xpos:
-                    # Don't need to do anything here, geom_xpos is getting normalized in the grab_screens function
-                    goal_matching_reward = self._gt_goal_matching_fn(np.array(geom_xposes))
+                if self._use_geom_xpos:            
+                    full_pos_success_rate_list = []
+                    full_pos_pct_success_timesteps_list = []
+                    arm_pos_success_rate_list = []
+                    arm_pos_pct_success_timesteps_list = []
+
+                    for env_i in range(self._n_eval_episodes):
+                        # Don't need to do anything here, geom_xpos is getting normalized in the grab_screens function
+                        geom_xposes_to_process = geom_xposes[env_i]
+
+                        full_pos_success_rate, full_pos_pct_success_timesteps = self._success_fn_based_on_all_pos(geom_xposes_to_process)
+                        arm_pos_success_rate, arm_pos_pct_success_timesteps = self._success_fn_based_on_only_arm_pos(geom_xposes_to_process)
+
+                        full_pos_success_rate_list.append(full_pos_success_rate)
+                        full_pos_pct_success_timesteps_list.append(full_pos_pct_success_timesteps)
+                        arm_pos_success_rate_list.append(arm_pos_success_rate)
+                        arm_pos_pct_success_timesteps_list.append(arm_pos_pct_success_timesteps)
+
+                    # Save the result as a json
+                    with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_success_results.json"), "w") as f:
+                        json.dump({
+                            "full_pos_success_rate": full_pos_success_rate_list,
+                            "full_pos_pct_success_timesteps": full_pos_pct_success_timesteps_list,
+                            "arm_pos_success_rate": arm_pos_success_rate_list,
+                            "arm_pos_pct_success_timesteps": arm_pos_pct_success_timesteps_list
+                        }, f)
+
+                    full_pos_success_rate_iqm, _ = calc_iqm(full_pos_success_rate_list)
+                    full_pos_pct_success_timesteps_iqm, _ = calc_iqm(full_pos_pct_success_timesteps_list)
+                    arm_pos_success_rate_iqm, _ = calc_iqm(arm_pos_success_rate_list)
+                    arm_pos_pct_success_timesteps_iqm, _ = calc_iqm(arm_pos_pct_success_timesteps_list)
+                    
+                    self.logger.record("eval/full_pos_success", 
+                                        full_pos_success_rate_iqm, 
+                                        exclude=("stdout", "log", "json", "csv"))
+                    
+                    self.logger.record("eval/full_pos_pct_success_timesteps", 
+                                        full_pos_pct_success_timesteps_iqm, 
+                                        exclude=("stdout", "log", "json", "csv"))
+                    
+                    self.logger.record("eval/arm_pos_success",
+                                        arm_pos_success_rate_iqm,
+                                        exclude=("stdout", "log", "json", "csv"))
+                    
+                    self.logger.record("eval/arm_pos_pct_success_timesteps",
+                                        arm_pos_pct_success_timesteps_iqm,
+                                        exclude=("stdout", "log", "json", "csv"))
                 else:
-                    goal_matching_reward = self._gt_goal_matching_fn(np.array(states)[:, :22])
+                    raise NotImplementedError(f"Ground truth reward calculation for self._use_geom_xpos={self._use_geom_xpos} is False")
 
+                # Show the success rate for the 1st env's rollout
+                reward_matrix = np.exp(-euclidean_distance_advanced(geom_xposes[0], self._goal_ref_seq))
                 for i in range(len(infos)):
-                    infos[i]["gt_joint_match_r"] = f"{goal_matching_reward[i]:.4f}"
-
-                with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_goal_matching_reward.npy"), "wb") as f:
-                    np.save(f, np.array(goal_matching_reward))
-                self.logger.record("rollout/sum_total_reward_per_epsisode", 
-                                    np.sum(goal_matching_reward), 
-                                    exclude=("stdout", "log", "json", "csv"))
+                    infos[i]["per_ref_seq_r"] = str([f"{reward_matrix[i][j]:.2f}" for j in range(len(self._goal_ref_seq))])
+                    infos[i]["full_pos_success"] = f"{full_pos_success_rate_list[0]:.2f}"
+                    infos[i]["arm_pos_success"] = f"{arm_pos_success_rate_list[0]:.2f}"
 
             frames = th.from_numpy(np.array(screens)).float().cuda(0).permute(0,3,1,2) / 255.0
             
@@ -490,20 +600,12 @@ class VideoRecorderCallback(BaseCallback):
             if self._calc_matching_reward:
                 if self._use_geom_xpos:
                     # Don't need to do anything here, geom_xpos is getting normalized in the grab_screens function
-                    matching_reward, matching_reward_info = self._matching_fn(np.array(geom_xposes), self._seq_matching_ref_seq)
+                    matching_reward, matching_reward_info = self._matching_fn(geom_xposes[0], self._seq_matching_ref_seq)
                 else:
-                    matching_reward, matching_reward_info = self._matching_fn(np.array(states)[:, :22], self._seq_matching_ref_seq)
+                    matching_reward, matching_reward_info = self._matching_fn(np.array(states[:, 0])[:, :22], self._seq_matching_ref_seq)
 
-                self.logger.record("rollout/avg_matching_reward_unscaled", 
+                self.logger.record("rollout/avg_matching_reward", 
                                 np.mean(matching_reward)/self._scale, 
-                                exclude=("stdout", "log", "json", "csv"))
-                
-                self.logger.record("rollout/avg_total_reward_unscaled", 
-                                np.mean(matching_reward/self._scale + rewards), 
-                                exclude=("stdout", "log", "json", "csv"))
-                
-                self.logger.record("rollout/avg_matching_total_reward", 
-                                np.mean(matching_reward + rewards), 
                                 exclude=("stdout", "log", "json", "csv"))
 
                 # Add the matching_reward to the infos so that we can plot it
@@ -512,21 +614,25 @@ class VideoRecorderCallback(BaseCallback):
 
                 # Save the matching_rewards locally    
                 with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_matching_rewards.npy"), "wb") as f:
-                    np.save(f, np.array(states))
+                    np.save(f, np.array(matching_reward))
 
                 if self._plot_matching_visualization:
                     # TODO: For now, we can only visualize this when the reference frame is defined via a gif
                     matching_reward_viz_save_path = os.path.join(self._rollout_save_path, f"{self.num_timesteps}_matching_fn_viz.png")
 
+                    # Subsample the frames. Otherwise, the visualization will be too long
+                    raw_screens_used_to_plot = [raw_screens[i] for i in range(0, len(raw_screens), 10)]
+                    ref_seqs_used_to_plot = [self._seq_matching_ref_seq_frames[i] for i in range(0, len(self._seq_matching_ref_seq_frames), 10)]
                     seq_matching_viz(
                         matching_fn_name=self._matching_fn_name,
-                        obs_seq=np.array(raw_screens),
-                        ref_seq=self._seq_matching_ref_seq_frames,
+                        obs_seq=np.array(raw_screens_used_to_plot),
+                        ref_seq=np.array(ref_seqs_used_to_plot),
                         matching_reward=matching_reward,
                         info=matching_reward_info,
                         reward_vmin=self._reward_vmin,
                         reward_vmax=self._reward_vmax,
                         path_to_save_fig=matching_reward_viz_save_path,
+                        rolcol_size=2
                     )
 
                     # Log the image to wandb
