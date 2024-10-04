@@ -46,6 +46,7 @@ def load_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bool = False
             loaded_joint_states = np.load(new_fp)
 
             if use_geom_xpos:
+                assert loaded_joint_states.shape[0] == 18 and loaded_joint_states.shape[1] == 3, f"Expected the shape to be (18, 3), but got {loaded_joint_states.shape}"
                 # Because we are using geom_xpos
                 #    Normalize the joint states based on the torso (index 1)
                 loaded_joint_states = loaded_joint_states - loaded_joint_states[1]
@@ -68,9 +69,10 @@ def load_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bool = False
         loaded_joint_states = np.load(new_fp)
 
         if use_geom_xpos:
+            assert loaded_joint_states.shape[1] == 18 and loaded_joint_states.shape[2] == 3, f"Expected the shape to be (num_frames, 18, 3), but got {loaded_joint_states.shape}"
             # Because we are using geom_xpos
             #    Normalize the joint states based on the torso (index 1)
-            loaded_joint_states = loaded_joint_states - loaded_joint_states[1]
+            loaded_joint_states = loaded_joint_states - loaded_joint_states[:, 1:2]
 
         # Because of how these sequences are generated, we need to remove the 1st frame (which is the initial state)
         return loaded_joint_states[1:]

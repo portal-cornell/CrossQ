@@ -596,10 +596,16 @@ class VideoRecorderCallback(BaseCallback):
 
                 # Show the success rate for the 1st env's rollout
                 reward_matrix = np.exp(-euclidean_distance_advanced(geom_xposes[0], self._goal_ref_seq))
+                arm_reward_matrix = np.exp(-euclidean_distance_advanced_arms_only(geom_xposes[0], self._goal_ref_seq))
+                reward_matrix_using_seq_req = np.exp(-euclidean_distance_advanced(geom_xposes[0], self._seq_matching_ref_seq))
+                arm_reawrd_matrix_using_seq_req = np.exp(-euclidean_distance_advanced_arms_only(geom_xposes[0], self._seq_matching_ref_seq))
                 for i in range(len(infos)):
-                    infos[i]["per_ref_seq_r"] = str([f"{reward_matrix[i][j]:.2f}" for j in range(len(self._goal_ref_seq))])
-                    infos[i]["full_pos_success"] = f"{full_pos_success_rate_list[0]:.2f}"
-                    infos[i]["arm_pos_success"] = f"{arm_pos_success_rate_list[0]:.2f}"
+                    # Plot the reward (exp of the negative distance) based on the ground-truth goal reference sequence
+                    infos[i]["rf_r"] = str([f"{reward_matrix[i][j]:.2f}" for j in range(len(self._goal_ref_seq))]) + " | " +  str([f"{arm_reward_matrix[i][j]:.2f}" for j in range(len(self._goal_ref_seq))])
+                    # Plot the reward (exp of the negative distance) based on the reference sequence USED FOR SEQUENCE MATCHING
+                    infos[i]["seqrf_r"] = str([f"{reward_matrix_using_seq_req[i][j]:.2f}" for j in range(len(self._seq_matching_ref_seq))]) + " | " + str([f"{arm_reawrd_matrix_using_seq_req[i][j]:.2f}" for j in range(len(self._seq_matching_ref_seq))])
+                    # Success Rate based on the entire body + based on only the arm
+                    infos[i]["[all, arm] success"] = f"{full_pos_success_rate_list[0]:.2f}, {arm_pos_success_rate_list[0]:.2f}"
 
             frames = th.from_numpy(np.array(screens)).float().cuda(0).permute(0,3,1,2) / 255.0
             
