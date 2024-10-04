@@ -430,19 +430,25 @@ class VideoRecorderCallback(BaseCallback):
             reward_matrix = np.exp(-euclidean_distance_advanced(obs_seq, ref_seq))
 
             # Detect when a stage is completed (the rollout is close to the goal_ref_seq) (under self._threshold)
+            current_stage = 0
             stage_completed = 0
             # Track the number of steps where a stage is being completed
-            n_steps_completing_each_stage = [0] * len(ref_seq)
+            #   Offset by 1 to play nicely with the stage_completed
+            n_steps_completing_each_stage = [0] * (len(ref_seq) + 1)
 
+            # TODO: have not verified how well it works when there are multiple key frames
             for i in range(len(reward_matrix)):  # Iterate through the timestep
-                if stage_completed > 1:
-                    # Once at least 1 stage is counted, if it's still above the threshold for the current stage, we will add to the count
-                    n_steps_completing_each_stage[stage_completed-1] += 1
-
-                if reward_matrix[i][stage_completed] > threshold and stage_completed < len(ref_seq) - 1:
+                if reward_matrix[i][current_stage] > threshold and stage_completed < len(ref_seq):
                     stage_completed += 1
+                    current_stage = min(current_stage + 1, len(ref_seq)-1)
                     # stage_completed-1 because stage_completed is counting the number of stages completed
-                    n_steps_completing_each_stage[stage_completed-1] += 1
+                    n_steps_completing_each_stage[stage_completed] += 1
+                elif len(ref_seq) == 1 and reward_matrix[i][current_stage] > threshold:
+                    # If there's only 1 stage
+                    n_steps_completing_each_stage[stage_completed] += 1
+                elif current_stage > 0 and reward_matrix[i][current_stage-1] > threshold:
+                    # Once at least 1 stage is counted, if it's still above the threshold for the current stage, we will add to the count
+                    n_steps_completing_each_stage[stage_completed] += 1
 
             pct_stage_completed = stage_completed/len(ref_seq)
 
@@ -451,7 +457,7 @@ class VideoRecorderCallback(BaseCallback):
                 # We don't count any of the previous stage's steps
                 pct_timesteps_completing_the_stages = 0
             else:
-                pct_timesteps_completing_the_stages = np.sum(n_steps_completing_each_stage)/len(obs_seq)
+                pct_timesteps_completing_the_stages = np.sum(n_steps_completing_each_stage)/len(ref_seq)
 
             return pct_stage_completed, pct_timesteps_completing_the_stages
         
@@ -621,8 +627,10 @@ class VideoRecorderCallback(BaseCallback):
                     matching_reward_viz_save_path = os.path.join(self._rollout_save_path, f"{self.num_timesteps}_matching_fn_viz.png")
 
                     # Subsample the frames. Otherwise, the visualization will be too long
-                    raw_screens_used_to_plot = [raw_screens[i] for i in range(0, len(raw_screens), 10)]
-                    ref_seqs_used_to_plot = [self._seq_matching_ref_seq_frames[i] for i in range(0, len(self._seq_matching_ref_seq_frames), 10)]
+                    obs_seq_skip_step = int(0.1 * len(raw_screens))
+                    raw_screens_used_to_plot = [raw_screens[i] for i in range(obs_seq_skip_step, len(raw_screens), obs_seq_skip_step)]
+                    ref_seq_skip_step = int(0.1 * len(self._seq_matching_ref_seq_frames))
+                    ref_seqs_used_to_plot = [self._seq_matching_ref_seq_frames[i] for i in range(ref_seq_skip_step, len(self._seq_matching_ref_seq_frames), ref_seq_skip_step)]
                     seq_matching_viz(
                         matching_fn_name=self._matching_fn_name,
                         obs_seq=np.array(raw_screens_used_to_plot),

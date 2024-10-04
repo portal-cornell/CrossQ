@@ -211,7 +211,8 @@ def augment_fn_with_stage_reward_based_on_last_state(original_fn, original_fn_na
             # print(f"i={i} reward[i]={reward[i]} reward_bonus={reward_bonus} new_reward={new_reward}")
             # input("stop")
         
-        return np.array(rewards)
+        # Normalize the rewards to be 0 and 1
+        return np.array(rewards) / matching_matrix.shape[1]
                         
     def new_fn(*args, **kwargs):
         reward, info = original_fn(*args, **kwargs)
