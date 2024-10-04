@@ -19,7 +19,7 @@ from loguru import logger
 
 import time
 
-from seq_reward.seq_utils import get_matching_fn, plot_matrix_as_heatmap_on_ax
+from seq_reward.seq_utils import get_matching_fn, plot_matrix_as_heatmap_on_ax, append_to_csv
 from seq_matching_toy.toy_envs.toy_env_utils import update_location, render_map_and_agent
     
 def convert_obs_to_frames(map_array, obs):
@@ -124,9 +124,7 @@ class GridNavSeqRewardCallback(BaseCallback):
             final_obs = update_location(agent_pos=obs_to_use[-1].astype(np.int64), action=int(self.model.rollout_buffer.actions[-1, env_i]), map_array=self._map)
             obs_to_use = np.concatenate([obs_to_use, np.expand_dims(final_obs, 0)], axis=0)
             frames = convert_obs_to_frames(self._map, obs_to_use)
-            
             matching_reward, _ = self._matching_fn(frames, self._ref_seq)  # size: (n_steps,)
-
             matching_reward_list.append(matching_reward)
 
             # for i in range(len(frames)):
@@ -345,8 +343,15 @@ class GridNavVideoRecorderCallback(BaseCallback):
             
             gt_rewards = self._gt_reward_fn(obs_seq, self._ref_seq)
 
+
             for i in range(len(infos)):
                 infos[i]["gt_r"] = f"{gt_rewards[i]:.4f}"
+
+            self.logger.record("rollout/episode_reward", 
+                                np.max(gt_rewards), 
+                                exclude=("stdout", "log"))
+
+            append_to_csv([np.max(gt_rewards), self.num_timesteps], ["ordered_target_frames_achieved", "timestep"], os.path.join(self._rollout_save_path,f"performance.csv"))
 
             self.logger.record("rollout/mean_gt_reward_per_epsisode", 
                                 np.mean(gt_rewards), 
@@ -383,16 +388,16 @@ class GridNavVideoRecorderCallback(BaseCallback):
 
                 # Plot the cost matrix
                 ax = axs[0]
-                plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, self._ref_seq, info["cost_matrix"], f"{self._matching_fn_name} Cost Matrix", cmap="gray_r", rolcol_size=rolcol_size)
+                plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, self._ref_seq, info["cost_matrix"], f"{self._matching_fn_name} Cost Matrix", matrix_cmap="gray_r", seq_cmap="gray_r", rolcol_size=rolcol_size)
 
                 # Plot the assignment matrix
                 ax = axs[1]
                 
-                plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, self._ref_seq, info["assignment"], f"{self._matching_fn_name} Assignment Matrix", cmap="Greens", rolcol_size=rolcol_size, vmin=0, vmax=1)
+                plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, self._ref_seq, info["assignment"], f"{self._matching_fn_name} Assignment Matrix", matrix_cmap="gray_r", seq_cmap="Greens", rolcol_size=rolcol_size, vmin=0, vmax=1)
 
                 # Plot the reward
                 ax = axs[2]
-                plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, self._ref_seq, np.expand_dims(matching_reward,1), f"{self._matching_fn_name} Reward (Sum = {np.sum(matching_reward):.2f})", cmap="Greens", rolcol_size=rolcol_size,  
+                plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, self._ref_seq, np.expand_dims(matching_reward,1), f"{self._matching_fn_name} Reward (Sum = {np.sum(matching_reward):.2f})", matrix_cmap="gray_r", seq_cmap="Greens", rolcol_size=rolcol_size,  
                                             vmin=self._reward_vmin, vmax=self._reward_vmax)
                 
 
@@ -485,16 +490,16 @@ class GridNavVideoRecorderCallback(BaseCallback):
 
             # Plot the cost matrix
             ax = axs[0]
-            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, self._ref_seq, info["cost_matrix"], f"{self._matching_fn_name} Cost Matrix", cmap="gray_r", rolcol_size=rolcol_size)
+            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, self._ref_seq, info["cost_matrix"], f"{self._matching_fn_name} Cost Matrix", seq_cmap="gray_r", matrix_cmap="gray_r", rolcol_size=rolcol_size)
 
             # Plot the assignment matrix
             ax = axs[1]
             
-            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, self._ref_seq, info["assignment"], f"{self._matching_fn_name} Assignment Matrix", cmap="Greens", rolcol_size=rolcol_size, vmin=0, vmax=1)
+            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, self._ref_seq, info["assignment"], f"{self._matching_fn_name} Assignment Matrix", seq_cmap="Greens", matrix_cmap="gray_r", rolcol_size=rolcol_size, vmin=0, vmax=1)
 
             # Plot the reward
             ax = axs[2]
-            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, self._ref_seq, np.expand_dims(matching_reward,1), f"{self._matching_fn_name} Reward (Sum = {np.sum(matching_reward):.2f})", cmap="Greens", rolcol_size=rolcol_size,  
+            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, self._ref_seq, np.expand_dims(matching_reward,1), f"{self._matching_fn_name} Reward (Sum = {np.sum(matching_reward):.2f})", seq_cmap="Greens",matrix_cmap="gray_r", rolcol_size=rolcol_size,  
                                         vmin=self._reward_vmin, vmax=self._reward_vmax)
             
 

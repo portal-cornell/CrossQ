@@ -159,10 +159,11 @@ def a_star_shortest_path(matrix, start, goal):
 
     return float('inf')  # If there's no valid path to the goal
 
-def nav_shortest_path_distance(x, y):
+def nav_shortest_path_distance(x, y, invert=False):
     """
     x: (x_batch_size, A, B)
     y: (y_batch_size, A, B)
+    invert: If true, this will subtract the distances from the greatest possible distance (turning this into a reward)
     
     Given two binary matrices M_1 (size (A, B)) and M_2 (size (A, B)), 
     with 1 as the agent, -1 as obstacles, and 0 as empty space, 
@@ -184,8 +185,6 @@ def nav_shortest_path_distance(x, y):
             matrix1 = x[i]
             matrix2 = y[j]
 
-            max_cost = matrix1.shape[0] * matrix1.shape[1] # never will have to visit more than every state
-
             # Get the positions of the agent (marked as 1)
             pos1 = np.argwhere(matrix1 == 1)[0]
             pos2 = np.argwhere(matrix2 == 1)[0]
@@ -193,7 +192,11 @@ def nav_shortest_path_distance(x, y):
             # Find the shortest path between pos1 and pos2 in matrix1, considering obstacles
             sp_length = a_star_shortest_path(matrix1, tuple(pos1), tuple(pos2))
             
-            cost_matrix[i, j] = max_cost - sp_length
+            if invert:
+                max_cost = matrix1.shape[0] * matrix1.shape[1] # never will have to visit more than every state
+                cost_matrix[i, j] = max_cost - sp_length
+            else:
+                cost_matrix[i, j] = sp_length
 
     return cost_matrix
 

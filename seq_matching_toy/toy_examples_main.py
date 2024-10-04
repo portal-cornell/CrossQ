@@ -12,6 +12,9 @@ from seq_matching_toy.toy_examples.nav_3by5_0_diff_pace_1 import *
 from seq_matching_toy.toy_examples.nav_3by5_0_diff_pace_2 import *
 from seq_matching_toy.toy_examples.nav_periodic import *
 from seq_matching_toy.toy_examples.nav_backwards import *
+from seq_matching_toy.toy_examples.nav_backwards_easier import *
+from seq_matching_toy.toy_examples.straight_line import *
+from seq_matching_toy.toy_examples.straight_line_long import *
 
 examples = {
     "criss_cross_0": criss_cross_0,
@@ -27,5 +30,8 @@ examples = {
     "nav_3by5_0_diff_pace_1": nav_3by5_0_diff_pace_1,
     "nav_3by5_0_diff_pace_2": nav_3by5_0_diff_pace_2,
     "nav_periodic": nav_periodic,
-    "nav_backwards": nav_backwards
+    "nav_backwards": nav_backwards,
+    "nav_backwards_easier": nav_backwards_easier,
+    "straight_line": straight_line,
+    "straight_line_long": straight_line_long
 }

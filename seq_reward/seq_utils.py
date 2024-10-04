@@ -1,3 +1,5 @@
+import os
+import csv
 import numpy as np
 from loguru import logger
 from PIL import Image
@@ -114,14 +116,16 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
     scale = float(fn_config["scale"])
     fn_name = fn_config["name"]
 
+    inverted_cost = False #cost_fn_name == "nav_shortest_path"
+
     if fn_name == "ot":
         gamma = float(fn_config["gamma"])
         fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale: compute_ot_reward(obs_seq, ref_seq, cost_fn, scale, gamma), f"{fn_name}_g={gamma}"
     elif fn_name == "dtw":
-        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_dtw_reward(obs_seq, ref_seq, cost_fn, scale), fn_name
+        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_dtw_reward(obs_seq, ref_seq, cost_fn, scale, inverted_cost=inverted_cost), fn_name
     elif fn_name == "soft_dtw":
         gamma = float(fn_config["gamma"])
-        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale: compute_soft_dtw_reward(obs_seq, ref_seq, cost_fn, gamma, scale), f"{fn_name}_g={gamma}"
+        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale: compute_soft_dtw_reward(obs_seq, ref_seq, cost_fn, gamma, scale,inverted_cost=inverted_cost), f"{fn_name}_g={gamma}"
     else:
         raise NotImplementedError(f"Unknown sequence matching function: {fn_name}")
     
@@ -140,12 +144,17 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
                     original_fn=augmented_fn, 
                     original_fn_name=fn_name, 
                     stage_bonus=float(fn_config.get("stage_bonus", 0)))
+            elif method == "reward_scaled_by_stage":
+                augmented_fn, fn_name = augment_fn_with_reward_scaled_by_stage(
+                    original_fn=augmented_fn, 
+                    original_fn_name=fn_name)
             else:
                 raise NotImplementedError(f"Unknown post processing method: {post_processing_method}")
             
         return augmented_fn, fn_name
     else:
         return fn, fn_name
+
 
 
 def augment_fn_with_exp_reward(original_fn, original_fn_name):
@@ -220,6 +229,56 @@ def augment_fn_with_stage_reward_based_on_last_state(original_fn, original_fn_na
         return new_reward, info
     
     return new_fn, new_fn_name
+
+def augment_fn_with_reward_scaled_by_stage(original_fn, original_fn_name):
+
+    new_fn_name = original_fn_name + "_stg_lst"
+
+    def post_processor(reward, matching_matrix):
+        """
+        Scale the reward such that reward[i] *= N / N_stage, where N_stage is the number of assigned 
+        frames to the stage of i. This discounts rewards for stages with high assignment, in order to encourage progress.
+        """
+        assignment = matching_matrix.argmax(axis=1) # find the best assignment for each obs
+        reward = scale_rewards_by_class(reward, assignment)
+        
+        return reward
+                        
+    def new_fn(*args, **kwargs):
+        reward, info = original_fn(*args, **kwargs)
+        new_reward = post_processor(reward, info["assignment"])
+
+        return new_reward, info
+    
+    return new_fn, new_fn_name
+
+
+def scale_rewards_by_class(rewards: np.ndarray, classes: np.ndarray) -> np.ndarray:
+    """
+    Scales rewards based on class frequencies using NumPy arrays.
+    
+    Args:
+        rewards: np.ndarray - Original rewards array
+        classes: np.ndarray - Class labels array (in range [0, k))
+        
+    Returns:
+        np.ndarray - Modified rewards where each reward is scaled by (N / N_in_class)
+    """
+    if rewards.shape != classes.shape:
+        raise ValueError("Shape of rewards and classes must match")
+    
+    N = len(rewards)
+    
+    # Count frequency of each class using bincount
+    class_counts = np.bincount(classes)
+    
+    # Create array of class counts corresponding to each reward
+    counts_per_reward = class_counts[classes]
+    
+    # Scale rewards vectorized
+    scaled_rewards = rewards / counts_per_reward
+
+    return scaled_rewards
 
 
 def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, title:str, seq_cmap: str, matrix_cmap: str, rolcol_size: int, vmin=None, vmax=None):
@@ -312,3 +371,23 @@ def seq_matching_viz(matching_fn_name, obs_seq, ref_seq, matching_reward, info, 
     plt.savefig(path_to_save_fig)
 
     plt.close(fig)
+
+def append_to_csv(items, item_headers, filename):
+    """
+    Logs a set of items with corresponding headers to a CSV file.
+    Creates the file with headers if it doesn't exist.
+
+    """
+    
+    # Check if file exists to determine if we need headers
+    file_exists = os.path.exists(filename)
+    
+    with open(filename, 'a', newline='') as f:
+        writer = csv.writer(f)
+        
+        # Write headers if new file
+        if not file_exists:
+            writer.writerow(item_headers)
+        
+        # Write the new row
+        writer.writerow(items)

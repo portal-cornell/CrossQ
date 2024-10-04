@@ -1,6 +1,6 @@
 import numpy as np
 
-def compute_dtw_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1, modification_dict={}):
+def compute_dtw_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1, inverted_cost=False, modification_dict={}):
     # Calculate the cost matrix between the reference sequence and the observed sequence
     #   size: (train_freq, ref_seq_len)
     cost_matrix = cost_fn(obs, ref)
@@ -43,8 +43,13 @@ def compute_dtw_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1, modif
     )
 
     soft_dtw_cost = np.sum(cost_matrix * normalized_path, axis=1)  # size: (train_freq,)
+        
+    if inverted_cost:
+        final_reward = scale * soft_dtw_cost
+    else:
+        final_reward = -scale * soft_dtw_cost
 
-    return - scale * soft_dtw_cost, info
+    return final_reward, info
 
 def _dtw(cost_matrix):
     l1, l2 = cost_matrix.shape

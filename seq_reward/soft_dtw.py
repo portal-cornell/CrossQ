@@ -2,7 +2,7 @@ from tslearn.metrics import SoftDTW
 
 import numpy as np
 
-def compute_soft_dtw_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, gamma=1, scale=1, modification_dict={}) -> np.ndarray:
+def compute_soft_dtw_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, gamma=1, scale=1, inverted_cost=False, modification_dict={}) -> np.ndarray:
     assert gamma > 0, "Currently not supporting gamma == 0"
 
     # Calculate the cost matrix between the reference sequence and the observed sequence
@@ -63,5 +63,8 @@ def compute_soft_dtw_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, gamma=1, 
         cost_matrix=cost_matrix,
         transported_cost=cost_matrix * a,
     )
-
-    return - scale * soft_dtw_cost, info
+    if inverted_cost:
+        final_reward = scale * soft_dtw_cost
+    else:
+        final_reward = -scale * soft_dtw_cost
+    return final_reward, info
