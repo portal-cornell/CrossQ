@@ -5,7 +5,7 @@ from gymnasium import spaces
 
 import imageio
 
-from seq_matching_toy.seq_utils import update_location, update_obs, render_map_and_agent
+from seq_matching_toy.toy_envs.toy_env_utils import update_location, render_map_and_agent
 
 DOWN = 0
 RIGHT = 1

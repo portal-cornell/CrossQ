@@ -26,7 +26,6 @@ from sbx.common.subproc_vec_env import SubprocVecEnv
 
 import gymnasium as gym
 
-
 from loguru import logger
 
 import multiprocess
@@ -34,7 +33,6 @@ from envs.base import get_make_env
 from vlm_reward.reward_models.model_factory import load_reward_model
 from vlm_reward.reward_main import dist_worker_compute_reward
 from callbacks import VideoRecorderCallback, WandbCallback, JointBasedSeqRewardCallback
-from constants import REWARDS_TO_ENTRY_IN_SEQ
 
 def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] = None):
     """
@@ -49,13 +47,13 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
     # Save logging also into a file
     logger.add(os.path.join(cfg.logging.run_path, "logs.txt"), enqueue=True)
 
-    # Initialize the environment
     use_vlm_for_reward = utils.use_vlm_for_reward(cfg)
     use_joint_vlm_for_reward = utils.use_joint_vlm_for_reward(cfg)
 
     logger.info(f"using_vlm_for_reward={use_vlm_for_reward}")
     logger.info(f"using vlm to predict joint pos: {use_joint_vlm_for_reward}")
 
+    # Initialize the environment
     make_env_kwargs = utils.get_make_env_kwargs(cfg)
 
     logger.info(f"Creating environment={cfg.env.name} instances with {make_env_kwargs=}")
@@ -73,8 +71,8 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
     logger.info("Creating the learner...")
 
     assert cfg.rl_algo.name == "sb3_sac", "Only StableBaseline3 SAC is supported for now"
+    
     # Train a model from scatch
-
     ref_joint_states = None
     if use_joint_vlm_for_reward:
         sac_class = JOINT_VLM_SAC
@@ -84,6 +82,9 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
     else:
         sac_class = SAC
     
+    
+
+
 
     model = sac_class(
         MultiInputPolicy if isinstance(training_env.observation_space, gym.spaces.Dict) else "MlpPolicy",
@@ -138,53 +139,33 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
 
         checkpoint_dir = os.path.join(cfg.logging.run_path, "checkpoint")
 
+        # Callback to save checkpoints
         wandb_callback = WandbCallback(
             model_save_path=str(checkpoint_dir),
             model_save_freq=cfg.logging.model_save_freq // cfg.compute.n_cpu_workers,
             verbose=2,
         )
         
-        goal_seq_name = REWARDS_TO_ENTRY_IN_SEQ[cfg.env.reward_type] if "reward_type" in cfg.env and cfg.env.reward_type in REWARDS_TO_ENTRY_IN_SEQ else ""
-
-        # If it's a goal reaching task
-        # For non-goal reaching reward, we should set the goal sequence name to be the final image only
-        if not ("goal_only" in cfg.env.reward_type):
-            if "basic_r" in cfg.env.reward_type:
-                goal_only_reward_type = cfg.env.reward_type.replace("_basic_r", "_goal_only_euclidean")
-            elif "seq" in cfg.env.reward_type:
-                base_name = cfg.env.reward_type.split("_seq")[0]
-                goal_only_reward_type = base_name + "_goal_only_euclidean"
-            else:
-                goal_only_reward_type = ""
-
-            if goal_only_reward_type in REWARDS_TO_ENTRY_IN_SEQ:
-                goal_seq_name = REWARDS_TO_ENTRY_IN_SEQ[goal_only_reward_type]
-            else:
-                goal_seq_name = ""
-        else:
-            goal_seq_name = ""
-
         video_callback = VideoRecorderCallback(
             SubprocVecEnv([make_env_fn], render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3)),
             rollout_save_path=os.path.join(cfg.logging.run_path, "eval"),
             render_freq=cfg.logging.video_save_freq // cfg.compute.n_cpu_workers,
+            use_geom_xpos="geom_xpos" in cfg.env.reward_type if "reward_type" in cfg.env else False,
             # This allow us to calculate the unifying reward/metric that all methods are compared against
             #   i.e. it defines "rollout/sum_total_reward_per_epsisode" in wandb
-            goal_seq_name=goal_seq_name,
+            task_name=cfg.env.task_name if "task_name" in cfg.env else "",
             threshold=cfg.env.pose_matching_stage_threshold,
-            use_geom_xpos="geom_xpos" in cfg.env.reward_type if "reward_type" in cfg.env else False,
             # For joint based reward (this allow us to visualize the sequence matching reward in a rollout
-            seq_name=cfg.reward_model.seq_name if cfg.reward_model.name == "joint_wasserstein" or cfg.reward_model.name == "joint_soft_dtw" else "",
-            matching_fn_cfg=dict(cfg.reward_model) if cfg.reward_model.name == "joint_wasserstein" or cfg.reward_model.name == "joint_soft_dtw" else {},
+            matching_fn_cfg=dict(cfg.reward_model) if cfg.reward_model.name == "ot" or "dtw" in cfg.reward_model.name else {},
             calc_visual_reward=use_vlm_for_reward or use_joint_vlm_for_reward,
         )
 
         callback_list = [wandb_callback, video_callback]
 
-        if cfg.reward_model.name == "joint_wasserstein" or cfg.reward_model.name == "joint_soft_dtw":
+        if cfg.reward_model.name == "ot" or "dtw" in cfg.reward_model.name:
             # Add the OT reward callback if we are using joint_wasserstein as the reward model
             callback_list.append(JointBasedSeqRewardCallback(
-                                    seq_name = cfg.reward_model.seq_name,
+                                    task_name = cfg.env.task_name,
                                     matching_fn_cfg = dict(cfg.reward_model),
                                     use_geom_xpos = "geom_xpos" in cfg.env.reward_type
             ))

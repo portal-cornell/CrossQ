@@ -19,10 +19,9 @@ from loguru import logger
 
 import time
 
-from seq_matching_toy.run_seq_matching_on_examples import plot_matrix_as_heatmap_on_ax
-from seq_matching_toy.seq_utils import get_matching_fn, update_location, update_obs, render_map_and_agent
-from seq_matching_toy.toy_envs.grid_nav import GridNavigationEnvHistory
-
+from seq_reward.seq_utils import get_matching_fn, plot_matrix_as_heatmap_on_ax
+from seq_matching_toy.toy_envs.toy_env_utils import update_location, render_map_and_agent
+    
 def convert_obs_to_frames(map_array, obs):
     """
     Frames is represented as map_array with the agent's position marked by 1

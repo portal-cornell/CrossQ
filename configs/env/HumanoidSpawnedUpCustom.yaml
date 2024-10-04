@@ -1,5 +1,12 @@
 name: HumanoidSpawnedUpCustom
 reward_type: original
+# The reward_type can determine how we are using the references associated with the task
+# if reward_type == goal_only_euclidean_geom_xpos
+#   we are using the reference to actually calculate the reward
+#   Warning: this is only used when the task is a goal reaching task
+# if reward_type == basic_r_geom_xpos
+#   we are only using the reference to visualize how the agent is doing wrt to the "ground-truth" reward
+task_name: null
 pose_matching_stage_threshold: 0.4
 episode_length: 120
 render_dim: 
