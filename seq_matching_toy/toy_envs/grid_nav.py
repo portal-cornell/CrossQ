@@ -5,14 +5,13 @@ from gymnasium import spaces
 
 import imageio
 
-from seq_matching_toy.seq_utils import update_location, render_map_and_agent
+from seq_matching_toy.seq_utils import update_location, update_obs, render_map_and_agent
 
 DOWN = 0
 RIGHT = 1
 UP = 2
 LEFT = 3
 STAY = 4
-
 
 class GridNavigationEnv(gym.Env):
     metadata = {"render_modes": ["rgb_array"]}
@@ -100,3 +99,40 @@ if __name__ == "__main__":
         writer.append_data(im)
     
     writer.close()
+
+class GridNavigationEnvHistory(GridNavigationEnv):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        n_cells = self.grid_size[0] * self.grid_size[1]
+        self.observation_space = spaces.MultiDiscrete(np.ones((n_cells,))*3) # 3 possible states for each grid location (unvisited, visited, current)
+        self.visited = np.zeros(self.grid_size)
+    
+    def _get_obs(self):
+        observation = self.visited.copy()
+        observation[tuple(self._agent_pos)] = 2
+        observation = observation.flatten()
+        return observation
+
+    def reset(self, seed=0):
+        """
+        This is a deterministic environment, so we don't use the seed."""
+        self.num_steps = 0
+        self._agent_pos = np.copy(self._starting_pos)
+        self.visited = np.zeros(self.grid_size)
+
+        return self._get_obs(), self._get_info()
+
+    def step(self, action):
+        self.visited[tuple(self._agent_pos)] = 1
+        self._agent_pos = update_location(agent_pos=self._agent_pos, action=action, map_array=self.map)
+        
+        observation = self._get_obs()
+        assert len(np.nonzero(observation == 2)) == 1
+        info = self._get_info()
+        reward = 0  # We are using sequence matching function to produce reward
+
+        self.num_steps += 1
+        terminated = self.num_steps >= self.episode_length
+        print(f"step {self.num_steps}: {observation}")
+
+        return observation, reward, terminated, False, info

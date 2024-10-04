@@ -8,6 +8,9 @@ seq_matching_fns:
     scale: 1
   - name: dtw
     scale: 1
+  - name: dtw
+    scale: 1
+    post_processing_method: stage_reward_based_on_last_state
   - name: soft_dtw
     gamma: 5
     scale: 1

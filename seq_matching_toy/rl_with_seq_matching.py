@@ -147,12 +147,18 @@ def train(cfg: DictConfig):
 
     reinforce = cfg.rl_algo.name.lower() == "reinforce"
     policy_gradient = cfg.rl_algo.name.lower() == "policy_gradient"
+    include_history = cfg.env.include_history
 
     # Initialize the environment
     map_array = load_map_from_example_dict(cfg.env.example_name)
     starting_pos = load_starting_pos_from_example_dict(cfg.env.example_name)
     ref_seq = load_ref_seq_from_example_dict(cfg.env.example_name)
     reward_vmin, reward_vmax = load_reward_vmin_vmax_from_example_dict(cfg.env.example_name)
+
+    if include_history:
+        grid_class = GridNavigationEnvHistory
+    else:
+        grid_class = GridNavigationEnv
 
     with wandb.init(
         project=cfg.logging.wandb_project,
@@ -177,9 +183,9 @@ def train(cfg: DictConfig):
             episode_length = cfg.env.episode_length
 
         if reinforce or policy_gradient:
-            env = GridNavigationEnv(map_array=np.copy(map_array), starting_pos=starting_pos, render_mode="rgb_array", episode_length=episode_length)
+            env = grid_class(map_array=np.copy(map_array), starting_pos=starting_pos, render_mode="rgb_array", episode_length=episode_length)
         else:
-            make_env_fn = lambda: Monitor(GridNavigationEnv(map_array=np.copy(map_array), starting_pos=starting_pos, render_mode="rgb_array", episode_length=episode_length))
+            make_env_fn = lambda: Monitor(grid_class(map_array=np.copy(map_array), starting_pos=starting_pos, render_mode="rgb_array", episode_length=episode_length))
 
             training_env = make_vec_env(
                 make_env_fn,
@@ -238,6 +244,7 @@ def train(cfg: DictConfig):
             cost_fn_name = cfg.cost_fn,
             reward_vmin = reward_vmin,
             reward_vmax = reward_vmax,
+            use_history=cfg.env.include_history
         )
 
         seq_matching_callback = GridNavSeqRewardCallback(
@@ -245,6 +252,7 @@ def train(cfg: DictConfig):
             ref_seq = np.copy(ref_seq),
             matching_fn_cfg = matching_fn_cfg,
             cost_fn_name = cfg.cost_fn,
+            use_history=cfg.env.include_history
         )
 
         callback_list = [wandb_callback, video_callback, seq_matching_callback]

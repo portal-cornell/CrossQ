@@ -20,8 +20,9 @@ from loguru import logger
 import time
 
 from seq_matching_toy.run_seq_matching_on_examples import plot_matrix_as_heatmap_on_ax
-from seq_matching_toy.seq_utils import get_matching_fn, update_location, render_map_and_agent
-    
+from seq_matching_toy.seq_utils import get_matching_fn, update_location, update_obs, render_map_and_agent
+from seq_matching_toy.toy_envs.grid_nav import GridNavigationEnvHistory
+
 def convert_obs_to_frames(map_array, obs):
     """
     Frames is represented as map_array with the agent's position marked by 1
@@ -43,11 +44,33 @@ def convert_obs_to_frames(map_array, obs):
 
     return np.array(frames)
 
+    
+def convert_obs_history_to_frames(map_array, obs):
+    """
+    Frames is represented as map_array with the agent's position marked by 1
+
+    obs represents the agent's (x, y) position in the grid
+
+    Parameters:
+        map_array: np.ndarray (row_size, col_size)
+        obs: np.ndarray (n_timesteps, 2)
+
+    Returns:
+        frames: np.ndarray (n_timesteps, row_size, col_size)
+    """
+    frames = []
+    for i in range(len(obs)):
+        frame = np.copy(map_array)
+        frame[np.nonzero(obs[i]==1)] = 1
+        frames.append(frame)
+
+    return np.array(frames)
+
 class GridNavSeqRewardCallback(BaseCallback):
     """
     Custom callback for calculating seq matching reward in the GridNavigation environment.
     """
-    def __init__(self, map_array, ref_seq, matching_fn_cfg, cost_fn_name, verbose=0):
+    def __init__(self, map_array, ref_seq, matching_fn_cfg, cost_fn_name, verbose=0, use_history=False):
         super(GridNavSeqRewardCallback, self).__init__(verbose)
 
         self._map = map_array
@@ -57,14 +80,44 @@ class GridNavSeqRewardCallback(BaseCallback):
         logger.info(f"[GridNavSeqRewardCallback] Loaded reference sequence. self._ref_seq.shape={self._ref_seq.shape} self._ref_seq=\n{self._ref_seq}")
 
         self._matching_fn, self._matching_fn_name = get_matching_fn(matching_fn_cfg, cost_fn_name)
+        self.use_history = use_history
 
     def on_rollout_end(self) -> None:
         """
         This method is called after the rollout ends.
         You can access and modify the rewards in the ReplayBuffer here.
         """
-        # Time this function
-        start_time = time.time()
+        if self.use_history:
+            self.on_rollout_end_history()
+        else:
+            self.on_rollout_end_mdp()
+
+    def on_rollout_end_history(self):
+        matching_reward_list = []
+        for env_i in range(self.model.env.num_envs):
+            obs_to_use = self.model.rollout_buffer.observations[1:, env_i]  # Skip the first observation because we are calculating the reward based on what it looks like in the next state
+
+            final_obs = np.reshape(obs_to_use[-1], self._map.shape)
+
+            cur_pos_np = np.nonzero(final_obs == 2)
+            agent_pos = np.array([cur_pos_np[0][0], cur_pos_np[1][0]])
+
+            final_location = update_location(agent_pos=agent_pos.astype(np.int64), action=int(self.model.rollout_buffer.actions[-1, env_i]), map_array=self._map)
+
+            final_obs = update_obs(final_obs, prev_agent_pos=agent_pos,new_agent_pos = final_location ).flatten()
+            obs_to_use = np.concatenate([obs_to_use, np.expand_dims(final_obs, 0)], axis=0)
+
+            frames = convert_obs_to_frames(self._map, obs_to_use)
+            
+            matching_reward, _ = self._matching_fn(frames, self._ref_seq)  # size: (n_steps,)
+
+            matching_reward_list.append(matching_reward)
+
+        rewards = np.stack(matching_reward_list, axis=1)  # size: (n_steps, n_envs)
+
+        self.model.rollout_buffer.rewards += rewards
+
+    def on_rollout_end_mdp(self) -> None:
 
         matching_reward_list = []
         for env_i in range(self.model.env.num_envs):
@@ -157,6 +210,7 @@ class GridNavVideoRecorderCallback(BaseCallback):
         cost_fn_name: str = "nav_manhattan",
         reward_vmin: int = 0, 
         reward_vmax: int = 0, 
+        use_history: bool = False,
         verbose=0
     ):
         """
@@ -196,6 +250,8 @@ class GridNavVideoRecorderCallback(BaseCallback):
             self._matching_fn, self._matching_fn_name = get_matching_fn(matching_fn_cfg, cost_fn_name)
         else:
             self._calc_matching_reward = False
+
+        self.use_history = use_history
 
     def set_ground_truth_fn(self):
         """
@@ -266,9 +322,18 @@ class GridNavVideoRecorderCallback(BaseCallback):
             actions = np.concatenate(actions)
 
             obs_to_use = states[1:]  # Skip the first observation because we are calculating the reward based on what it looks like in the next state
-            final_obs = update_location(agent_pos=obs_to_use[-1].astype(np.int64), action=int(actions[-1]), map_array=self._map)
-            obs_to_use = np.concatenate([obs_to_use, np.expand_dims(final_obs, 0)], axis=0)
-            obs_seq = convert_obs_to_frames(self._map, obs_to_use)
+            
+            if self.use_history:
+                final_obs = np.reshape(obs_to_use[-1], self._map.shape)
+                cur_pos_np = np.nonzero(final_obs == 2)
+                agent_pos = np.array([cur_pos_np[0][0], cur_pos_np[1][0]])
+                final_location = update_location(agent_pos=agent_pos.astype(np.int64), action=int(actions[-1]), map_array=self._map)
+                final_obs = update_obs(final_obs, prev_agent_pos=agent_pos,new_agent_pos = final_location ).flatten()
+                obs_seq = np.concatenate([obs_to_use, np.expand_dims(final_obs, 0)], axis=0)
+            else:
+                final_obs = update_location(agent_pos=obs_to_use[-1].astype(np.int64), action=int(actions[-1]), map_array=self._map)
+                obs_to_use = np.concatenate([obs_to_use, np.expand_dims(final_obs, 0)], axis=0)
+                obs_seq = convert_obs_to_frames(self._map, obs_to_use)
 
             # Add the first frame and replace final frame to the screens
             raw_screens = [Image.fromarray(np.uint8(render_map_and_agent(self._map, states[0].astype(np.int64))))] + raw_screens

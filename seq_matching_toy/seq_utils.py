@@ -52,6 +52,7 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
 
                 for i in range(len(reward)):
                     assignment = matching_matrix[i].argmax()
+                    scaled_rewards =scale_rewards_by_class(rewards, assignment)
 
                     # print(f"i={i} assignment={assignment} previous_step_assignment={previous_step_assignment}")
 
@@ -83,7 +84,6 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
     else:
         return fn, fn_name
     
-
 action_to_direction = {
             0: np.array([1, 0]), # Down
             1: np.array([0, 1]), # Right
@@ -91,6 +91,13 @@ action_to_direction = {
             3: np.array([0, -1]), # Left
             4: np.array([0, 0]) # Stay in place
         }
+
+def update_obs(obs, prev_agent_pos, new_agent_pos):
+
+
+    obs[tuple(prev_agent_pos)] = 2
+    obs[tuple(new_agent_pos)] = 1
+    return obs
 
 def update_location(agent_pos, action, map_array):
     direction = action_to_direction[action]
@@ -101,6 +108,35 @@ def update_location(agent_pos, action, map_array):
         return new_pos
     else:
         return agent_pos
+
+def scale_rewards_by_class(rewards: np.ndarray, classes: np.ndarray) -> np.ndarray:
+    """
+    Scales rewards based on class frequencies using NumPy arrays.
+    
+    Args:
+        rewards: np.ndarray - Original rewards array
+        classes: np.ndarray - Class labels array (in range [0, k))
+        
+    Returns:
+        np.ndarray - Modified rewards where each reward is scaled by (N / N_in_class)
+    """
+    if rewards.shape != classes.shape:
+        raise ValueError("Shape of rewards and classes must match")
+    
+    N = len(rewards)
+    
+    # Count frequency of each class using bincount
+    class_counts = np.bincount(classes)
+    
+    # Create array of class counts corresponding to each reward
+    counts_per_reward = class_counts[classes]
+    
+    # Scale rewards vectorized
+    scaled_rewards = rewards * (N / counts_per_reward)
+    
+    return scaled_rewards
+
+
 
 def is_valid_location(pos, map_array):
     within_x_bounds = 0 <= pos[0] < map_array.shape[0]

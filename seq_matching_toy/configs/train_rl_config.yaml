@@ -24,6 +24,7 @@ logging:
 env:
   example_name: nav_3by3_0
   episode_length: 10
+  include_history: false
 
 rl_algo:
   name: ppo
