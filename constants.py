@@ -47,6 +47,11 @@ TASK_SEQ_DICT = {
             "intermediate_60_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_60-frames_geom-xpos.npy",
             "rollout_19_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_real-rollout_19-frames_geom-xpos.npy",
             "rollout_59_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_real-rollout_59-frames_geom-xpos.npy",
+            "handpick_1_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_hand-picked-rollout_1-frames_geom-xpos.npy",
+            "handpick_1_frames_interpolation": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_hand-picked-rollout_1-frames_from-interpolation_geom-xpos.npy",
+            "handpick_2_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_hand-picked-rollout_2-frames_n=13-111_geom-xpos.npy",
+            "handpick_2_frames_106-111": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_hand-picked-rollout_2-frames_n=106-111_geom-xpos.npy",
+            "handpick_3_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_hand-picked-rollout_3-frames_geom-xpos.npy",
         }
     },
     "both_arms_out":

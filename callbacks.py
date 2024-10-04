@@ -24,7 +24,7 @@ from loguru import logger
 from einops import rearrange
 
 from seq_reward.seq_utils import get_matching_fn, load_reference_seq, load_images_from_reference_seq, seq_matching_viz
-from seq_reward.cost_fns import euclidean_distance_advanced
+from seq_reward.cost_fns import euclidean_distance_advanced, euclidean_distance_advanced_arms_only
 
 from vlm_reward.reward_main import compute_rewards
 from vlm_reward.reward_transforms import half_gaussian_filter_1d
@@ -327,6 +327,9 @@ class VideoRecorderCallback(BaseCallback):
             self.set_success_fn(success_fn_cfg)
 
             self._calc_gt_reward = True
+
+            self._success_json_save_path = os.path.join(self._rollout_save_path, "success_results.json")
+            self._success_results = {}
         else:
             self._calc_gt_reward = False
 
@@ -465,6 +468,16 @@ class VideoRecorderCallback(BaseCallback):
 
         self._success_fn_based_on_only_arm_pos = lambda obs_seq, ref_seq=self._goal_ref_seq, threshold=success_fn_cfg["threshold_for_arm_pos"]: success_fn(obs_seq[:, 12:], ref_seq[:, 12:], threshold)
 
+
+    def add_success_results(self, curr_timestep, timestep_success_dict):
+        """
+        Add the success results to the success_results dictionary
+        """
+        self._success_results[curr_timestep] = timestep_success_dict
+
+        with open(self._success_json_save_path, "w") as f:
+            json.dump(self._success_results, f, indent=4)
+
     def _on_step(self) -> bool:
         if self.n_calls % self._render_freq == 0:
             # Saving for only one env (the first env)
@@ -542,19 +555,26 @@ class VideoRecorderCallback(BaseCallback):
                         arm_pos_success_rate_list.append(arm_pos_success_rate)
                         arm_pos_pct_success_timesteps_list.append(arm_pos_pct_success_timesteps)
 
-                    # Save the result as a json
-                    with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_success_results.json"), "w") as f:
-                        json.dump({
-                            "full_pos_success_rate": full_pos_success_rate_list,
-                            "full_pos_pct_success_timesteps": full_pos_pct_success_timesteps_list,
-                            "arm_pos_success_rate": arm_pos_success_rate_list,
-                            "arm_pos_pct_success_timesteps": arm_pos_pct_success_timesteps_list
-                        }, f)
+                    full_pos_success_rate_iqm, full_pos_success_rate_std = calc_iqm(full_pos_success_rate_list)
+                    full_pos_pct_success_timesteps_iqm, full_pos_pct_success_timesteps_std = calc_iqm(full_pos_pct_success_timesteps_list)
+                    arm_pos_success_rate_iqm, arm_pos_success_rate_std = calc_iqm(arm_pos_success_rate_list)
+                    arm_pos_pct_success_timesteps_iqm, arm_pos_pct_success_timesteps_std = calc_iqm(arm_pos_pct_success_timesteps_list)
 
-                    full_pos_success_rate_iqm, _ = calc_iqm(full_pos_success_rate_list)
-                    full_pos_pct_success_timesteps_iqm, _ = calc_iqm(full_pos_pct_success_timesteps_list)
-                    arm_pos_success_rate_iqm, _ = calc_iqm(arm_pos_success_rate_list)
-                    arm_pos_pct_success_timesteps_iqm, _ = calc_iqm(arm_pos_pct_success_timesteps_list)
+                    # Save the success results locally
+                    self.add_success_results(self.num_timesteps, {
+                        "full_pos_success_rate": full_pos_success_rate_list,
+                        "full_pos_success_rate_iqm": float(full_pos_success_rate_iqm),
+                        "full_pos_success_rate_std": float(full_pos_success_rate_std),
+                        "full_pos_pct_success_timesteps": full_pos_pct_success_timesteps_list,
+                        "full_pos_pct_success_timesteps_iqm": float(full_pos_pct_success_timesteps_iqm),
+                        "full_pos_pct_success_timesteps_std": float(full_pos_pct_success_timesteps_std),
+                        "arm_pos_success_rate": arm_pos_success_rate_list,
+                        "arm_pos_success_rate_iqm": float(arm_pos_success_rate_iqm),
+                        "arm_pos_success_rate_std": float(arm_pos_success_rate_std),
+                        "arm_pos_pct_success_timesteps": arm_pos_pct_success_timesteps_list,
+                        "arm_pos_pct_success_timesteps_iqm": float(arm_pos_pct_success_timesteps_iqm),
+                        "arm_pos_pct_success_timesteps_std": float(arm_pos_pct_success_timesteps_std)
+                    })
                     
                     self.logger.record("eval/full_pos_success", 
                                         full_pos_success_rate_iqm, 
@@ -627,14 +647,20 @@ class VideoRecorderCallback(BaseCallback):
                     matching_reward_viz_save_path = os.path.join(self._rollout_save_path, f"{self.num_timesteps}_matching_fn_viz.png")
 
                     # Subsample the frames. Otherwise, the visualization will be too long
-                    obs_seq_skip_step = int(0.1 * len(raw_screens))
-                    raw_screens_used_to_plot = [raw_screens[i] for i in range(obs_seq_skip_step, len(raw_screens), obs_seq_skip_step)]
-                    ref_seq_skip_step = int(0.1 * len(self._seq_matching_ref_seq_frames))
-                    ref_seqs_used_to_plot = [self._seq_matching_ref_seq_frames[i] for i in range(ref_seq_skip_step, len(self._seq_matching_ref_seq_frames), ref_seq_skip_step)]
+                    if len(raw_screens) > 20:
+                        obs_seq_skip_step = int(0.1 * len(raw_screens))
+                        raw_screens_used_to_plot = np.array([raw_screens[i] for i in range(obs_seq_skip_step, len(raw_screens), obs_seq_skip_step)])
+                    else:
+                        raw_screens_used_to_plot = np.array(raw_screens)
+                    if len(self._seq_matching_ref_seq_frames) > 20:
+                        ref_seq_skip_step = int(0.1 * len(self._seq_matching_ref_seq_frames))
+                        ref_seqs_used_to_plot = np.array([self._seq_matching_ref_seq_frames[i] for i in range(ref_seq_skip_step, len(self._seq_matching_ref_seq_frames), ref_seq_skip_step)])
+                    else:
+                        ref_seqs_used_to_plot = self._seq_matching_ref_seq_frames
                     seq_matching_viz(
                         matching_fn_name=self._matching_fn_name,
-                        obs_seq=np.array(raw_screens_used_to_plot),
-                        ref_seq=np.array(ref_seqs_used_to_plot),
+                        obs_seq=raw_screens_used_to_plot,
+                        ref_seq=ref_seqs_used_to_plot,
                         matching_reward=matching_reward,
                         info=matching_reward_info,
                         reward_vmin=self._reward_vmin,

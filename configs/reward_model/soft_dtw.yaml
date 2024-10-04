@@ -1,6 +1,6 @@
 name: soft_dtw
 cost_fn: euclidean_arms_only
-gamma: 100
+gamma: 5
 scale: 1
 # This does not exist by default
 #  You can specify this in the command line: 
