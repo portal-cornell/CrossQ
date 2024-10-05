@@ -1,9 +1,10 @@
 """
 Example Command
+# To automatically subsample the frames
+python create_demo/convert_rollout_to_seq.py -p /share/portal/hw575/CrossQ/train_logs/2024-09-26-152534_sb3_sac_envr=right_arm_extend_wave_higher_goal_only_euclidean_geom_xpos_rm=hand_engineered_s=9_nt=arms-only-geom/eval/2000000_rollouts.gif -t right-arm-extend-wave-higher -l 20 --debug
 
-python create_demo/convert_rollout_to_seq.py -p /share/portal/hw575/CrossQ/train_logs/2024-09-26-152534_sb3_sac_envr=right_arm_extend_wave_higher_goal_only_euclidean_geom_xpos_rm=hand_engineered_s=9_nt=arms-only-geom/eval/2000000_rollouts.gif -t right-arm-extend-wave-higher -l 2 --debug --manual
-
-python create_demo/convert_rollout_to_seq.py -p /share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_5-frames.gif -t right-arm-extend-wave-higher -l 2 --debug --manual
+# To manually select frames
+python create_demo/convert_rollout_to_seq.py -p /share/portal/hw575/CrossQ/train_logs/2024-09-26-152534_sb3_sac_envr=right_arm_extend_wave_higher_goal_only_euclidean_geom_xpos_rm=hand_engineered_s=9_nt=arms-only-geom/eval/2000000_rollouts.gif -t right-arm-extend-wave-higher  --debug --manual
 """
 
 import argparse
@@ -49,7 +50,7 @@ if args.manual:
     rollout_tag = "hand-picked-rollout"
 else:
     # Generate the index to subsample the gif to the desired subsample length
-    n_frames_to_skip = len(frames) // args.subsample_length
+    n_frames_to_skip = (len(frames)) // (args.subsample_length)
     print(f"n_frames_to_skip={n_frames_to_skip}")
     subsample_indices = [0] + [idx for idx in range(n_frames_to_skip, len(frames)-1, n_frames_to_skip)]
 
@@ -61,6 +62,9 @@ subsampled_frames = [frames[idx] for idx in subsample_indices]
 
 # We subtract out the 1st frame
 total_ref_frames = len(subsampled_frames) - 1
+
+print(f"total_ref_frames={total_ref_frames}")
+print("saving at ", os.path.join("create_demo/seq_demos", f"{args.task_name}_{rollout_tag}_{total_ref_frames}-frames.gif"))
 
 # Save the subsampled gif
 imageio.mimsave(os.path.join("create_demo/seq_demos", f"{args.task_name}_{rollout_tag}_{total_ref_frames}-frames.gif"), subsampled_frames, duration=1/30, loop=0)

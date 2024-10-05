@@ -658,8 +658,9 @@ class VideoRecorderCallback(BaseCallback):
                         raw_screens_used_to_plot = np.array([raw_screens[i] for i in range(obs_seq_skip_step, len(raw_screens), obs_seq_skip_step)])
                     else:
                         raw_screens_used_to_plot = np.array(raw_screens)
-                    if len(self._seq_matching_ref_seq_frames) > 20:
-                        ref_seq_skip_step = int(0.1 * len(self._seq_matching_ref_seq_frames))
+                        
+                    if len(self._seq_matching_ref_seq_frames) > 8:
+                        ref_seq_skip_step = max(int(0.1 * len(self._seq_matching_ref_seq_frames)), 2)
                         ref_seqs_used_to_plot = np.array([self._seq_matching_ref_seq_frames[i] for i in range(ref_seq_skip_step, len(self._seq_matching_ref_seq_frames), ref_seq_skip_step)])
                     else:
                         ref_seqs_used_to_plot = self._seq_matching_ref_seq_frames
