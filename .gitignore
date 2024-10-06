@@ -67,3 +67,4 @@ wandb/
 
 /seq_matching_toy/toy_examples_logs
 /seq_matching_toy/rl_train_logs
+/workshop_figs
