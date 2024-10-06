@@ -8,6 +8,10 @@ Use Cases:
     python humanoid_ctrl_script.py --gen_traj --seq_name=both-arms-out_to_left-arm-out --steps=60
 
     if --debug is set, a video will be saved in debugging/humanoid_env/testing.mp4
+3. Generate data for a sequence of poses and take the last n frames
+    python humanoid_ctrl_script.py --gen_traj --seq_name=both-arms-out_to_left-arm-out --steps=20 --take_last_n_frames=10
+
+    if --debug is set, a video will be saved in debugging/humanoid_env/testing.mp4
 """
 
 import gymnasium
@@ -39,6 +43,7 @@ parser.add_argument("--debug", default=False, action="store_true", help="Store a
 parser.add_argument("--gen_traj", default=False, action="store_true", help="Generate a trajectory through interpolation for the pose")
 parser.add_argument("--seq_name", default="", type=str, help="Name of the sequence of poses to generate")
 parser.add_argument("--steps", default=60, type=int, help="Number of steps to interpolate between poses")
+parser.add_argument("--take_last_n_frames", default=-1, type=int, help="After interpolating {# of key poses} * {steps} frames, we use the last n frames to save as ref seq")
 
 
 args = parser.parse_args()
@@ -194,13 +199,23 @@ else:
 
         init_qpos = new_qpos
 
+    if args.take_last_n_frames != -1:
+        frames = [frames[0]] + frames[-args.take_last_n_frames:]
+        qposes_to_save = [qposes_to_save[0]] + qposes_to_save[-args.take_last_n_frames:]
+        geom_xposes_to_save = [geom_xposes_to_save[0]] + geom_xposes_to_save[-args.take_last_n_frames:]
+        save_keyword = "last-"
+    else:
+        save_keyword = ""
+        
+    ref_seq_len = len(frames) - 1 # Subtract the initial frame
+
     # Save the raw_screens locally
-    imageio.mimsave(os.path.join("create_demo/seq_demos", f"{seq_name}_{num_of_steps_per_subgoal}-frames.gif"), frames, duration=1/30, loop=0)
-    with open(os.path.join("create_demo/seq_demos", f"{seq_name}_{num_of_steps_per_subgoal}-frames_joint-states.npy"), "wb") as fout:
+    imageio.mimsave(os.path.join("create_demo/seq_demos", f"{seq_name}_{save_keyword}{ref_seq_len}-frames.gif"), frames, duration=1/30, loop=0)
+    with open(os.path.join("create_demo/seq_demos", f"{seq_name}_{save_keyword}{ref_seq_len}-frames_joint-states.npy"), "wb") as fout:
         print(f"qposes_to_save: {np.array(qposes_to_save).shape}")
         np.save(fout, np.array(qposes_to_save))
 
-    with open(os.path.join("create_demo/seq_demos", f"{seq_name}_{num_of_steps_per_subgoal}-frames_geom-xpos.npy"), "wb") as fout:
+    with open(os.path.join("create_demo/seq_demos", f"{seq_name}_{save_keyword}{ref_seq_len}-frames_geom-xpos.npy"), "wb") as fout:
         print(f"geom_xposes_to_save: {np.array(geom_xposes_to_save).shape}")
         np.save(fout, np.array(geom_xposes_to_save))
 

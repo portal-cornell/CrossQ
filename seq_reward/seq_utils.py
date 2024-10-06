@@ -48,6 +48,7 @@ def load_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bool = False
             loaded_joint_states = np.load(new_fp)
 
             if use_geom_xpos:
+                assert loaded_joint_states.shape[0] == 18 and loaded_joint_states.shape[1] == 3, f"Expected the shape to be (18, 3), but got {loaded_joint_states.shape}"
                 # Because we are using geom_xpos
                 #    Normalize the joint states based on the torso (index 1)
                 loaded_joint_states = loaded_joint_states - loaded_joint_states[1]
@@ -70,9 +71,10 @@ def load_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bool = False
         loaded_joint_states = np.load(new_fp)
 
         if use_geom_xpos:
+            assert loaded_joint_states.shape[1] == 18 and loaded_joint_states.shape[2] == 3, f"Expected the shape to be (num_frames, 18, 3), but got {loaded_joint_states.shape}"
             # Because we are using geom_xpos
             #    Normalize the joint states based on the torso (index 1)
-            loaded_joint_states = loaded_joint_states - loaded_joint_states[1]
+            loaded_joint_states = loaded_joint_states - loaded_joint_states[:, 1:2]
 
         # Because of how these sequences are generated, we need to remove the 1st frame (which is the initial state)
         return loaded_joint_states[1:]
@@ -220,7 +222,8 @@ def augment_fn_with_stage_reward_based_on_last_state(original_fn, original_fn_na
             # print(f"i={i} reward[i]={reward[i]} reward_bonus={reward_bonus} new_reward={new_reward}")
             # input("stop")
         
-        return np.array(rewards)
+        # Normalize the rewards to be 0 and 1
+        return np.array(rewards) / matching_matrix.shape[1]
                         
     def new_fn(*args, **kwargs):
         reward, info = original_fn(*args, **kwargs)
@@ -315,10 +318,12 @@ def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, 
         mid_val = (np.max(matrix) + np.min(matrix)) / 2
 
     # Add text annotations (numbers) on each cell in the heatmap
-    for i in range(matrix.shape[0]):
-        for j in range(matrix.shape[1]):
-            text_color = 'white' if matrix[i, j] > mid_val else 'black'
-            ax_heatmap.text(j, i, f'{matrix[i, j]:.2f}', ha='center', va='center', color=text_color, fontsize=10*rolcol_size)
+    label_text_font_size = max(obs_len, ref_len) / min(matrix.shape[0], matrix.shape[1]) * rolcol_size / 2
+    if label_text_font_size >= 1:
+        for i in range(matrix.shape[0]):
+            for j in range(matrix.shape[1]):
+                text_color = 'white' if matrix[i, j] > mid_val else 'black'
+                ax_heatmap.text(j, i, f'{matrix[i, j]:.2f}', ha='center', va='center', color=text_color, fontsize=label_text_font_size)
 
     ax_colorbar = fig.add_subplot(gs[1:obs_len+1, ref_len + 1])
     cbar = fig.colorbar(im, cax=ax_colorbar, fraction=0.046, pad=0.04)
@@ -340,13 +345,10 @@ def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, 
 
 
 def seq_matching_viz(matching_fn_name, obs_seq, ref_seq, matching_reward, info, reward_vmin, reward_vmax, path_to_save_fig, seq_cmap=None, rolcol_size=1):
-    # TODO: messy code taken from seq_matching_toy/run_seq_matching_on_examples.py
-    #   Basically allows us to visualizing the matching function on a rollout
-    rolcol_size = 1
-
-    # 3 * because we have 3 figure columns
+    # 2 * because we have 2 figure columns (where we will plot the entire ref seq)
     #   In each figure columns, we have len(ref_seq) for the reference sequence/cost matrix, 1 column for the vertical stack of obs seq, and 1 column for the colorbar
-    fig_width = 3 * (rolcol_size * (len(ref_seq) + 2))
+    # The last column (for the reward) will just have 4 things (1 column for the vertical stack of obs seq, 1 column for the colorbar, and 2 column for the reward)
+    fig_width = rolcol_size * (2 * (len(ref_seq) + 2) + 4)
 
     #  We have len(obs_seq) for the observed sequence/cost matrix, 1 row for the horizontal stack of ref seq
     fig_height = rolcol_size * (len(obs_seq) + 1)
@@ -364,7 +366,11 @@ def seq_matching_viz(matching_fn_name, obs_seq, ref_seq, matching_reward, info, 
 
     # Plot the reward
     ax = axs[2]
-    plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, np.expand_dims(matching_reward,1), f"{matching_fn_name} Reward (Sum = {np.sum(matching_reward):.2f})", seq_cmap=seq_cmap, matrix_cmap="Greens", rolcol_size=rolcol_size, vmin=reward_vmin, vmax=reward_vmax)
+    # Only plot the last 2 frames of the ref seq
+    if len(ref_seq) > 2:
+        plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq[-3:-1], np.expand_dims(matching_reward,1), f"{matching_fn_name} Reward (Sum = {np.sum(matching_reward):.2f})", seq_cmap=seq_cmap, matrix_cmap="Greens", rolcol_size=rolcol_size, vmin=reward_vmin, vmax=reward_vmax)
+    else:
+        plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, np.expand_dims(matching_reward,1), f"{matching_fn_name} Reward (Sum = {np.sum(matching_reward):.2f})", seq_cmap=seq_cmap, matrix_cmap="Greens", rolcol_size=rolcol_size, vmin=reward_vmin, vmax=reward_vmax)
 
     plt.tight_layout()
 

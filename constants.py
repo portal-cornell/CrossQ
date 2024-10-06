@@ -42,8 +42,34 @@ TASK_SEQ_DICT = {
         "task_type": "goal_reaching",
         "sequences": {
             "key_frames": ["/share/portal/hw575/CrossQ/create_demo/demos/right-arm-extend-wave-higher_geom-xpos.npy"],
+            # Using interpolated sequences as reference sequences
             "intermediate_3_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_3-frames_geom-xpos.npy",
             "intermediate_5_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_5-frames_geom-xpos.npy",
+            "intermediate_10_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_10-frames_geom-xpos.npy",
+            "intermediate_20_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_20-frames_geom-xpos.npy",
+            "intermediate_30_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_30-frames_geom-xpos.npy",
+            "intermediate_40_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_40-frames_geom-xpos.npy",
+            "intermediate_50_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_50-frames_geom-xpos.npy",
+            "intermediate_60_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_60-frames_geom-xpos.npy",
+            # Using interpolated sequences as reference sequences (which are the last N frames of interpolation)
+            "intermediate_last_10_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_last-10-frames_geom-xpos.npy",
+            "intermediate_last_20_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_last-20-frames_geom-xpos.npy",
+            "intermediate_last_30_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_last-30-frames_geom-xpos.npy",
+            "intermediate_last_40_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_last-40-frames_geom-xpos.npy",
+            "intermediate_last_50_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_last-50-frames_geom-xpos.npy",
+            "intermediate_last_60_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_last-60-frames_geom-xpos.npy",
+            # Using actual rollouts as reference sequences
+            "rollout_9_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_real-rollout_9-frames_geom-xpos.npy",
+            "rollout_19_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_real-rollout_19-frames_geom-xpos.npy",
+            'rollout_29_frames': "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_real-rollout_29-frames_geom-xpos.npy",
+            'rollout_39_frames': "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_real-rollout_39-frames_geom-xpos.npy",
+            'rollout_49_frames': "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_real-rollout_49-frames_geom-xpos.npy",
+            "rollout_59_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_real-rollout_59-frames_geom-xpos.npy",
+            "handpick_1_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_hand-picked-rollout_1-frames_geom-xpos.npy",
+            "handpick_1_frames_interpolation": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_hand-picked-rollout_1-frames_from-interpolation_geom-xpos.npy",
+            "handpick_2_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_hand-picked-rollout_2-frames_n=13-111_geom-xpos.npy",
+            "handpick_2_frames_106-111": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_hand-picked-rollout_2-frames_n=106-111_geom-xpos.npy",
+            "handpick_3_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-extend-wave-higher_hand-picked-rollout_3-frames_geom-xpos.npy",
         }
     },
     "both_arms_out":
