@@ -37,10 +37,10 @@ def get_output_path() -> str:
     return hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
 
 def use_vlm_for_reward(cfg: DictConfig) -> bool:
-    return "hand_engineered" not in cfg.reward_model.name.lower() and "ot" not in cfg.reward_model.name.lower() and "dtw" not in cfg.reward_model.name.lower()
+    return cfg.visual_reward_model.name != "nothing" # if "vlm_reward" is a field, then use it
 
 def use_joint_vlm_for_reward(cfg: DictConfig) -> bool:
-    return "joint_pred" in cfg.reward_model.name.lower()
+    return cfg.visual_reward_model.name != "nothing" and "joint_pred" in cfg.visual_reward_model.name.lower()
 
 def set_os_vars() -> None:
 
@@ -66,18 +66,18 @@ def validate_and_preprocess_cfg(cfg: DictConfig):
         - Sets the logging.run_path to the absolute path to the folder that holds all the logs/outputs for the current run
     """
     if use_vlm_for_reward(cfg):
-        assert cfg.reward_model.reward_batch_size % cfg.compute.n_gpu_workers == 0, f"({cfg.reward_model.reward_batch_size=}) corresponds to the total size of the batch do be distributed among workers and therefore must be divisible by ({cfg.compute.n_gpu_workers=})"
+        assert cfg.visual_reward_model.reward_batch_size % cfg.compute.n_gpu_workers == 0, f"({cfg.visual_reward_model.reward_batch_size=}) corresponds to the total size of the batch do be distributed among workers and therefore must be divisible by ({cfg.compute.n_gpu_workers=})"
 
-        assert (cfg.compute.n_cpu_workers * cfg.env.episode_length) % cfg.reward_model.reward_batch_size == 0, f"({cfg.compute.n_cpu_workers=}) * ({cfg.episode_length=}) must be divisible by ({cfg.reward_model.reward_batch_size=}) so that all batches are of the same size."
+        assert (cfg.compute.n_cpu_workers * cfg.env.episode_length) % cfg.visual_reward_model.reward_batch_size == 0, f"({cfg.compute.n_cpu_workers=}) * ({cfg.episode_length=}) must be divisible by ({cfg.visual_reward_model.reward_batch_size=}) so that all batches are of the same size."
 
         if cfg.compute.n_gpu_workers == 1:
-            assert cfg.reward_model.rank0_batch_size_pct == 1.0, f"When there's only one worker, rank0 has to handle the entire batch so {cfg.reward_model.rank0_batch_size_pct}"
+            assert cfg.visual_reward_model.rank0_batch_size_pct == 1.0, f"When there's only one worker, rank0 has to handle the entire batch so {cfg.visual_reward_model.rank0_batch_size_pct}"
         else:
-            assert cfg.reward_model.rank0_batch_size_pct < 1.0, f"When there are multiple workers, rank0 should not have the entire batch so {cfg.reward_model.rank0_batch_size_pct} can't be 1."
+            assert cfg.visual_reward_model.rank0_batch_size_pct < 1.0, f"When there are multiple workers, rank0 should not have the entire batch so {cfg.visual_reward_model.rank0_batch_size_pct} can't be 1."
 
-        if cfg.reward_model.rank0_batch_size_pct < 1.0:
-            assert float(((1 - cfg.reward_model.rank0_batch_size_pct) * cfg.reward_model.reward_batch_size)).is_integer(), f"({cfg.reward_model.reward_batch_size=}) needs to be an integer when multiplying by {cfg.reward_model.rank0_batch_size_pct=}"
-            assert int((1 - cfg.reward_model.rank0_batch_size_pct) * cfg.reward_model.reward_batch_size) % (cfg.compute.n_gpu_workers - 1) == 0, f"({cfg.reward_model.reward_batch_size=}) corresponds to the total size of the batch do be distributed among workers and therefore must be divisible by ({cfg.compute.n_gpu_workers=})"
+        if cfg.visual_reward_model.rank0_batch_size_pct < 1.0:
+            assert float(((1 - cfg.visual_reward_model.rank0_batch_size_pct) * cfg.visual_reward_model.reward_batch_size)).is_integer(), f"({cfg.visual_reward_model.reward_batch_size=}) needs to be an integer when multiplying by {cfg.visual_reward_model.rank0_batch_size_pct=}"
+            assert int((1 - cfg.visual_reward_model.rank0_batch_size_pct) * cfg.visual_reward_model.reward_batch_size) % (cfg.compute.n_gpu_workers - 1) == 0, f"({cfg.visual_reward_model.reward_batch_size=}) corresponds to the total size of the batch do be distributed among workers and therefore must be divisible by ({cfg.compute.n_gpu_workers=})"
 
     cfg.logging.run_name = get_output_folder_name()
     cfg.logging.run_path = get_output_path()

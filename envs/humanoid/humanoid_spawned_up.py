@@ -101,6 +101,7 @@ class HumanoidEnvCustom(GymHumanoidEnv):
         if camera_config:
             self.camera_id = -1
 
+
         assert reward_type in REWARD_FN_MAPPING.keys()
         self.reward_fn = REWARD_FN_MAPPING[reward_type]
 

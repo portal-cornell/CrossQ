@@ -30,14 +30,15 @@ success_eval:
 
 defaults:
   - env: HumanoidSpawnedUpCustom
-  - reward_model: joint_pred_resnet
-  - reward_model/modification: nothing
+  - visual_reward_model: nothing # hacky way to define no visual reward model 
+  - matching_reward_model: nothing 
+  - matching_reward_model/modification: nothing
   - rl_algo: sb3_sac
   - _self_
 
 hydra:
   run:
-    dir: ./train_logs/${now:%Y-%m-%d-%H%M%S}_${rl_algo.name}_envr=${env.reward_type}-t=${env.task_name}_rm=${reward_model.name}_nt=${run_notes}
+    dir: ./train_logs/${now:%Y-%m-%d-%H%M%S}_${rl_algo.name}_envr=${env.reward_type}-t=${env.task_name}_mrm=${matching_reward_model.name}_vrm=${visual_reward_model.name}_nt=${run_notes}
 
 # If you want to specify a specific reward function used in the env, you can uncomment and overwrite reward_type
 # env:

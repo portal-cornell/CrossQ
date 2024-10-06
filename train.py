@@ -32,7 +32,7 @@ import multiprocess
 from envs.base import get_make_env
 from vlm_reward.reward_models.model_factory import load_reward_model
 from vlm_reward.reward_main import dist_worker_compute_reward
-from callbacks import VideoRecorderCallback, WandbCallback, JointBasedSeqRewardCallback
+from callbacks import VideoRecorderCallback, WandbCallback, JointBasedSeqRewardCallback, VisualJointBasedSeqRewardCallback
 
 def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] = None):
     """
@@ -46,7 +46,6 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
     """
     # Save logging also into a file
     logger.add(os.path.join(cfg.logging.run_path, "logs.txt"), enqueue=True)
-
     use_vlm_for_reward = utils.use_vlm_for_reward(cfg)
     use_joint_vlm_for_reward = utils.use_joint_vlm_for_reward(cfg)
 
@@ -55,7 +54,6 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
 
     # Initialize the environment
     make_env_kwargs = utils.get_make_env_kwargs(cfg)
-
     logger.info(f"Creating environment={cfg.env.name} instances with {make_env_kwargs=}")
 
     make_env_fn = get_make_env(cfg.env.name, **make_env_kwargs)
@@ -76,12 +74,12 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
     ref_joint_states = None
     if use_joint_vlm_for_reward:
         sac_class = JOINT_VLM_SAC
-        ref_joint_states = torch.as_tensor(np.load(cfg.reward_model.target_joint_state))
+        if "target_joint_state" in cfg.visual_reward_model: # on deprecation path (just use callbacks for ref joint states)
+            ref_joint_states = torch.as_tensor(np.load(cfg.visual_reward_model.target_joint_state))
     elif use_vlm_for_reward:
         sac_class = VLM_SAC
     else:
         sac_class = SAC
-
     model = sac_class(
         MultiInputPolicy if isinstance(training_env.observation_space, gym.spaces.Dict) else "MlpPolicy",
         training_env,
@@ -104,12 +102,12 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         seed=cfg.seed,
         ### VLM_SAC specific reward (SAC will ignore this)
         inference_only=False,
-        reward_model_config = OmegaConf.to_container(cfg.reward_model, resolve=True, throw_on_missing=True) if use_vlm_for_reward else None,
+        reward_model_config = OmegaConf.to_container(cfg.visual_reward_model, resolve=True, throw_on_missing=True) if use_vlm_for_reward else None,
         n_cpu_workers = cfg.compute.n_cpu_workers,
         n_gpu_workers = cfg.compute.n_gpu_workers,
         episode_length = cfg.env.episode_length,
         render_dim = cfg.env.render_dim,
-        add_to_gt_rewards = cfg.reward_model.add_to_gt_rewards if use_vlm_for_reward else False,
+        add_to_gt_rewards = cfg.visual_reward_model.add_to_gt_rewards if use_vlm_for_reward else False,
         ref_joint_states=ref_joint_states
     )
 
@@ -165,19 +163,28 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             # For calculating success rate
             success_fn_cfg=dict(cfg.success_eval),
             # For joint based reward (this allow us to visualize the sequence matching reward in a rollout
-            matching_fn_cfg=dict(cfg.reward_model) if cfg.reward_model.name == "ot" or "dtw" in cfg.reward_model.name else {},
+            matching_fn_cfg=dict(cfg.matching_reward_model) if cfg.matching_reward_model.name == "ot" or "dtw" in cfg.matching_reward_model.name else {},
             calc_visual_reward=use_vlm_for_reward or use_joint_vlm_for_reward,
         )
 
         callback_list = [wandb_callback, video_callback]
 
-        if cfg.reward_model.name == "ot" or "dtw" in cfg.reward_model.name:
+        if cfg.matching_reward_model.name == "ot" or "dtw" in cfg.matching_reward_model.name:
             # Add the OT reward callback if we are using joint_wasserstein as the reward model
-            callback_list.append(JointBasedSeqRewardCallback(
-                                    task_name = cfg.env.task_name,
-                                    matching_fn_cfg = dict(cfg.reward_model),
-                                    use_geom_xpos = "geom_xpos" in cfg.env.reward_type
-            ))
+
+            if use_joint_vlm_for_reward:
+                callback_list.append(VisualJointBasedSeqRewardCallback(
+                                        task_name = cfg.env.task_name,
+                                        matching_fn_cfg = dict(cfg.matching_reward_model),
+                                        visual_model_cfg=dict(cfg.visual_reward_model),
+                                        use_geom_xpos = "geom_xpos" in cfg.env.reward_type
+                ))  
+            else:
+                callback_list.append(JointBasedSeqRewardCallback(
+                                        task_name = cfg.env.task_name,
+                                        matching_fn_cfg = dict(cfg.matching_reward_model),
+                                        use_geom_xpos = "geom_xpos" in cfg.env.reward_type
+                ))
 
         model.learn(
             total_timesteps=cfg.total_timesteps, 

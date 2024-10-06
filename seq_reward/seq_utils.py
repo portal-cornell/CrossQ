@@ -28,7 +28,7 @@ def load_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bool = False
             False then we load path that ends with "geom-xpos.npy"
     """
     assert task_name in TASK_SEQ_DICT, f"Unknown task name: {task_name}"
-
+    
     ref_defined_via_a_list = type(TASK_SEQ_DICT[task_name]["sequences"][seq_name]) == list
 
     if ref_defined_via_a_list:

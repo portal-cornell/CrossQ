@@ -123,6 +123,16 @@ class JointVLMSAC(SAC):
         self.render_dim = render_dim
 
         self.ep_vlm_info_buffer = None  # type: Optional[deque]
+
+        # Joint model parameters
+        self.filter_rewards = False # whether or not to gaussian filter the rewards after computing
+        self.estimate_confidence = self.reward_model_config["estimate_confidence"]
+        self.reward_model_batch_size = self.reward_model_config["reward_batch_size"]
+        self._add_to_gt_rewards = add_to_gt_rewards
+        if ref_joint_states is not None:
+            self._ref_joint_states = ref_joint_states.cuda(0)
+        self.uncertainty_stats = RunningNormalStats(alpha=.99)
+        self.kappa = 2 # from wvn (higher -> relaxed uncertainty)
         
         self.inference_only = inference_only
         if not self.inference_only:
@@ -140,13 +150,6 @@ class JointVLMSAC(SAC):
                     (worker_batch_size, self.render_dim[0], self.render_dim[1], 3),
                     dtype=torch.uint8,
                 ).cuda(0)  # (Batch size per worker, w, h, 3)
-
-        self.filter_rewards = False # whether or not to gaussian filter the rewards after computing
-
-        self._add_to_gt_rewards = add_to_gt_rewards
-        self._ref_joint_states = ref_joint_states.cuda(0)
-        self.uncertainty_stats = RunningNormalStats(alpha=.99)
-        self.kappa = 2 # from wvn (higher -> relaxed uncertainty)
 
         if _init_setup_model:
             self._setup_model()
@@ -167,7 +170,7 @@ class JointVLMSAC(SAC):
         reward_model, transform = load_joint_prediction_model(device='cuda:0', 
                                     checkpoint=self.reward_model_config["checkpoint"],
                                     output_dim=self.reward_model_config["output_dim"],
-                                    is_reco=True
+                                    is_reco=self.estimate_confidence
                                     )
         
         self.reward_model = reward_model
@@ -195,12 +198,59 @@ class JointVLMSAC(SAC):
     def collect_rollouts(self, *args, **kwargs):
         rollout = super().collect_rollouts(*args, **kwargs)
         if not self.inference_only:
-            self._compute_vlm_rewards()
+            # TODO, IMPORTANT: commented this out for now, to move reward computation to the callback
+            #self._compute_vlm_rewards()
             self.previous_num_timesteps = self.num_timesteps
             self.previous_num_episodes = self._episode_num
 
         return rollout
     
+    def compute_joint_predictions(self, frames):
+        """Compute joint positions using the visual model"""
+        batches = torch.split(frames, self.reward_model_batch_size)
+        all_preds = []
+        
+        for batch in batches:
+            xpos_preds = self.forward_visual_model(batch)
+            all_preds.append(xpos_preds)
+
+        joint_positions = torch.cat(all_preds, dim=0)
+        
+        return joint_positions
+
+    def compute_joint_predictions_with_uncertainty(self, frames):
+        """Compute joint positions using the visual model"""
+        batches = torch.split(frames, self.reward_model_batch_size)
+        all_preds = []
+        all_uncertainties = []
+        
+        for batch in batches:
+            xpos_preds, emb, emb_reco = self.forward_visual_model(batch)
+            uncertainty = torch.linalg.vector_norm(emb - emb_reco, dim=1)
+            
+            all_preds.append(xpos_preds)
+            all_uncertainties.append(uncertainty)
+        
+        joint_positions = torch.cat(all_preds, dim=0)
+        uncertainties = torch.cat(all_uncertainties, dim=0)
+        
+        return joint_positions, uncertainties
+
+    def compute_confidence_weights(self, uncertainties, uncertainty_stats):
+        """Compute confidence weights based on uncertainties, and given an uncertainty stats object
+        This allows you to use different running means/stds (for example, in different callbacks)"""
+        mu = uncertainty_stats.get_mean()
+        std = uncertainty_stats.get_std()
+        scale = 1
+        
+        if mu is None:
+            confidence = torch.ones_like(uncertainties)
+        else:
+            confidence = torch.exp(-(uncertainties - mu) ** 2 / (2 * (std * self.kappa) ** 2))
+            confidence[uncertainties < mu] = 1.0
+        
+        return confidence * scale
+
     def _compute_vlm_rewards(self):
         """from VLMRewardCallback.on_rollout_end
         """
@@ -223,11 +273,9 @@ class JointVLMSAC(SAC):
         frames = rearrange(frames, "n_steps n_envs h w c -> (n_steps n_envs) c h w")
  
         rewards = (1 - .999**self.get_episode_num()) * self._compute_joint_rewards(
-            model=self.reward_model,
-            transform=self.image_transform,
             frames=frames,
             ref_joint_states=ref_joint_states,
-            batch_size=self.reward_model_config["reward_batch_size"],
+            batch_size=self.reward_model_batch_size,
             )
         # TODO: this assumes 1D (DreamSim). Potentially to adapt for other reward models (using above)
         rewards = rearrange(
@@ -311,7 +359,15 @@ class JointVLMSAC(SAC):
         return f'VRAM: {total - free:.2f}/{total:.2f}GB\t VRAM:[' + (
                 total_cubes - free_cubes) * '▮' + free_cubes * '▯' + ']'
                 
-    def _compute_joint_rewards(self, model, transform, frames, ref_joint_states, batch_size):
+    def forward_visual_model(self, batch):
+        """
+        Batch is shape (N, C, H, W) in [0,1] containing images
+        Applies transform to the batch and runs the model on it
+        """
+        batch_transformed = self.image_transform(batch)
+        return self.reward_model(batch_transformed)
+
+    def _compute_joint_rewards(self, frames, ref_joint_states, batch_size):
         """Only use the goal joint xpos states to calculate the reward
         - The reward is based on the euclidean distance between the current joint states and the reference joint states
 
@@ -323,12 +379,9 @@ class JointVLMSAC(SAC):
         all_preds = []
         all_uncertainties = []
         for i, batch in enumerate(batches):
-
-            batch_transformed = transform(batch)
-
             #xpos_preds = model(batch_transformed)
 
-            xpos_preds, emb, emb_reco = model(batch_transformed)
+            xpos_preds, emb, emb_reco = self.forward_visual_model(batch)
             uncertainty = torch.linalg.vector_norm(emb - emb_reco, dim=1)
             
             all_preds.append(xpos_preds)

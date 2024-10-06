@@ -25,11 +25,124 @@ from einops import rearrange
 
 from seq_reward.seq_utils import get_matching_fn, load_reference_seq, load_images_from_reference_seq, seq_matching_viz
 from seq_reward.cost_fns import euclidean_distance_advanced, euclidean_distance_advanced_arms_only
+from vlm_reward.reward_models.joint_pred import load_joint_prediction_model
 
 from vlm_reward.reward_main import compute_rewards
 from vlm_reward.reward_transforms import half_gaussian_filter_1d
 from constants import TASK_SEQ_DICT
 from utils import calc_iqm
+
+class VisualJointBasedSeqRewardCallback(BaseCallback):
+    """
+    Custom callback for calculating sequence matching rewards using visual model predictions
+    for joint positions after rollouts are collected.
+    """
+    def __init__(self, task_name, matching_fn_cfg, visual_model_cfg, use_geom_xpos=True, verbose=0):
+        super(VisualJointBasedSeqRewardCallback, self).__init__(verbose)
+
+        self._ref_seq = load_reference_seq(task_name=task_name, seq_name=matching_fn_cfg["seq_name"], use_geom_xpos=use_geom_xpos)
+        logger.info(f"[VisualSeqRewardCallback] Loaded reference sequence. task_name={task_name}, seq_name={matching_fn_cfg['seq_name']}, shape={self._ref_seq.shape}")
+        
+        self._scale = matching_fn_cfg['scale']
+        self._matching_fn, self._matching_fn_name = get_matching_fn(matching_fn_cfg, matching_fn_cfg["cost_fn"])
+        
+        # visual specific attributes
+        self.visual_model_cfg = visual_model_cfg
+        self.batch_size = self.visual_model_cfg["reward_batch_size"]
+        self.kappa = self.visual_model_cfg["confidence_kappa"] # from wild visual navigation (higher -> relaxed uncertainty)
+        self.add_to_gt_rewards = self.visual_model_cfg["add_to_gt_rewards"]
+        rank = self.visual_model_cfg['rank']
+        self.visual_model_device = f"cuda:{rank}"
+        
+        logger.info(f"[VisualSeqRewardCallback] Initialized with matching fn {self._matching_fn_name} and batch_size={self.batch_size}")
+
+    def on_rollout_end(self) -> None:
+        """Calculate rewards based on visual predictions after rollout ends"""
+        start_time = time.time()
+        
+        replay_buffer_pos = self.model.replay_buffer.pos
+        total_timesteps = self.model.num_timesteps - self.model.previous_num_timesteps
+        env_episode_timesteps = total_timesteps // self.model.env.num_envs
+        
+        # Get frames from replay buffer
+        frames = th.from_numpy(np.array(self.model.replay_buffer.render_arrays)).float().to(self.visual_model_device) / 255.0
+        frames = rearrange(frames, "n_steps n_envs h w c -> (n_steps n_envs) c h w")
+
+        # NOTE: this assumes we are always using an uncertainty-based model
+        joint_positions, uncertainties = self.model.compute_joint_predictions_with_uncertainty(frames)
+
+        # Update uncertainty statistics and compute confidence weights
+        self.model.uncertainty_stats.update(uncertainties.mean().item())
+        confidence_weights = self.model.compute_confidence_weights(uncertainties, self.model.uncertainty_stats)
+
+        # Rearrange predictions and confidence weights to env shape
+        joint_positions = rearrange(joint_positions, "(n_steps n_envs) (n_joints d_joint) -> n_steps n_envs n_joints d_joint", n_envs=self.model.env.num_envs, n_joints = self._ref_seq.shape[1])
+        confidence_weights = rearrange(confidence_weights, "(n_steps n_envs) -> n_steps n_envs", n_envs=self.model.env.num_envs)
+        
+        # Clear the render arrays once computations have been run on them
+        self.model.replay_buffer.clear_render_arrays()
+
+        # Compute rewards for each environment
+        joint_positions = joint_positions.cpu().numpy()
+        confidence_weights = confidence_weights.cpu().numpy()
+        matching_reward_list = []
+        for env_i in range(self.model.env.num_envs):
+            # Apply confidence weighting to joint positions
+            env_joint_positions = joint_positions[:, env_i]
+            env_confidence_weights = confidence_weights[:, env_i] 
+
+            matching_reward, _ = self._matching_fn(env_joint_positions, self._ref_seq) 
+            matching_reward *= env_confidence_weights
+            matching_reward_list.append(matching_reward)
+        
+        rewards = np.stack(matching_reward_list, axis=1)
+        
+        # Update replay buffer rewards
+        if replay_buffer_pos - env_episode_timesteps >= 0:
+            self.model.replay_buffer.rewards[
+                replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
+            ] += rewards
+        else:
+            self.model.replay_buffer.rewards[
+                -(env_episode_timesteps - replay_buffer_pos):
+            ] += rewards[: env_episode_timesteps - replay_buffer_pos]
+            
+            self.model.replay_buffer.rewards[:replay_buffer_pos] += rewards[
+                env_episode_timesteps - replay_buffer_pos:
+            ]
+        
+        logger.debug(f"VisualBasedSeqRewardCallback took {time.time() - start_time} seconds")
+
+    def _on_step(self) -> bool:
+        return True
+
+class RunningStats:
+    """Helper class to compute running mean and standard deviation"""
+    def __init__(self):
+        self.n = 0
+        self.old_m = 0
+        self.new_m = 0
+        self.old_s = 0
+        self.new_s = 0
+
+    def update(self, x):
+        self.n += 1
+
+        if self.n == 1:
+            self.old_m = self.new_m = x
+            self.old_s = 0
+        else:
+            self.new_m = self.old_m + (x - self.old_m) / self.n
+            self.new_s = self.old_s + (x - self.old_m) * (x - self.new_m)
+
+            self.old_m = self.new_m
+            self.old_s = self.new_s
+
+    def get_mean(self):
+        return self.new_m if self.n else None
+
+    def get_std(self):
+        return np.sqrt(self.new_s / (self.n - 1)) if self.n > 1 else None
 
 class JointBasedSeqRewardCallback(BaseCallback):
     """
@@ -289,6 +402,7 @@ class VideoRecorderCallback(BaseCallback):
         threshold: float = 0.5,
         success_fn_cfg: dict = {},
         matching_fn_cfg: dict = {}, 
+        visual_fn_cfg: dict = {},
         calc_visual_reward: bool = False,
         verbose=0
     ):
@@ -352,7 +466,6 @@ class VideoRecorderCallback(BaseCallback):
         else:
             self._calc_matching_reward = False
         
-
     def set_ground_truth_goal_matching_fn(self, task_name: str, use_geom_xpos: bool):
         """Set the ground-truth goal matching function based on the goal_seq_name.
 
@@ -609,12 +722,39 @@ class VideoRecorderCallback(BaseCallback):
 
             frames = th.from_numpy(np.array(screens)).float().cuda(0).permute(0,3,1,2) / 255.0
             
-            if self._calc_visual_reward:
+            if self._calc_visual_reward and self._calc_matching_reward: # visual + matching
+                logger.info("Evaluating rollout for recorder callback, visual and sequence")
+                # NOTE: this assumes we are always using an uncertainty-based model
+
+                joint_positions, uncertainties = self.model.compute_joint_predictions_with_uncertainty(frames)
+                
+                # Do not update running uncertainty stats, since this is eval mode
+                confidence_weights = self.model.compute_confidence_weights(uncertainties, self.model.uncertainty_stats)
+                joint_positions = rearrange(joint_positions, "steps (n_joints d_joint) -> steps n_joints d_joint", n_joints = self._seq_matching_ref_seq.shape[1])
+                joint_positions = joint_positions.cpu().numpy()
+                confidence_weights = confidence_weights.cpu().numpy()
+                vlm_matching_reward, vlm_matching_reward_info = self._matching_fn(joint_positions, self._seq_matching_ref_seq)
+                vlm_matching_reward *= confidence_weights
+
+                self.logger.record("rollout/avg_vlm_matching_reward", 
+                                np.mean(vlm_matching_reward)/self._scale, 
+                                exclude=("stdout", "log", "json", "csv"))
+                
+                # Add the matching_reward to the infos so that we can plot it
+                for i in range(len(infos)):
+                    infos[i]["vlm_matching_reward"] = f"{vlm_matching_reward[i]:.2f}"
+                # Save the matching_rewards locally    
+                with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_vlm_matching_rewards.npy"), "wb") as f:
+                    np.save(f, np.array(vlm_matching_reward))
+                
+                if self._plot_matching_visualization:
+                    self.plot_matching_visualization(raw_screens, vlm_matching_reward, vlm_matching_reward_info)
+
+
+            elif self._calc_visual_reward and not self._calc_matching_reward: # just visual reward
                 logger.info("Evaluating rollout for recorder callback")
                 self.model.reward_model.requires_grad_(False)
                 vlm_rewards = self.model._compute_joint_rewards(
-                            model=self.model.reward_model,
-                            transform=self.model.image_transform,
                             frames=frames,
                             ref_joint_states=self.model._ref_joint_states,
                             batch_size=self.model.reward_model_config["reward_batch_size"],
@@ -627,8 +767,6 @@ class VideoRecorderCallback(BaseCallback):
                 self.logger.record("rollout/avg_vlm_total_reward", 
                                 np.mean(vlm_rewards + rewards), 
                                 exclude=("stdout", "log", "json", "csv"))
-
-            # TODO: We can potentially also do VLM reward calculation
             if self._calc_matching_reward:
                 if self._use_geom_xpos:
                     # Don't need to do anything here, geom_xpos is getting normalized in the grab_screens function
@@ -648,41 +786,8 @@ class VideoRecorderCallback(BaseCallback):
                 with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_matching_rewards.npy"), "wb") as f:
                     np.save(f, np.array(matching_reward))
 
-                if self._plot_matching_visualization:
-                    # TODO: For now, we can only visualize this when the reference frame is defined via a gif
-                    matching_reward_viz_save_path = os.path.join(self._rollout_save_path, f"{self.num_timesteps}_matching_fn_viz.png")
-
-                    # Subsample the frames. Otherwise, the visualization will be too long
-                    if len(raw_screens) > 20:
-                        obs_seq_skip_step = int(0.1 * len(raw_screens))
-                        raw_screens_used_to_plot = np.array([raw_screens[i] for i in range(obs_seq_skip_step, len(raw_screens), obs_seq_skip_step)])
-                    else:
-                        raw_screens_used_to_plot = np.array(raw_screens)
-                        
-                    if len(self._seq_matching_ref_seq_frames) > 8:
-                        ref_seq_skip_step = max(int(0.1 * len(self._seq_matching_ref_seq_frames)), 2)
-                        ref_seqs_used_to_plot = np.array([self._seq_matching_ref_seq_frames[i] for i in range(ref_seq_skip_step, len(self._seq_matching_ref_seq_frames), ref_seq_skip_step)])
-                    else:
-                        ref_seqs_used_to_plot = self._seq_matching_ref_seq_frames
-                    seq_matching_viz(
-                        matching_fn_name=self._matching_fn_name,
-                        obs_seq=raw_screens_used_to_plot,
-                        ref_seq=ref_seqs_used_to_plot,
-                        matching_reward=matching_reward,
-                        info=matching_reward_info,
-                        reward_vmin=self._reward_vmin,
-                        reward_vmax=self._reward_vmax,
-                        path_to_save_fig=matching_reward_viz_save_path,
-                        rolcol_size=2
-                    )
-
-                    # Log the image to wandb
-                    img = Image.open(matching_reward_viz_save_path)
-                    self.logger.record(
-                        "trajectory/matching_fn_viz",
-                        LogImage(np.array(img), dataformats="HWC"),
-                        exclude=("stdout", "log", "json", "csv"),
-                    )
+                if self._plot_matching_visualization and not self._calc_visual_reward: # only plot if not already plotted using visual rewards
+                    self.plot_matching_visualization(raw_screens, matching_reward, matching_reward_info)
 
             # Plot info on the frames  
             for i in range(len(screens)):
@@ -708,6 +813,42 @@ class VideoRecorderCallback(BaseCallback):
                 np.save(f, np.array(rewards))
 
         return True
+
+    def plot_matching_visualization(self, raw_screens, matching_reward, matching_reward_info):
+        # TODO: For now, we can only visualize this when the reference frame is defined via a gif
+        matching_reward_viz_save_path = os.path.join(self._rollout_save_path, f"{self.num_timesteps}_matching_fn_viz.png")
+
+        # Subsample the frames. Otherwise, the visualization will be too long
+        if len(raw_screens) > 20:
+            obs_seq_skip_step = int(0.1 * len(raw_screens))
+            raw_screens_used_to_plot = np.array([raw_screens[i] for i in range(obs_seq_skip_step, len(raw_screens), obs_seq_skip_step)])
+        else:
+            raw_screens_used_to_plot = np.array(raw_screens)
+            
+        if len(self._seq_matching_ref_seq_frames) > 8:
+            ref_seq_skip_step = max(int(0.1 * len(self._seq_matching_ref_seq_frames)), 2)
+            ref_seqs_used_to_plot = np.array([self._seq_matching_ref_seq_frames[i] for i in range(ref_seq_skip_step, len(self._seq_matching_ref_seq_frames), ref_seq_skip_step)])
+        else:
+            ref_seqs_used_to_plot = self._seq_matching_ref_seq_frames
+        seq_matching_viz(
+            matching_fn_name=self._matching_fn_name,
+            obs_seq=raw_screens_used_to_plot,
+            ref_seq=ref_seqs_used_to_plot,
+            matching_reward=matching_reward,
+            info=matching_reward_info,
+            reward_vmin=self._reward_vmin,
+            reward_vmax=self._reward_vmax,
+            path_to_save_fig=matching_reward_viz_save_path,
+            rolcol_size=2
+        )
+
+        # Log the image to wandb
+        img = Image.open(matching_reward_viz_save_path)
+        self.logger.record(
+            "trajectory/matching_fn_viz",
+            LogImage(np.array(img), dataformats="HWC"),
+            exclude=("stdout", "log", "json", "csv"),
+        )
 
 
 class WandbCallback(SB3WandbCallback):
