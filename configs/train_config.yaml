@@ -1,6 +1,6 @@
 seed: 9
 
-total_timesteps: 1000000
+total_timesteps: 2000000
 
 run_notes: null
 
@@ -13,8 +13,8 @@ compute:
 
 logging:
   log_freq: 300  # How many times to log during training
-  video_save_freq: 10000 # Frequency to save the video
-  model_save_freq: 100000  # Frequency to save the model
+  video_save_freq: 20000 # Frequency to save the video
+  model_save_freq: 200000  # Frequency to save the model
 
   wandb_project: crossQ
   wandb_mode: online
@@ -26,7 +26,6 @@ logging:
 success_eval:
   threshold_for_all_pos: 0.50
   threshold_for_arm_pos: 0.55
-  n_eval_episodes: 10
 
 defaults:
   - env: HumanoidSpawnedUpCustom

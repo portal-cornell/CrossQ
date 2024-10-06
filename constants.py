@@ -20,7 +20,9 @@ TASK_SEQ_DICT = {
         "task_type": "goal_reaching",
         "sequences": {
             "key_frames": ["/share/portal/hw575/CrossQ/create_demo/demos/left-arm-out_geom-xpos.npy"],
-            "intermediate_5_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/left-arm-out_5-frames_geom-xpos.npy",
+            # Using interpolated sequences as reference sequences
+            "intermediate_10_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/left-arm-out_10-frames_geom-xpos.npy",
+            "intermediate_40_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/left-arm-out_40-frames_geom-xpos.npy",
         }
     },
     "right_arm_out":
