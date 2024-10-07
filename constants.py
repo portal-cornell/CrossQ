@@ -5,6 +5,28 @@ WANDB_DIR = "./"
 TASK_SEQ_DICT = {
     ################################## Sequence Following Tasks
     ########### 2 Key Poses to Follow (2 Key Frames)
+    "right_arm_out_to_both_arms_out": 
+    {
+        "task_type": "sequence_following",
+        "sequences": {
+            "key_frames": ["/share/portal/hw575/CrossQ/create_demo/demos/right-arm-out_geom-xpos.npy", "/share/portal/hw575/CrossQ/create_demo/demos/both-arms-out_geom-xpos.npy"],
+            # Using interpolated sequences as reference sequences
+            #   The name indicate the total number of frames
+            #   So each key pose gets N / 2 frames
+            "intermediate_10_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-out_to_both-arms-out_10-frames_geom-xpos.npy",
+            "intermediate_20_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/right-arm-out_to_both-arms-out_20-frames_geom-xpos.npy",
+        }
+    },
+    "left_arm_out_to_left_arm_extend_wave_higher":
+    {
+        "task_type": "sequence_following",
+        "sequences": {
+            "key_frames": ["/share/portal/hw575/CrossQ/create_demo/demos/left-arm-out_geom-xpos.npy", "/share/portal/hw575/CrossQ/create_demo/demos/left-arm-extend-wave-higher_geom-xpos.npy"],
+            # Using interpolated sequences as reference sequences
+            "intermediate_10_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/left-arm-out_to_left-arm-extend-wave-higher_10-frames_geom-xpos.npy",
+            "intermediate_20_frames": "/share/portal/hw575/CrossQ/create_demo/seq_demos/left-arm-out_to_left-arm-extend-wave-higher_20-frames_geom-xpos.npy",
+        }
+    },
     ########### 3 Key Poses to Follow (3 Key Frames)
     "arms_up_then_down":
     {

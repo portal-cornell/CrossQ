@@ -439,15 +439,14 @@ class VideoRecorderCallback(BaseCallback):
             #   Offset by 1 to play nicely with the stage_completed
             n_steps_completing_each_stage = [0] * (len(ref_seq) + 1)
 
-            # TODO: have not verified how well it works when there are multiple key frames
             for i in range(len(reward_matrix)):  # Iterate through the timestep
                 if reward_matrix[i][current_stage] > threshold and stage_completed < len(ref_seq):
                     stage_completed += 1
                     current_stage = min(current_stage + 1, len(ref_seq)-1)
                     # stage_completed-1 because stage_completed is counting the number of stages completed
                     n_steps_completing_each_stage[stage_completed] += 1
-                elif len(ref_seq) == 1 and reward_matrix[i][current_stage] > threshold:
-                    # If there's only 1 stage
+                elif current_stage == len(ref_seq)-1 and reward_matrix[i][current_stage] > threshold:
+                    # We are at the last stage
                     n_steps_completing_each_stage[stage_completed] += 1
                 elif current_stage > 0 and reward_matrix[i][current_stage-1] > threshold:
                     # Once at least 1 stage is counted, if it's still above the threshold for the current stage, we will add to the count
