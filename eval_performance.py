@@ -11,6 +11,7 @@ from seq_reward.cost_fns import euclidean_distance_advanced
 import numpy as np
 import scipy.stats as stats
 from torchvision.utils import save_image
+import argparse
 
 def weighted_euclidean_distance(batch_1, batch_2, weights):
     """
@@ -111,6 +112,7 @@ def extract_exp_label_from_dir(exp_dir):
 
 def plot_multiple_directories(directory_results, 
                             output_file: str = 'multi_directory_performance.png',
+                            labels: List[str] = [],
                             smoothing=5):
     """
     Create and save plot comparing performance across multiple directories
@@ -124,8 +126,15 @@ def plot_multiple_directories(directory_results,
     colors = plt.get_cmap('Dark2').colors
     
     min_last_timestep = float('inf')
+
+    # Hack to make zip work well
+    if labels:
+        label_ids = list(range(len(labels)))
+    else:
+        label_ids = list(range(len(directory_results)))
+    
     # Plot each directory's data
-    for (dir_name, (performances, lower, upper, timesteps)), color in zip(directory_results.items(), colors):
+    for (dir_name, (performances, lower, upper, timesteps)), color, label_id in zip(directory_results.items(), colors, label_ids):
         # Plot main line with confidence band
         timesteps = np.array(timesteps)
         performances = smooth(np.array(performances), alpha=smoothing)
@@ -133,9 +142,12 @@ def plot_multiple_directories(directory_results,
         upper = smooth(np.array(upper), alpha=smoothing)
         # Plot confidence interval
         plt.fill_between(timesteps, lower, upper, color=color, alpha=0.2)
-      #  
+      
         # Plot the main line
-        exp_label = extract_exp_label_from_dir(dir_name)
+        if labels:
+            exp_label = labels[label_id]
+        else:
+            exp_label = extract_exp_label_from_dir(dir_name)
         plt.plot(timesteps, performances, color=color, linewidth=1.5, 
                 label=exp_label, alpha=0.8)
 
@@ -192,16 +204,15 @@ def load_rollouts(directory: str):
 
     return np.stack(states), np.array(timesteps)
         
-def load_ref(directory: str, default_ref_type: str):
+def load_ref(directory: str):
     config_path = os.path.join(directory, ".hydra", "config.yaml")
     with open(config_path, "r") as file:
         config = yaml.safe_load(file)
 
-    # TODO: hack for ground truth experiments that do not have this info
-    seq_name = config.get("reward_model").get("seq_name", default_ref_type)
     task_name = config.get("env").get("task_name", "right_arm_extend_wave_higher")
     use_geom_xpos = True
 
+    # Because we want to compare all runs against the same reference sequence, this reference sequence should be key_frames
     ref = load_reference_seq(task_name=task_name, seq_name="key_frames", use_geom_xpos=use_geom_xpos)
 
     print(f"Loaded reference sequence of shape {ref.shape}")
@@ -247,9 +258,9 @@ def interquartile_mean_and_ci(values, confidence=0.95):
     
     return interquartile_mean, ci_lower, ci_upper
 
-def compute_performance(rollout_directory, performance_metric, default_ref_type):
+def compute_performance(rollout_directory, performance_metric):
     
-    ref = load_ref(rollout_directory, default_ref_type)
+    ref = load_ref(rollout_directory)
     rollouts, timesteps = load_rollouts(rollout_directory)
 
     performances = []
@@ -272,171 +283,216 @@ def compute_performance(rollout_directory, performance_metric, default_ref_type)
         cis_upper.append(ci_upper)
     return performances, cis_lower, cis_upper, timesteps
 
-def compute_performance_many_experiments(rollout_directories, performance_metric, default_ref_type):
+def compute_performance_many_experiments(rollout_directories, performance_metric):
     all_rollout_performances = {}
     for rollout_directory in rollout_directories:
-        rollout_performances, cis_lower, cis_upper, timesteps = compute_performance(rollout_directory, performance_metric, default_ref_type)
+        rollout_performances, cis_lower, cis_upper, timesteps = compute_performance(rollout_directory, performance_metric)
         all_rollout_performances[rollout_directory] = (rollout_performances,cis_lower, cis_upper, timesteps)
     
     return all_rollout_performances
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-w", "--workshop", default=False,  action="store_true", help="Generate plots for the workshop experiments defined in workshop_experiments_folders.py")    
 
-    experiment_directories = [
-    "/share/portal/hw575/CrossQ/train_logs/2024-10-04-004735_sb3_sac_envr=goal_only_euclidean_geom_xpos-t=right_arm_extend_wave_higher_rm=hand_engineered_nt=None", # training for reference rollout
-    "/share/portal/hw575/CrossQ/train_logs/2024-09-26-152534_sb3_sac_envr=right_arm_extend_wave_higher_goal_only_euclidean_geom_xpos_rm=hand_engineered_s=9_nt=arms-only-geom", # baseline 
-    "/share/portal/hw575/CrossQ/train_logs/2024-10-05-121349_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_60_frames_exp-r+bonus", 
-    "/share/portal/hw575/CrossQ/train_logs/2024-10-05-121403_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_60_frames_exp-r",
-    # "/share/portal/hw575/CrossQ/train_logs/2024-10-04-171641_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_19_frames_exp-r+bonus",
-    # "/share/portal/hw575/CrossQ/train_logs/2024-10-04-171648_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_19_frames_exp-r"
-    ]
+    args = parser.parse_args()
 
-    baseline_exps = [
-        "/share/portal/hw575/CrossQ/train_logs/2024-10-04-004735_sb3_sac_envr=goal_only_euclidean_geom_xpos-t=right_arm_extend_wave_higher_rm=hand_engineered_nt=None", # training for reference 
-        "/share/portal/hw575/CrossQ/train_logs/2024-09-26-152534_sb3_sac_envr=right_arm_extend_wave_higher_goal_only_euclidean_geom_xpos_rm=hand_engineered_s=9_nt=arms-only-geom", # baseline 
-    ]
-    
-
-    # Write the sequence_types sorted by the number of frames
-    sequence_types = [
-        "intermediate_last_10_frames",
-        "intermediate_10_frames",
-        "rollout_9_frames",
-        "intermediate_last_20_frames",
-        "intermediate_20_frames",
-        "rollout_19_frames",
-        "intermediate_last_30_frames",
-        "intermediate_30_frames",
-        "rollout_29_frames",
-        "intermediate_last_40_frames",
-        "intermediate_40_frames",
-        "rollout_39_frames",
-        "intermediate_last_50_frames",
-        "intermediate_50_frames",
-        "intermediate_last_60_frames",
-        "intermediate_60_frames",
-        "rollout_59_frames",
-    ]
-
-    experiments = [
-        [
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-031124_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_10_frames_exp-r+bonus",
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-031127_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_10_frames_exp-r"
-        ],
-        [
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-115210_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_10_frames_exp-r+bonus",
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-115212_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_10_frames_exp-r"
-        ],
-        [
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-04-171602_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_9_frames_exp-r+bonus",
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-04-171614_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_9_frames_exp-r"
-        ],
-
-
-        [
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-031158_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_20_frames_exp-r+bonus",
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-031250_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_20_frames_exp-r"
-        ],
-        [
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-04-182525_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_20_frames_exp-r+bonus",
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-04-182525_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_20_frames_exp-r"
-        ],
-        [
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-04-171641_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_19_frames_exp-r+bonus",
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-04-171648_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_19_frames_exp-r",
-        ],
-
-
-        [
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-031242_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_30_frames_exp-r+bonus",
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-031306_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_30_frames_exp-r"
-        ],
-        [
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-115214_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_30_frames_exp-r+bonus",
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-115319_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_30_frames_exp-r"
-        ],
-        [
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-120242_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_29_frames_exp-r+bonus",
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-120250_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_29_frames_exp-r"
-        ],
-
-
-        [
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-121307_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_40_frames_exp-r+bonus",
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-121305_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_40_frames_exp-r",
-        ],
-        [
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-115406_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_40_frames_exp-r+bonus",
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-115411_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_40_frames_exp-r"
-        ],
-        [
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-120306_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_39_frames_exp-r+bonus",
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-120308_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_39_frames_exp-r"
-        ],
-
-
-        [
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-121336_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_50_frames_exp-r+bonus",
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-121343_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_50_frames_exp-r"
-        ],
-        [
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-115654_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_50_frames_exp-r+bonus",
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-115658_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_50_frames_exp-r"
-        ],
-
-
-        [
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-121349_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_60_frames_exp-r+bonus",
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-05-121403_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_60_frames_exp-r"
-        ],
-        [
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-04-182539_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_60_frames_exp-r+bonus",
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-04-182533_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_60_frames_exp-r"
-        ],
-        [
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-04-005215_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_59_frames_exp-r+bonus",
-            "/share/portal/hw575/CrossQ/train_logs/2024-10-04-005301_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_59_frames"
-        ]
-    ]
-
-
-
-    plot_smoothing = 5
-    plot_folder = "workshop_figs"
-    if not os.path.exists(plot_folder):
-        os.makedirs(plot_folder)
-
-    plot_fname = "performance_60_frames_weighted"
-    plot_file = os.path.join(plot_folder, plot_fname)
-    
     def metric(rollout, reference):
+        """
+        Compute based on the entire body's joint positions
+        """
         N_timesteps_threshold = 3
         joint_distance_threshold = .45
 
         return rollout_matching_metric(rollout, reference, joint_distance_threshold, N_timesteps_threshold)
+    
     def torso_metric(rollout, reference):
+        """
+        Compute based on the
+        - Torso height
+        - Arms
+        """
         N_timesteps_threshold = 3
         joint_distance_threshold = .5
         joint_weights = np.zeros((18, 3))
+        joint_weights[1] = 1  # torso height
         joint_weights[12:] = 1
-        #joint_weights[12:15] = 5 # left arm gets extra weight
 
         return rollout_matching_metric(rollout, reference, joint_distance_threshold, N_timesteps_threshold, joint_weights)
-    def arm_metric(rollout, reference):
+    def arms_metric(rollout, reference):
+        """
+        Compute based on the
+        - Arms
+        """
         N_timesteps_threshold = 3
-        joint_distance_threshold = .55
+        joint_distance_threshold = .5
         joint_weights = np.zeros((18, 3))
-        #joint_weights[12:] = 1
-        joint_weights[12:15] = 1 # left arm gets extra weight
+        joint_weights[12:] = 1 # Just the arms
 
         return rollout_matching_metric(rollout, reference, joint_distance_threshold, N_timesteps_threshold, joint_weights)
     
-    experiments = experiments[-2:]
-    sequence_types = sequence_types[-2:]
-    for exp_dirs, sequence_type in zip(experiments, sequence_types):
-        for d, d_name in zip([metric, arm_metric, torso_metric], ["full_body_metric", "arm_metric", "torso_metric"]):
-            
-            all_exp_dirs = baseline_exps + exp_dirs
-            performance = compute_performance_many_experiments(all_exp_dirs, d, default_ref_type=sequence_type)
-            plot_file = os.path.join(plot_folder, f"{d_name}_{sequence_type}")
-            plot_multiple_directories(performance, output_file=plot_file, smoothing=plot_smoothing)
+    plot_folder = "workshop_figs"
+
+    if args.workshop:
+        """
+        Based on the experiments defined in workshop_experiments_folders.py, generate plots comparing the performance of the different experiments
+
+        For each task defined in the experiments_dict, the plots are stored in workshop_figs/{task_name}/
+        """
+        from workshop_experiments_folders import experiments_dict
+
+        for task_name in experiments_dict.keys():
+            baseline = experiments_dict[task_name]['ground_truth_baseline']
+
+            task_plot_folder = os.path.join(plot_folder, task_name)
+            if not os.path.exists(task_plot_folder):
+                os.makedirs(task_plot_folder)
+
+            for sequence_type in experiments_dict[task_name].keys():
+                if sequence_type != 'ground_truth_baseline':
+                    print(f"==== Computing performance for {task_name} - {sequence_type} ====")
+
+                    for d, d_name in zip([metric, torso_metric, arms_metric], ["full_body_metric", "torso_metric", "arms_metric"]):
+                        baseline_labels = list(baseline.keys())
+                        baseline_dirs = [baseline[baseline_label] for baseline_label in baseline_labels]
+
+                        exp_labels = list(experiments_dict[task_name][sequence_type].keys())
+                        exp_dirs = [experiments_dict[task_name][sequence_type][exp_label] for exp_label in exp_labels]
+
+                        all_exp_labels = baseline_labels + exp_labels
+                        all_exp_dirs = baseline_dirs + exp_dirs
+
+                        performance = compute_performance_many_experiments(all_exp_dirs, d)
+                        
+                        plot_file = os.path.join(task_plot_folder, f"{task_name}_{d_name}_{sequence_type}")
+                        plot_multiple_directories(performance, labels=all_exp_labels, output_file=plot_file)                  
+    else:
+        experiment_directories = [
+        "/share/portal/hw575/CrossQ/train_logs/2024-10-04-004735_sb3_sac_envr=goal_only_euclidean_geom_xpos-t=right_arm_extend_wave_higher_rm=hand_engineered_nt=None", # training for reference rollout
+        "/share/portal/hw575/CrossQ/train_logs/2024-09-26-152534_sb3_sac_envr=right_arm_extend_wave_higher_goal_only_euclidean_geom_xpos_rm=hand_engineered_s=9_nt=arms-only-geom", # baseline 
+        "/share/portal/hw575/CrossQ/train_logs/2024-10-05-121349_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_60_frames_exp-r+bonus", 
+        "/share/portal/hw575/CrossQ/train_logs/2024-10-05-121403_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_60_frames_exp-r",
+        # "/share/portal/hw575/CrossQ/train_logs/2024-10-04-171641_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_19_frames_exp-r+bonus",
+        # "/share/portal/hw575/CrossQ/train_logs/2024-10-04-171648_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_19_frames_exp-r"
+        ]
+
+        baseline_exps = [
+            "/share/portal/hw575/CrossQ/train_logs/2024-10-04-004735_sb3_sac_envr=goal_only_euclidean_geom_xpos-t=right_arm_extend_wave_higher_rm=hand_engineered_nt=None", # training for reference 
+            "/share/portal/hw575/CrossQ/train_logs/2024-09-26-152534_sb3_sac_envr=right_arm_extend_wave_higher_goal_only_euclidean_geom_xpos_rm=hand_engineered_s=9_nt=arms-only-geom", # baseline 
+        ]
+        
+
+        # Write the sequence_types sorted by the number of frames
+        sequence_types = [
+            "intermediate_last_10_frames",
+            "intermediate_10_frames",
+            "rollout_9_frames",
+            "intermediate_last_20_frames",
+            "intermediate_20_frames",
+            "rollout_19_frames",
+            "intermediate_last_30_frames",
+            "intermediate_30_frames",
+            "rollout_29_frames",
+            "intermediate_last_40_frames",
+            "intermediate_40_frames",
+            "rollout_39_frames",
+            "intermediate_last_50_frames",
+            "intermediate_50_frames",
+            "intermediate_last_60_frames",
+            "intermediate_60_frames",
+            "rollout_59_frames",
+        ]
+
+        experiments = [
+            [
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-031124_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_10_frames_exp-r+bonus",
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-031127_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_10_frames_exp-r"
+            ],
+            [
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-115210_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_10_frames_exp-r+bonus",
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-115212_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_10_frames_exp-r"
+            ],
+            [
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-04-171602_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_9_frames_exp-r+bonus",
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-04-171614_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_9_frames_exp-r"
+            ],
+
+
+            [
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-031158_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_20_frames_exp-r+bonus",
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-031250_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_20_frames_exp-r"
+            ],
+            [
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-04-182525_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_20_frames_exp-r+bonus",
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-04-182525_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_20_frames_exp-r"
+            ],
+            [
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-04-171641_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_19_frames_exp-r+bonus",
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-04-171648_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_19_frames_exp-r",
+            ],
+
+
+            [
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-031242_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_30_frames_exp-r+bonus",
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-031306_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_30_frames_exp-r"
+            ],
+            [
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-115214_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_30_frames_exp-r+bonus",
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-115319_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_30_frames_exp-r"
+            ],
+            [
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-120242_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_29_frames_exp-r+bonus",
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-120250_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_29_frames_exp-r"
+            ],
+
+
+            [
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-121307_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_40_frames_exp-r+bonus",
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-121305_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_40_frames_exp-r",
+            ],
+            [
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-115406_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_40_frames_exp-r+bonus",
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-115411_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_40_frames_exp-r"
+            ],
+            [
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-120306_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_39_frames_exp-r+bonus",
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-120308_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_39_frames_exp-r"
+            ],
+
+
+            [
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-121336_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_50_frames_exp-r+bonus",
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-121343_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_50_frames_exp-r"
+            ],
+            [
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-115654_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_50_frames_exp-r+bonus",
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-115658_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_50_frames_exp-r"
+            ],
+
+
+            [
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-121349_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_60_frames_exp-r+bonus",
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-05-121403_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_last_60_frames_exp-r"
+            ],
+            [
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-04-182539_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_60_frames_exp-r+bonus",
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-04-182533_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=intermediate_60_frames_exp-r"
+            ],
+            [
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-04-005215_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_59_frames_exp-r+bonus",
+                "/share/portal/hw575/CrossQ/train_logs/2024-10-04-005301_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_rm=soft_dtw_nt=rollout_59_frames"
+            ]
+        ]
+
+        plot_smoothing = 5
+        plot_folder = "workshop_figs"
+        if not os.path.exists(plot_folder):
+            os.makedirs(plot_folder)
+        
+        for exp_dirs, sequence_type in zip(experiments, sequence_types):
+            for d, d_name in zip([metric, arms_metric, torso_metric], ["full_body_metric", "arm_metric", "torso_metric"]):
+                
+                all_exp_dirs = baseline_exps + exp_dirs
+                performance = compute_performance_many_experiments(all_exp_dirs, d)
+                plot_file = os.path.join(plot_folder, f"{d_name}_{sequence_type}")
+                plot_multiple_directories(performance, output_file=plot_file, smoothing=plot_smoothing)
