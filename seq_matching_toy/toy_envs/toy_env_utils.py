@@ -8,23 +8,34 @@ action_to_direction = {
             4: np.array([0, 0]) # Stay in place
         }
 
-def update_location(agent_pos, action, map_array):
+def update_location(agent_pos, action, map_array, history):
+    """
+    Update the agent's location based on the action taken.
+    
+    If the new location is invalid, the agent stays in place.
+        Invalid locations include:
+            - Locations outside the map
+            - Locations with a hole
+            - Locations where the location has been visited before
+    """
     direction = action_to_direction[action]
 
     new_pos = agent_pos + direction
 
-    if is_valid_location(new_pos, map_array):
+    if is_valid_location(new_pos, map_array, history):
         return new_pos
     else:
         return agent_pos
 
-def is_valid_location(pos, map_array):
+def is_valid_location(pos, map_array, history):
     within_x_bounds = 0 <= pos[0] < map_array.shape[0]
     within_y_bounds = 0 <= pos[1] < map_array.shape[1]
 
     if within_x_bounds and within_y_bounds:
         not_a_hole = map_array[pos[0], pos[1]] != -1
-        return  not_a_hole
+        not_visited = pos.tolist() not in history
+
+        return  not_a_hole and not_visited
     else:
         return False
     

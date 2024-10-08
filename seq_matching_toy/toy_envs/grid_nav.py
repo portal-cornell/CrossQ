@@ -36,11 +36,18 @@ class GridNavigationEnv(gym.Env):
 
     
     def step(self, action):
-        self._agent_pos = update_location(agent_pos=self._agent_pos, action=action, map_array=self.map)
+        self._new_agent_pos = update_location(agent_pos=self._agent_pos, action=action, map_array=self.map, history=self._history)
+
+        self._history.append(self._agent_pos.tolist())
 
         observation = self._get_obs()
         info = self._get_info()
-        reward = 0  # We are using sequence matching function to produce reward
+        reward = 0
+        # if self._new_agent_pos.tolist() == self._agent_pos.tolist():
+        #     reward = -1
+        # else:
+        #     reward = 0  # We are using sequence matching function to produce reward
+        self._agent_pos = self._new_agent_pos
 
         self.num_steps += 1
         terminated = self.num_steps >= self.episode_length
@@ -58,6 +65,7 @@ class GridNavigationEnv(gym.Env):
         This is a deterministic environment, so we don't use the seed."""
         self.num_steps = 0
         self._agent_pos = np.copy(self._starting_pos)
+        self._history = [self._agent_pos.tolist()]
 
         return self._get_obs(), self._get_info()
 

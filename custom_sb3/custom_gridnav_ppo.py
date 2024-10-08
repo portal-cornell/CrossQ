@@ -55,7 +55,6 @@ class CustomPPO(PPO):
             with th.no_grad():
                 # Convert to pytorch tensor or to TensorDict
                 obs_tensor = obs_as_tensor(self._last_obs, self.device)
-                print(obs_tensor.shape)
                 actions, values, log_probs = self.policy(obs_tensor)
             actions = actions.cpu().numpy()
 
