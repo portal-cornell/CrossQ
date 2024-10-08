@@ -37,10 +37,14 @@ class VisualJointBasedSeqRewardCallback(BaseCallback):
     Custom callback for calculating sequence matching rewards using visual model predictions
     for joint positions after rollouts are collected.
     """
-    def __init__(self, task_name, matching_fn_cfg, visual_model_cfg, use_geom_xpos=True, verbose=0):
+    def __init__(self, task_name, matching_fn_cfg, visual_model_cfg, use_geom_xpos, use_image_for_ref, verbose=0):
         super(VisualJointBasedSeqRewardCallback, self).__init__(verbose)
 
-        self._ref_seq = load_reference_seq(task_name=task_name, seq_name=matching_fn_cfg["seq_name"], use_geom_xpos=use_geom_xpos)
+        self.use_geom_xpos = use_geom_xpos
+        self.use_image_for_ref = use_image_for_ref
+        
+        # Load the ref seq. Note: if using image, it must be processed into an actual ref seq in _on_training_start (once the model has been initialized)
+        self._ref_seq = load_reference_seq(task_name=task_name, seq_name=matching_fn_cfg["seq_name"], use_geom_xpos=self.use_geom_xpos, use_image=self.use_image_for_ref)
         logger.info(f"[VisualSeqRewardCallback] Loaded reference sequence. task_name={task_name}, seq_name={matching_fn_cfg['seq_name']}, shape={self._ref_seq.shape}")
         
         self._scale = matching_fn_cfg['scale']
@@ -55,6 +59,17 @@ class VisualJointBasedSeqRewardCallback(BaseCallback):
         self.visual_model_device = f"cuda:{rank}"
         
         logger.info(f"[VisualSeqRewardCallback] Initialized with matching fn {self._matching_fn_name} and batch_size={self.batch_size}")
+
+    def _on_training_start(self) -> None:
+        """
+        This method is called before the first rollout starts.
+        """
+
+        if self.use_image_for_ref:
+            ref_seq_torch = th.as_tensor(np.array(self._ref_seq)).permute(0,3,1,2).to(self.visual_model_device) / 255.0
+            joint_positions, _ = self.model.compute_joint_predictions_with_uncertainty(ref_seq_torch)
+            joint_positions = joint_positions.view(-1, 18, 3) # TODO: hard coding joint dim here for ease
+            self._ref_seq = joint_positions.cpu().numpy()
 
     def on_rollout_end(self) -> None:
         """Calculate rewards based on visual predictions after rollout ends"""
@@ -398,6 +413,8 @@ class VideoRecorderCallback(BaseCallback):
         n_eval_episodes: int = 1,
         deterministic: bool = True,
         use_geom_xpos: bool = True,
+        use_image_for_ref: bool = False,
+        visual_model_rank: bool = 0,
         task_name: str = "",
         threshold: float = 0.5,
         success_fn_cfg: dict = {},
@@ -430,11 +447,13 @@ class VideoRecorderCallback(BaseCallback):
         self._deterministic = deterministic
         self._rollout_save_path = rollout_save_path  # Save the state of the environment
         self._use_geom_xpos = use_geom_xpos
+        self._use_image_for_ref = use_image_for_ref
         self._threshold = threshold
         self._calc_visual_reward = calc_visual_reward
+        self._visual_model_device = f"cuda:{visual_model_rank}"
 
         if task_name != "":
-            self._goal_ref_seq = load_reference_seq(task_name=task_name, seq_name="key_frames", use_geom_xpos=self._use_geom_xpos)
+            self._goal_ref_seq = load_reference_seq(task_name=task_name, seq_name="key_frames", use_geom_xpos=self._use_geom_xpos, use_image=self._use_image_for_ref)
             logger.info(f"[VideoRecorderCallback] Loaded reference sequence. task_name={task_name}, seq_name=key_frames, use_geom_xpos={self._use_geom_xpos}, shape={self._goal_ref_seq.shape}")
 
             self.set_ground_truth_goal_matching_fn(task_name, use_geom_xpos)
@@ -465,7 +484,17 @@ class VideoRecorderCallback(BaseCallback):
             logger.info(f"[VideoRecorderCallback] Loaded reference sequence for seq level matching. task_name={task_name}, seq_name={matching_fn_cfg['seq_name']}, use_geom_xpos={self._use_geom_xpos}, shape={self._seq_matching_ref_seq.shape}, image_frames_shape={self._seq_matching_ref_seq_frames.shape}")
         else:
             self._calc_matching_reward = False
-        
+    
+    def _on_training_start(self) -> None:
+        """
+        This method is called before the first rollout starts.
+        """
+        if self._use_image_for_ref:
+            ref_seq_torch = th.as_tensor(np.array(self._goal_ref_seq)).permute(0,3,1,2).to(self._visual_model_device) / 255.0
+            joint_positions, _ = self.model.compute_joint_predictions_with_uncertainty(ref_seq_torch)
+            joint_positions = joint_positions.view(-1, 18, 3) # TODO: hard coding joint dim here for ease
+            self._goal_ref_seq = joint_positions.cpu().numpy()
+
     def set_ground_truth_goal_matching_fn(self, task_name: str, use_geom_xpos: bool):
         """Set the ground-truth goal matching function based on the goal_seq_name.
 
@@ -722,7 +751,7 @@ class VideoRecorderCallback(BaseCallback):
                         # Plot the reward (exp of the negative distance) based on the reference sequence USED FOR SEQUENCE MATCHING
                         infos[i]["seqrf_r"] = str([f"{reward_matrix_using_seq_req[i][j]:.2f}" for j in range(len(self._seq_matching_ref_seq))]) + " | " + str([f"{arm_reward_matrix_using_seq_req[i][j]:.2f}" for j in range(len(self._seq_matching_ref_seq))])
 
-            frames = th.from_numpy(np.array(screens)).float().cuda(0).permute(0,3,1,2) / 255.0
+            frames = th.from_numpy(np.array(screens)).float().to(self._visual_model_device).permute(0,3,1,2) / 255.0
             
             if self._calc_visual_reward and self._calc_matching_reward: # visual + matching
                 logger.info("Evaluating rollout for recorder callback, visual and sequence")

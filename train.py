@@ -155,6 +155,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3),
             n_eval_episodes=cfg.compute.n_cpu_workers,
             use_geom_xpos="geom_xpos" in cfg.env.reward_type if "reward_type" in cfg.env else False,
+            use_image_for_ref=False, # Use ground truth for reference during eval
             # This allow us to calculate the unifying reward/metric that all methods are compared against
             #   i.e. it defines "rollout/sum_total_reward_per_epsisode" in wandb
             task_name=cfg.env.task_name if "task_name" in cfg.env else "",
@@ -176,7 +177,8 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
                                         task_name = cfg.env.task_name,
                                         matching_fn_cfg = dict(cfg.matching_reward_model),
                                         visual_model_cfg=dict(cfg.visual_reward_model),
-                                        use_geom_xpos = "geom_xpos" in cfg.env.reward_type
+                                        use_geom_xpos = "geom_xpos" in cfg.env.reward_type,
+                                        use_image_for_ref=cfg.visual_reward_model.get("use_image_for_ref", False)
                 ))  
             else:
                 callback_list.append(JointBasedSeqRewardCallback(
