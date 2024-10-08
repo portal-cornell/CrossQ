@@ -15,6 +15,9 @@ from seq_matching_toy.toy_examples.nav_backwards import *
 from seq_matching_toy.toy_examples.nav_backwards_easier import *
 from seq_matching_toy.toy_examples.straight_line import *
 from seq_matching_toy.toy_examples.straight_line_long import *
+# Figures for workshop paper
+from seq_matching_toy.toy_examples.nav_2by2_0_ot_fail import *
+from seq_matching_toy.toy_examples.nav_1by4_0_dtw_fail import *
 
 examples = {
     "criss_cross_0": criss_cross_0,
@@ -33,5 +36,8 @@ examples = {
     "nav_backwards": nav_backwards,
     "nav_backwards_easier": nav_backwards_easier,
     "straight_line": straight_line,
-    "straight_line_long": straight_line_long
+    "straight_line_long": straight_line_long,
+    # Figures for workshop paper
+    "nav_2by2_0_ot_fail": nav_2by2_0_ot_fail,
+    "nav_1by4_0_dtw_fail": nav_1by4_0_dtw_fail,
 }

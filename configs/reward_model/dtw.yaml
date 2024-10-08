@@ -2,9 +2,8 @@ name: dtw
 cost_fn: euclidean_arms_only
 scale: 1
 seq_name: null
-# This does not exist by default
-#  You can specify this in the command line: 
-#    +seq_reward_model.post_processing_method=stage_reward_based_on_last_state
+post_processing_method:
+- exp_reward
 reward_vmin: 0
 reward_vmax: 1
 stage_bonus: 0
