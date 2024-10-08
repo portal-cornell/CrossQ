@@ -29,8 +29,8 @@ sweep_configuration = {
 
         "lr": {"values": [2.5e-4]},
         "ent_coef": {"values": [0.25, 0.5, 1.0, 1.5, 2.0]},
-        "vf_coef": {"values": [0.5, 1.0, 1.5, 2.0]},
-        "episode_length": {"values": [8]},
+        "vf_coef": {"values": [0.25, 0.5, 1.0, 1.5, 2.0]},
+        "episode_length": {"values": [5]},
 
         # "lr": {"values": [2.5e-4]},
         # "ent_coef": {"max": 2.0, "min": 0.1},

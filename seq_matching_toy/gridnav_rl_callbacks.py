@@ -121,7 +121,9 @@ class GridNavSeqRewardCallback(BaseCallback):
         matching_reward_list = []
         for env_i in range(self.model.env.num_envs):
             obs_to_use = self.model.rollout_buffer.observations[1:, env_i]  # Skip the first observation because we are calculating the reward based on what it looks like in the next state
-            final_obs = update_location(agent_pos=obs_to_use[-1].astype(np.int64), action=int(self.model.rollout_buffer.actions[-1, env_i]), map_array=self._map)
+            # Keep track of the history. Agent cannot revisit the same 
+            history = [obs_to_use[i].tolist() for i in range(len(obs_to_use))]
+            final_obs = update_location(agent_pos=obs_to_use[-1].astype(np.int64), action=int(self.model.rollout_buffer.actions[-1, env_i]), map_array=self._map, history=history)
             obs_to_use = np.concatenate([obs_to_use, np.expand_dims(final_obs, 0)], axis=0)
             frames = convert_obs_to_frames(self._map, obs_to_use)
             matching_reward, _ = self._matching_fn(frames, self._ref_seq)  # size: (n_steps,)
@@ -328,7 +330,9 @@ class GridNavVideoRecorderCallback(BaseCallback):
                 final_obs = update_obs(final_obs, prev_agent_pos=agent_pos,new_agent_pos = final_location ).flatten()
                 obs_seq = np.concatenate([obs_to_use, np.expand_dims(final_obs, 0)], axis=0)
             else:
-                final_obs = update_location(agent_pos=obs_to_use[-1].astype(np.int64), action=int(actions[-1]), map_array=self._map)
+                # Keep track of the history. Agent cannot revisit the same 
+                history = [obs_to_use[i].tolist() for i in range(len(obs_to_use))]
+                final_obs = update_location(agent_pos=obs_to_use[-1].astype(np.int64), action=int(actions[-1]), map_array=self._map, history=history)
                 obs_to_use = np.concatenate([obs_to_use, np.expand_dims(final_obs, 0)], axis=0)
                 obs_seq = convert_obs_to_frames(self._map, obs_to_use)
 
