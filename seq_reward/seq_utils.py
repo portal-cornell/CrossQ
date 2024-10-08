@@ -524,11 +524,13 @@ def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, 
     for i in range(obs_seq.shape[0]):
         ax_a = fig.add_subplot(gs[i + 1, 0])  # Move down 1 row to align with the heatmap
         ax_a.imshow(obs_seq[i], cmap=seq_cmap)
+        # ax_a.imshow(obs_seq[i], vmin=-1, vmax=1, cmap=seq_cmap)  # For generating toy example for workshop paper
         ax_a.axis('off')
 
     # Plot the heatmap (cost matrix) in the center
     ax_heatmap = fig.add_subplot(gs[1:obs_len+1, 1:ref_len+1])
     im = ax_heatmap.imshow(matrix, cmap=matrix_cmap, aspect='auto', vmin=vmin, vmax=vmax)
+    # ax_heatmap.axis('off')  # For generating toy example for workshop paper
 
     if vmin is not None and vmax is not None:
         mid_val = (vmin + vmax) / 2
@@ -536,7 +538,8 @@ def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, 
         mid_val = (np.max(matrix) + np.min(matrix)) / 2
 
     # Add text annotations (numbers) on each cell in the heatmap
-    label_text_font_size = max(obs_len, ref_len) / min(matrix.shape[0], matrix.shape[1]) * rolcol_size * 2
+    label_text_font_size = max(obs_len, ref_len) / min(matrix.shape[0], matrix.shape[1]) * rolcol_size
+    # label_text_font_size = max(obs_len, ref_len) / min(matrix.shape[0], matrix.shape[1]) * rolcol_size * 10   # x10 For generating toy example for workshop paper
     if label_text_font_size >= 1:
         for i in range(matrix.shape[0]):
             for j in range(matrix.shape[1]):
@@ -554,6 +557,7 @@ def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, 
     for j in range(ref_seq.shape[0]):
         ax_b = fig.add_subplot(gs[0, 1 + j])
         ax_b.imshow(ref_seq[j], cmap=seq_cmap)
+        # ax_b.imshow(ref_seq[j], vmin=-1, vmax=1, cmap=seq_cmap)  # For generating toy example for workshop paper
         ax_b.axis('off')
 
     ax.set_title(title, fontsize=15*rolcol_size)
