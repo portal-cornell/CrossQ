@@ -244,8 +244,7 @@ def augment_fn_with_stage_reward_based_on_last_state(original_fn, original_fn_na
             # input("stop")
         
         # Normalize the rewards to be 0 and 1
-        # return np.array(rewards) / matching_matrix.shape[1]
-        return np.array(rewards)
+        return np.array(rewards) / matching_matrix.shape[1]
                         
     def new_fn(*args, **kwargs):
         reward, info = original_fn(*args, **kwargs)
@@ -346,10 +345,10 @@ def augment_fn_with_stage_multiplier_plus_based_on_max(original_fn, original_fn_
 
             if assignment != previous_step_assignment:
                 # We find all the reward whose argmax is the same as the previous_step_assignment
-                print(f"i={i} reward[i]={reward[i]} reward_bonus={reward_bonus} reward_multiplier={reward_multiplier}")
-                print(reward[matching_matrix.argmax(axis=1) == previous_step_assignment])
+                # print(f"i={i} reward[i]={reward[i]} reward_bonus={reward_bonus} reward_multiplier={reward_multiplier}")
+                # print(reward[matching_matrix.argmax(axis=1) == previous_step_assignment])
                 previous_step_max_reward = np.max(reward[matching_matrix.argmax(axis=1) == previous_step_assignment])
-                print(f"previous_step_max_reward={previous_step_max_reward}")
+                # print(f"previous_step_max_reward={previous_step_max_reward}")
                 reward_bonus += previous_step_max_reward
                 reward_multiplier *= previous_step_max_reward
                 # input("stop")
