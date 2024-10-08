@@ -1,6 +1,9 @@
 name: soft_dtw
 gamma: 5
 scale: 1
+pos_offset: 6
+post_processing_method: 
+    - convert_to_positive_reward
 # This does not exist by default
 #  You can specify this in the command line: 
 #    +seq_reward_model.post_processing_method=stage_reward_based_on_last_state

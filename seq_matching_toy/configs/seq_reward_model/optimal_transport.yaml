@@ -1,3 +1,6 @@
 name: ot
 scale: 1
 gamma: 0
+pos_offset: 6
+post_processing_method: 
+    - convert_to_positive_reward
