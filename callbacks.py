@@ -57,6 +57,8 @@ class VisualJointBasedSeqRewardCallback(BaseCallback):
         self.add_to_gt_rewards = self.visual_model_cfg["add_to_gt_rewards"]
         rank = self.visual_model_cfg['rank']
         self.visual_model_device = f"cuda:{rank}"
+
+        self.uncertainty_stats_for_logging = RunningStats()
         
         logger.info(f"[VisualSeqRewardCallback] Initialized with matching fn {self._matching_fn_name} and batch_size={self.batch_size}")
 
@@ -70,6 +72,15 @@ class VisualJointBasedSeqRewardCallback(BaseCallback):
             joint_positions, _ = self.model.compute_joint_predictions_with_uncertainty(ref_seq_torch)
             joint_positions = joint_positions.view(-1, 18, 3) # TODO: hard coding joint dim here for ease
             self._ref_seq = joint_positions.cpu().numpy()
+
+    def _on_training_end(self) -> None:
+        """
+        This method is called after the last rollout ends.
+        """
+
+        final_mean_uncertainty = self.uncertainty_stats_for_logging.get_mean()
+        final_std_uncertainty = self.uncertainty_stats_for_logging.get_std()
+        np.save("mu_std_uncertainty.npy", np.array([final_mean_uncertainty, final_std_uncertainty]))
 
     def on_rollout_end(self) -> None:
         """Calculate rewards based on visual predictions after rollout ends"""
@@ -87,9 +98,10 @@ class VisualJointBasedSeqRewardCallback(BaseCallback):
         joint_positions, uncertainties = self.model.compute_joint_predictions_with_uncertainty(frames)
 
         # Update uncertainty statistics and compute confidence weights
-        self.model.uncertainty_stats.update(uncertainties.mean().item())
+        #self.model.uncertainty_stats.update(uncertainties.mean().item())
         confidence_weights = self.model.compute_confidence_weights(uncertainties, self.model.uncertainty_stats)
-
+        self.uncertainty_stats_for_logging.update_batch(uncertainties) # only used to log, not update anything
+        
         # Rearrange predictions and confidence weights to env shape
         joint_positions = rearrange(joint_positions, "(n_steps n_envs) (n_joints d_joint) -> n_steps n_envs n_joints d_joint", n_envs=self.model.env.num_envs, n_joints = self._ref_seq.shape[1])
         confidence_weights = rearrange(confidence_weights, "(n_steps n_envs) -> n_steps n_envs", n_envs=self.model.env.num_envs)
@@ -139,6 +151,20 @@ class RunningStats:
         self.new_m = 0
         self.old_s = 0
         self.new_s = 0
+    
+    def update_batch(self, x_batch: np.array):
+        self.n += len(x_batch)
+        x = x_batch.mean()
+
+        if self.n == 1:
+            self.old_m = self.new_m = x
+            self.old_s = 0
+        else:
+            self.new_m = self.old_m + (x - self.old_m) / self.n
+            self.new_s = self.old_s + (x - self.old_m) * (x - self.new_m)
+
+            self.old_m = self.new_m
+            self.old_s = self.new_s
 
     def update(self, x):
         self.n += 1
@@ -452,6 +478,9 @@ class VideoRecorderCallback(BaseCallback):
         self._calc_visual_reward = calc_visual_reward
         self._visual_model_device = f"cuda:{visual_model_rank}"
 
+        if self._calc_visual_reward:
+            self.all_uncertainties = []
+
         if task_name != "":
             self._goal_ref_seq = load_reference_seq(task_name=task_name, seq_name="key_frames", use_geom_xpos=self._use_geom_xpos, use_image=self._use_image_for_ref)
             logger.info(f"[VideoRecorderCallback] Loaded reference sequence. task_name={task_name}, seq_name=key_frames, use_geom_xpos={self._use_geom_xpos}, shape={self._goal_ref_seq.shape}")
@@ -494,6 +523,11 @@ class VideoRecorderCallback(BaseCallback):
             joint_positions, _ = self.model.compute_joint_predictions_with_uncertainty(ref_seq_torch)
             joint_positions = joint_positions.view(-1, 18, 3) # TODO: hard coding joint dim here for ease
             self._goal_ref_seq = joint_positions.cpu().numpy()
+
+    def _on_training_end(self) -> None:
+        if self._calc_visual_reward:
+            unc = np.concatenate(self.all_uncertainties)
+            np.save("all_uncertainties.npy", unc)
 
     def set_ground_truth_goal_matching_fn(self, task_name: str, use_geom_xpos: bool):
         """Set the ground-truth goal matching function based on the goal_seq_name.
@@ -758,6 +792,7 @@ class VideoRecorderCallback(BaseCallback):
 
                 joint_positions, uncertainties = self.model.compute_joint_predictions_with_uncertainty(frames)
                 
+
                 # Do not update running uncertainty stats, since this is eval mode
                 confidence_weights = self.model.compute_confidence_weights(uncertainties, self.model.uncertainty_stats)
                 joint_positions = rearrange(joint_positions, "steps (n_joints d_joint) -> steps n_joints d_joint", n_joints = self._seq_matching_ref_seq.shape[1])
@@ -766,8 +801,19 @@ class VideoRecorderCallback(BaseCallback):
                 vlm_matching_reward, vlm_matching_reward_info = self._matching_fn(joint_positions, self._seq_matching_ref_seq)
                 vlm_matching_reward *= confidence_weights
 
+                self.all_uncertainties.append(uncertainties.cpu().numpy().flatten())
+
                 self.logger.record("rollout/avg_vlm_matching_reward", 
                                 np.mean(vlm_matching_reward)/self._scale, 
+                                exclude=("stdout", "log", "json", "csv"))
+                
+
+                self.logger.record("rollout/avg_uncertainty", 
+                                np.mean(uncertainties.cpu().numpy()), 
+                                exclude=("stdout", "log", "json", "csv"))
+                
+                self.logger.record("rollout/avg_confidence_weight", 
+                                np.mean(confidence_weights), 
                                 exclude=("stdout", "log", "json", "csv"))
                 
                 # Add the matching_reward to the infos so that we can plot it

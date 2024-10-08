@@ -226,7 +226,8 @@ class JointVLMSAC(SAC):
         
         for batch in batches:
             xpos_preds, emb, emb_reco = self.forward_visual_model(batch)
-            uncertainty = torch.linalg.vector_norm(emb - emb_reco, dim=1)
+            _, D = emb_reco.shape
+            uncertainty = 1/D * (torch.linalg.vector_norm(emb - emb_reco, dim=1)**2) # MSE = 1/N * norm^2
             
             all_preds.append(xpos_preds)
             all_uncertainties.append(uncertainty)
@@ -391,7 +392,7 @@ class JointVLMSAC(SAC):
             return torch.exp(- (l - mu) ** 2 / (2 * (std * kappa) ** 2))
         curr_geom_xpos = torch.cat(all_preds, dim=0)
         xpos_uncertainties = torch.cat(all_uncertainties, dim=0)
-        self.uncertainty_stats.update(xpos_uncertainties.mean().item()) # update before calculating confidence for now (problem: how to assign the first values for confidence?)
+        #self.uncertainty_stats.update(xpos_uncertainties.mean().item()) # update before calculating confidence for now (problem: how to assign the first values for confidence?)
 
         mu = self.uncertainty_stats.get_mean()
         std = self.uncertainty_stats.get_std()
@@ -593,11 +594,14 @@ class RunningNormalStats:
     def __init__(self, alpha=0.98):
         """
         Initialize the RunningStats object.
+        TODO: Hard coded values from mean on training set right now
         
         Args:
             alpha (float): The smoothing factor. Default is 0.98.
                            Higher values give more weight to past observations.
         """
+        self.gt_mean = 0.0017900332
+        self.gt_std = 0.00032042875 
         self.alpha = alpha
         self.mean = None
         self.squared_mean = None
@@ -637,7 +641,8 @@ class RunningNormalStats:
             tuple: (mean, std) The current mean and standard deviation,
                    or (None, None) if no updates have been made.
         """
-
+        if self.gt_mean is not None:
+            return self.gt_mean
         return self.mean
 
     def get_std(self):
@@ -648,6 +653,8 @@ class RunningNormalStats:
             tuple: (mean, std) The current mean and standard deviation,
                    or (None, None) if no updates have been made.
         """
+        if self.gt_std is not None: # lets you specify a ground truth std and override this
+            return self.gt_std
 
         variance = self.squared_mean - self.mean.pow(2)
         # Clamp to prevent negative variance due to numerical instability
