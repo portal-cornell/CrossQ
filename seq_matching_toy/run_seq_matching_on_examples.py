@@ -82,15 +82,15 @@ def run_examples_from_config(cfg: DictConfig):
 
             # Plot the cost matrix
             ax = axs[fn_idx, 0]
-            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, info["cost_matrix"], f"{fn_name} Cost Matrix", cmap="gray_r", rolcol_size=rolcol_size,)
+            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, info["cost_matrix"], f"{fn_name} C", seq_cmap="plasma", matrix_cmap="gray_r", rolcol_size=rolcol_size,)
 
             # Plot the assignment matrix
             ax = axs[fn_idx, 1]   
-            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, info["assignment"], f"{fn_name} Assignment Matrix", cmap="Greens", rolcol_size=rolcol_size, vmin=0, vmax=1)
+            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, info["assignment"], f"{fn_name} A", seq_cmap="plasma", matrix_cmap="Greens", rolcol_size=rolcol_size, vmin=0, vmax=1)
 
             # Plot the reward
             ax = axs[fn_idx, 2]
-            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, np.expand_dims(reward,1), f"{fn_name} Reward (Sum = {np.sum(reward):.2f})", cmap="Greens", rolcol_size=rolcol_size,
+            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, np.expand_dims(reward,1), f"{fn_name} R (Sum {np.sum(reward):.2f})", seq_cmap="plasma", matrix_cmap="Greens", rolcol_size=rolcol_size,
                                          vmin=examples[example_name]["plot"]["reward_vmin"], vmax=examples[example_name]["plot"]["reward_vmax"])
 
         plt.tight_layout()

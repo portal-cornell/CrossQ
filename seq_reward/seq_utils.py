@@ -127,7 +127,11 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
         fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_dtw_reward(obs_seq, ref_seq, cost_fn, scale, inverted_cost=inverted_cost), fn_name
     elif fn_name == "soft_dtw":
         gamma = float(fn_config["gamma"])
-        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale: compute_soft_dtw_reward(obs_seq, ref_seq, cost_fn, gamma, scale,inverted_cost=inverted_cost), f"{fn_name}_g={gamma}"
+        if gamma == 10000.0:
+            fn_name = f"{fn_name}_g=F"
+        else:
+            fn_name = f"{fn_name}_g={gamma}"
+        fn = lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale: compute_soft_dtw_reward(obs_seq, ref_seq, cost_fn, gamma, scale,inverted_cost=inverted_cost)
     else:
         raise NotImplementedError(f"Unknown sequence matching function: {fn_name}")
     
@@ -146,10 +150,27 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
                     original_fn=augmented_fn, 
                     original_fn_name=fn_name, 
                     stage_bonus=float(fn_config.get("stage_bonus", 0)))
+            elif method == "stage_multiplier_based_on_last_state":
+                augmented_fn, fn_name = augment_fn_with_stage_multiplier_based_on_last_state(
+                    original_fn=augmented_fn, 
+                    original_fn_name=fn_name)
+            elif method == "stage_multiplier_plus_based_on_max":
+                augmented_fn, fn_name = augment_fn_with_stage_multiplier_plus_based_on_max(
+                    original_fn=augmented_fn, 
+                    original_fn_name=fn_name)
+            elif method == "stage_multiplier_plus_based_on_last_state":
+                augmented_fn, fn_name = augment_fn_with_stage_multiplier_plus_based_on_last_state(
+                    original_fn=augmented_fn, 
+                    original_fn_name=fn_name)
             elif method == "reward_scaled_by_stage":
                 augmented_fn, fn_name = augment_fn_with_reward_scaled_by_stage(
                     original_fn=augmented_fn, 
                     original_fn_name=fn_name)
+            elif method == "convert_to_positive_reward":
+                augmented_fn, fn_name = augment_fn_convert_to_positive_reward(
+                    original_fn=augmented_fn, 
+                    original_fn_name=fn_name, 
+                    pos_offset=float(fn_config.get("pos_offset", 0)))
             else:
                 raise NotImplementedError(f"Unknown post processing method: {post_processing_method}")
             
@@ -223,7 +244,8 @@ def augment_fn_with_stage_reward_based_on_last_state(original_fn, original_fn_na
             # input("stop")
         
         # Normalize the rewards to be 0 and 1
-        return np.array(rewards) / matching_matrix.shape[1]
+        # return np.array(rewards) / matching_matrix.shape[1]
+        return np.array(rewards)
                         
     def new_fn(*args, **kwargs):
         reward, info = original_fn(*args, **kwargs)
@@ -232,6 +254,203 @@ def augment_fn_with_stage_reward_based_on_last_state(original_fn, original_fn_na
         return new_reward, info
     
     return new_fn, new_fn_name
+
+
+def augment_fn_with_stage_multiplier_based_on_last_state(original_fn, original_fn_name):
+    """
+    Parameters:
+        stage_bonus: float
+            The bonus that we add to the reward when we progress from one stage to another stage.
+    """
+    new_fn_name = original_fn_name + "_x-stg"
+
+    def post_processor(reward, matching_matrix):
+        """
+        Assuming the matching_matrix is time consistent.
+
+        When the assignment changes (progress from one ref frame to another ref frame), we add a bonus to the reward.
+
+        Parameters:
+            reward: np.ndarray (obs_seq_len, )
+            matching_matrix: np.ndarray (obs_seq_len, ref_seq_len)
+        """
+        previous_step_assignment = 0
+        reward_multiplier = 1
+        rewards = []
+
+        # print(f"reward={reward}")
+        # print(f"matching_matrix={matching_matrix}")
+
+        for i in range(len(reward)):
+            assignment = matching_matrix[i].argmax()
+
+            # print(f"i={i} assignment={assignment} previous_step_assignment={previous_step_assignment}")
+
+            if assignment != previous_step_assignment:
+                # Since reward[i] is the last reward at the end of the current stage, the reward bonus for 
+                #   the next stage should get updated
+                reward_multiplier *= reward[i-1]
+            
+            new_reward = reward[i] * reward_multiplier
+
+            rewards.append(new_reward)
+
+            previous_step_assignment = assignment
+
+            # print(f"i={i} reward[i]={reward[i]} reward_bonus={reward_bonus} new_reward={new_reward}")
+            # input("stop")
+        
+        # Normalize the rewards to be 0 and 1
+        # return np.array(rewards) / matching_matrix.shape[1]
+        return np.array(rewards)
+                        
+    def new_fn(*args, **kwargs):
+        reward, info = original_fn(*args, **kwargs)
+        new_reward = post_processor(reward, info["assignment"])
+
+        return new_reward, info
+    
+    return new_fn, new_fn_name
+
+
+def augment_fn_with_stage_multiplier_plus_based_on_max(original_fn, original_fn_name):
+    """
+    Parameters:
+        stage_bonus: float
+            The bonus that we add to the reward when we progress from one stage to another stage.
+    """
+    new_fn_name = original_fn_name + "_x+m"
+
+    def post_processor(reward, matching_matrix):
+        """
+        Assuming the matching_matrix is time consistent.
+
+        When the assignment changes (progress from one ref frame to another ref frame), we add a bonus to the reward.
+
+        Parameters:
+            reward: np.ndarray (obs_seq_len, )
+            matching_matrix: np.ndarray (obs_seq_len, ref_seq_len)
+        """
+        previous_step_assignment = 0
+        reward_multiplier = 1
+        reward_bonus = 0
+        rewards = []
+
+        # print(f"reward={reward}")
+        # print(f"matching_matrix={matching_matrix}")
+
+        for i in range(len(reward)):
+            assignment = matching_matrix[i].argmax()
+
+            # print(f"i={i} assignment={assignment} previous_step_assignment={previous_step_assignment}")
+
+            if assignment != previous_step_assignment:
+                # We find all the reward whose argmax is the same as the previous_step_assignment
+                print(f"i={i} reward[i]={reward[i]} reward_bonus={reward_bonus} reward_multiplier={reward_multiplier}")
+                print(reward[matching_matrix.argmax(axis=1) == previous_step_assignment])
+                previous_step_max_reward = np.max(reward[matching_matrix.argmax(axis=1) == previous_step_assignment])
+                print(f"previous_step_max_reward={previous_step_max_reward}")
+                reward_bonus += previous_step_max_reward
+                reward_multiplier *= previous_step_max_reward
+                # input("stop")
+                           
+            new_reward = reward[i] * reward_multiplier + reward_bonus
+
+            rewards.append(new_reward)
+
+            previous_step_assignment = assignment
+
+            # print(f"i={i} reward[i]={reward[i]} reward_bonus={reward_bonus} new_reward={new_reward}")
+            # input("stop")
+        
+        # Normalize the rewards to be 0 and 1
+        # return np.array(rewards) / matching_matrix.shape[1]
+        return np.array(rewards)
+                        
+    def new_fn(*args, **kwargs):
+        reward, info = original_fn(*args, **kwargs)
+        new_reward = post_processor(reward, info["assignment"])
+
+        return new_reward, info
+    
+    return new_fn, new_fn_name
+
+
+def augment_fn_with_stage_multiplier_plus_based_on_last_state(original_fn, original_fn_name):
+    """
+    Parameters:
+        stage_bonus: float
+            The bonus that we add to the reward when we progress from one stage to another stage.
+    """
+    new_fn_name = original_fn_name + "_x+l"
+
+    def post_processor(reward, matching_matrix):
+        """
+        Assuming the matching_matrix is time consistent.
+
+        When the assignment changes (progress from one ref frame to another ref frame), we add a bonus to the reward.
+
+        Parameters:
+            reward: np.ndarray (obs_seq_len, )
+            matching_matrix: np.ndarray (obs_seq_len, ref_seq_len)
+        """
+        previous_step_assignment = 0
+        reward_multiplier = 1
+        reward_bonus = 0
+        rewards = []
+
+        # print(f"reward={reward}")
+        # print(f"matching_matrix={matching_matrix}")
+
+        for i in range(len(reward)):
+            assignment = matching_matrix[i].argmax()
+
+            # print(f"i={i} assignment={assignment} previous_step_assignment={previous_step_assignment}")
+
+            if assignment != previous_step_assignment:
+                reward_bonus += reward[i-1]
+                reward_multiplier *= reward[i-1]
+                # input("stop")
+                           
+            new_reward = reward[i] * reward_multiplier + reward_bonus
+
+            rewards.append(new_reward)
+
+            previous_step_assignment = assignment
+
+            # print(f"i={i} reward[i]={reward[i]} reward_bonus={reward_bonus} new_reward={new_reward}")
+            # input("stop")
+        
+        # Normalize the rewards to be 0 and 1
+        # return np.array(rewards) / matching_matrix.shape[1]
+        return np.array(rewards)
+                        
+    def new_fn(*args, **kwargs):
+        reward, info = original_fn(*args, **kwargs)
+        new_reward = post_processor(reward, info["assignment"])
+
+        return new_reward, info
+    
+    return new_fn, new_fn_name
+
+def augment_fn_convert_to_positive_reward(original_fn, original_fn_name, pos_offset):
+    new_fn_name = original_fn_name + "_p"
+
+    def post_processor(cost_matrix, matching_matrix):
+        """
+        Convert the reward to be positive by adding a constant offset.
+        """
+        reward_matrix = pos_offset - cost_matrix
+        return np.sum(reward_matrix * matching_matrix, axis=1) / pos_offset
+                        
+    def new_fn(*args, **kwargs):
+        reward, info = original_fn(*args, **kwargs)
+        new_reward = post_processor(info["cost_matrix"], info["assignment"])
+
+        return new_reward, info
+    
+    return new_fn, new_fn_name
+
 
 def augment_fn_with_reward_scaled_by_stage(original_fn, original_fn_name):
 
@@ -318,7 +537,7 @@ def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, 
         mid_val = (np.max(matrix) + np.min(matrix)) / 2
 
     # Add text annotations (numbers) on each cell in the heatmap
-    label_text_font_size = max(obs_len, ref_len) / min(matrix.shape[0], matrix.shape[1]) * rolcol_size / 2
+    label_text_font_size = max(obs_len, ref_len) / min(matrix.shape[0], matrix.shape[1]) * rolcol_size * 5
     if label_text_font_size >= 1:
         for i in range(matrix.shape[0]):
             for j in range(matrix.shape[1]):
