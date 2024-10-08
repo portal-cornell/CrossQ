@@ -52,6 +52,26 @@ pose_config_dict = {
         22: -np.pi/12, # [L] Left upper arm align with the side of torso
         23: -np.pi*5/8, # [L] Make the angle between left upper arm and left lower arm close to pi
     },
+    "left-arm-lower":
+    {
+        2: 1.3, # Land the entire torso on the floor
+        18: np.pi*3/16, # [R] Right upper arm perpendicular to the side of the torso
+        19: -np.pi*3/16, # [R] Left upper arm align with the side of torso
+        20: -np.pi*5/8, # [R] Make the angle between right upper arm and right lower arm close to pi
+        21: np.pi*1/8, # [L] Left upper arm perpendicular to the side of the torso
+        22: np.pi*3/16, # [L] Left upper arm align with the side of torso
+        23: -np.pi*5/8, # [L] Make the angle between left upper arm and left lower arm close to pi
+    },
+    # "arms_bracket_down":
+    # {
+    #     2: 1.3, # Land the entire torso on the floor
+    #     18: np.pi/4, # [R] Right upper arm perpendicular to the side of the torso
+    #     19: -np.pi*3/16, # [R] Right upper arm align with the side of torso
+    #     20: -np.pi*5/8, # [R] Make the angle between right upper arm and right lower arm close to pi
+    #     21: -np.pi/4, # [L] Left upper arm perpendicular to the side of the torso
+    #     22: np.pi*3/16, # [L] Left upper arm align with the side of torso
+    #     23: -np.pi*5/8, # [L] Make the angle between left upper arm and left lower arm close to pi
+    # },
     "right-arm-extend-wave-lower":
     {
         2: 1.3, # Land the entire torso on the floor
