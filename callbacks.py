@@ -443,7 +443,6 @@ class VideoRecorderCallback(BaseCallback):
                 if reward_matrix[i][current_stage] > threshold and stage_completed < len(ref_seq):
                     stage_completed += 1
                     current_stage = min(current_stage + 1, len(ref_seq)-1)
-                    # stage_completed-1 because stage_completed is counting the number of stages completed
                     n_steps_completing_each_stage[stage_completed] += 1
                 elif current_stage == len(ref_seq)-1 and reward_matrix[i][current_stage] > threshold:
                     # We are at the last stage
