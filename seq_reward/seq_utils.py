@@ -550,7 +550,7 @@ def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, 
         mid_val = (np.max(matrix) + np.min(matrix)) / 2
 
     # Add text annotations (numbers) on each cell in the heatmap
-    label_text_font_size = max(obs_len, ref_len) / min(matrix.shape[0], matrix.shape[1]) * rolcol_size * 2
+    label_text_font_size = max(obs_len, ref_len) / min(matrix.shape[0], matrix.shape[1]) * rolcol_size
     if label_text_font_size >= 1:
         for i in range(matrix.shape[0]):
             for j in range(matrix.shape[1]):
@@ -580,13 +580,23 @@ def seq_matching_viz(matching_fn_name, obs_seq, ref_seq, matching_reward, info, 
     # 2 * because we have 2 figure columns (where we will plot the entire ref seq)
     #   In each figure columns, we have len(ref_seq) for the reference sequence/cost matrix, 1 column for the vertical stack of obs seq, and 1 column for the colorbar
     # The last column (for the reward) will just have 4 things (1 column for the vertical stack of obs seq, 1 column for the colorbar, and 2 column for the reward)
-    fig_width = rolcol_size * (2 * (len(ref_seq) + 2) + 4)
+    if "confidence" in info:
+        fig_width = rolcol_size * (2 * (len(ref_seq) + 2) + 2 * 4) # add an additional column for confidence
 
-    #  We have len(obs_seq) for the observed sequence/cost matrix, 1 row for the horizontal stack of ref seq
-    fig_height = rolcol_size * (len(obs_seq) + 1)
+        #  We have len(obs_seq) for the observed sequence/cost matrix, 1 row for the horizontal stack of ref seq
+        fig_height = rolcol_size * (len(obs_seq) + 1)
 
-    # Create the figure (2 columns, and the number of rows will be the number of sequence matching algorithms)
-    fig, axs = plt.subplots(1, 3, figsize=(fig_width, fig_height))
+        # Create the figure (2 columns, and the number of rows will be the number of sequence matching algorithms)
+        fig, axs = plt.subplots(1, 4, figsize=(fig_width, fig_height))
+    else:
+
+        fig_width = rolcol_size * (2 * (len(ref_seq) + 2) + 4)
+
+        #  We have len(obs_seq) for the observed sequence/cost matrix, 1 row for the horizontal stack of ref seq
+        fig_height = rolcol_size * (len(obs_seq) + 1)
+
+        # Create the figure (2 columns, and the number of rows will be the number of sequence matching algorithms)
+        fig, axs = plt.subplots(1, 3, figsize=(fig_width, fig_height))
 
     # Plot the cost matrix
     ax = axs[0]
@@ -603,6 +613,11 @@ def seq_matching_viz(matching_fn_name, obs_seq, ref_seq, matching_reward, info, 
         plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq[-3:-1], np.expand_dims(matching_reward,1), f"{matching_fn_name} Reward (Sum = {np.sum(matching_reward):.2f})", seq_cmap=seq_cmap, matrix_cmap="Greens", rolcol_size=rolcol_size, vmin=reward_vmin, vmax=reward_vmax)
     else:
         plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, np.expand_dims(matching_reward,1), f"{matching_fn_name} Reward (Sum = {np.sum(matching_reward):.2f})", seq_cmap=seq_cmap, matrix_cmap="Greens", rolcol_size=rolcol_size, vmin=reward_vmin, vmax=reward_vmax)
+
+    ax = axs[3]
+    if "confidence" in info:
+        confidences = info["confidence"]
+        plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq[-3:-1], np.expand_dims(confidences,1), f"Confidence (Sum = {np.sum(confidences):.2f})", seq_cmap=seq_cmap, matrix_cmap="Greens", rolcol_size=rolcol_size, vmin=0, vmax=1)
 
     plt.tight_layout()
 

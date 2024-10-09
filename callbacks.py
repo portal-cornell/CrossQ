@@ -92,10 +92,13 @@ class VisualJointBasedSeqRewardCallback(BaseCallback):
         
         # Get frames from replay buffer
         frames = th.from_numpy(np.array(self.model.replay_buffer.render_arrays)).float().to(self.visual_model_device) / 255.0
-        frames = rearrange(frames, "n_steps n_envs h w c -> (n_steps n_envs) c h w")
+
+        # TODO, IMPORTANT: we cut off the last frame because it is always the reset frame (which has high confidence and good joint predictions, resulting in a really large reward at the end)
+        frames_chopped = frames[:-1]
+        frames_chopped = rearrange(frames_chopped, "n_steps n_envs h w c -> (n_steps n_envs) c h w")
 
         # NOTE: this assumes we are always using an uncertainty-based model
-        joint_positions, uncertainties = self.model.compute_joint_predictions_with_uncertainty(frames)
+        joint_positions, uncertainties = self.model.compute_joint_predictions_with_uncertainty(frames_chopped)
 
         # Update uncertainty statistics and compute confidence weights
         #self.model.uncertainty_stats.update(uncertainties.mean().item())
@@ -106,6 +109,10 @@ class VisualJointBasedSeqRewardCallback(BaseCallback):
         joint_positions = rearrange(joint_positions, "(n_steps n_envs) (n_joints d_joint) -> n_steps n_envs n_joints d_joint", n_envs=self.model.env.num_envs, n_joints = self._ref_seq.shape[1])
         confidence_weights = rearrange(confidence_weights, "(n_steps n_envs) -> n_steps n_envs", n_envs=self.model.env.num_envs)
         
+        # Just set the values for the last frame as the same as the second to last frame (because last frame is corrupted)
+        joint_positions = th.cat((joint_positions, joint_positions[-1][None]), dim=0)
+        confidence_weights = th.cat((confidence_weights, confidence_weights[-1][None]), dim=0)
+ 
         # Clear the render arrays once computations have been run on them
         self.model.replay_buffer.clear_render_arrays()
 
@@ -154,7 +161,7 @@ class RunningStats:
     
     def update_batch(self, x_batch: np.array):
         self.n += len(x_batch)
-        x = x_batch.mean()
+        x = x_batch.mean().item()
 
         if self.n == 1:
             self.old_m = self.new_m = x
@@ -789,17 +796,22 @@ class VideoRecorderCallback(BaseCallback):
             if self._calc_visual_reward and self._calc_matching_reward: # visual + matching
                 logger.info("Evaluating rollout for recorder callback, visual and sequence")
                 # NOTE: this assumes we are always using an uncertainty-based model
-
-                joint_positions, uncertainties = self.model.compute_joint_predictions_with_uncertainty(frames)
-                
-
+                # TODO IMPORTANT: chopping off the last frame because it is corrupted
+                frames_chopped = frames[:-1]
+                joint_positions, uncertainties = self.model.compute_joint_predictions_with_uncertainty(frames_chopped)
                 # Do not update running uncertainty stats, since this is eval mode
                 confidence_weights = self.model.compute_confidence_weights(uncertainties, self.model.uncertainty_stats)
                 joint_positions = rearrange(joint_positions, "steps (n_joints d_joint) -> steps n_joints d_joint", n_joints = self._seq_matching_ref_seq.shape[1])
+                
+                # TODO IMPORTANT: using positions and confidence weights for second to last frame as the last frame (because it is corrupted)
+                joint_positions = th.cat((joint_positions, joint_positions[-1][None]), dim=0)
+                confidence_weights = th.cat((confidence_weights, confidence_weights[-1][None]), dim=0)
+
                 joint_positions = joint_positions.cpu().numpy()
                 confidence_weights = confidence_weights.cpu().numpy()
                 vlm_matching_reward, vlm_matching_reward_info = self._matching_fn(joint_positions, self._seq_matching_ref_seq)
                 vlm_matching_reward *= confidence_weights
+                vlm_matching_reward_info["confidence"] = confidence_weights
 
                 self.all_uncertainties.append(uncertainties.cpu().numpy().flatten())
 
@@ -818,7 +830,7 @@ class VideoRecorderCallback(BaseCallback):
                 
                 # Add the matching_reward to the infos so that we can plot it
                 for i in range(len(infos)):
-                    infos[i]["vlm_matching_reward"] = f"{vlm_matching_reward[i]:.2f}"
+                    infos[i]["vlm_matching_reward"] = f"{vlm_matching_reward[i]:.2f}"                    
                 # Save the matching_rewards locally    
                 with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_vlm_matching_rewards.npy"), "wb") as f:
                     np.save(f, np.array(vlm_matching_reward))
@@ -906,6 +918,7 @@ class VideoRecorderCallback(BaseCallback):
             ref_seqs_used_to_plot = np.array([self._seq_matching_ref_seq_frames[i] for i in range(ref_seq_skip_step, len(self._seq_matching_ref_seq_frames), ref_seq_skip_step)])
         else:
             ref_seqs_used_to_plot = self._seq_matching_ref_seq_frames
+
         seq_matching_viz(
             matching_fn_name=self._matching_fn_name,
             obs_seq=raw_screens_used_to_plot,
