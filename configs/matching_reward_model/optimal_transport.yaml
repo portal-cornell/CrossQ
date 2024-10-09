@@ -3,3 +3,8 @@ cost_fn: euclidean_arms_only
 scale: 1
 gamma: 0
 seq_name: null
+post_processing_method:
+- exp_reward
+reward_vmin: 0
+reward_vmax: 1
+stage_bonus: 0

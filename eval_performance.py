@@ -1,3 +1,13 @@
+"""
+Usage to plot workshop results
+
+Create plots for the workshop paper's joint-based distance metrics
+    python eval_performance.py -w
+
+Create plots for the workshop paper's visual-based distance metrics
+    python eval_performance.py -w -v
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -95,6 +105,79 @@ def rollout_matching_metric(obs_seq, ref_seq, threshold, N_timesteps_threshold=5
     # IMPORTANT: pct_timesteps_completing is broken now because of changes to include min number of stagtes
     return pct_stage_completed#, pct_timesteps_completing_the_stages 
 
+def rollout_matching_metric_with_torso_height(obs_seq, ref_seq, obs_qpos, threshold, N_timesteps_threshold=5, joint_weights=None, min_torso_height=1.1):
+    """
+    Calculate the binary success based on the rollout and the reference sequence
+
+    Parameters:
+        rollout: np.array (rollout_length, ...)
+            The rollout sequence to calculate the reward
+        
+        obs_qpos: np.array (n_joints, joint_dim)
+
+    Return:
+        pct_stage_completed: float
+            The percentage of stages that are completed
+        pct_timesteps_completing_the_stages: float
+            The percentage of timesteps that are completing the stages
+    """
+    # Calculate reward from the rollout to self.goal_ref_seq
+    if joint_weights is None:
+        joint_weights = np.ones_like(ref_seq[0]) # default weights are just 1 (evenly distributed)
+    obs_seq_torso_height = obs_qpos[:, 0]  # Torso height is at index 0 in qpos (states returned from the env)
+    torso_above_min = obs_seq_torso_height > min_torso_height  # shape: (rollout_length,)
+    # reward_matrix is of shape (rollout_length, ref_seq_length)
+    reward_matrix = np.exp(-weighted_euclidean_distance(obs_seq, ref_seq, joint_weights)) # euclidean_distance_advanced
+    # reshape the torso_above_min to match the shape of the reward_matrix
+    torso_above_min = np.repeat(torso_above_min[:, None], reward_matrix.shape[1], axis=1)
+
+    reward_matrix = torso_above_min * reward_matrix
+    # Detect when a stage is completed (the rollout is close to the goal_ref_seq) (under self._threshold)
+    current_stage = 0
+    stage_completed = 0
+    # Track the number of steps where a stage is being completed
+    #   Offset by 1 to play nicely with the stage_completed
+    n_steps_completing_each_stage = [0] * (len(ref_seq) + 1)
+    i=0
+    while i + N_timesteps_threshold < len(reward_matrix):  # Iterate through the timestep
+        # print(f"[BEFORE] i: {i}, reward_matrix[i: i+N_timesteps_threshold, current_stage]: {reward_matrix[i: i+N_timesteps_threshold, current_stage]}, stage_completed: {stage_completed}, current_stage: {current_stage}")
+        # Case 1: The rollout has stayed above the threshold for the current stage for N_timesteps_threshold
+        if np.all(reward_matrix[i: i+N_timesteps_threshold, current_stage] > threshold) and stage_completed < len(ref_seq):
+            stage_completed += 1
+            current_stage = min(current_stage + 1, len(ref_seq)-1)
+            n_steps_completing_each_stage[stage_completed] += N_timesteps_threshold
+
+            i += N_timesteps_threshold
+        # Case 2: When we are at the last stage:
+        #   We don't increment the stage_completed since the last_stage is already completed
+        #   However, we keep track of the number of steps that are completing the last stage
+        elif current_stage == len(ref_seq)-1 and np.all(reward_matrix[i: i+N_timesteps_threshold, current_stage] > threshold):
+            n_steps_completing_each_stage[stage_completed] += N_timesteps_threshold
+            i+= N_timesteps_threshold
+        # Case 3: Once at least 1 stage is counted, but we have not moved on to the next stage
+        #   if it's still above the threshold for the current stage, we will add to the count
+        elif current_stage > 0 and np.all(reward_matrix[i: i+N_timesteps_threshold, current_stage-1] > threshold):
+            n_steps_completing_each_stage[stage_completed] += N_timesteps_threshold
+            i+= N_timesteps_threshold
+        else:
+            i+=1
+        # print(f"[AFTER] i: {i}, reward_matrix[i: i+N_timesteps_threshold, current_stage]: {reward_matrix[i: i+N_timesteps_threshold, current_stage]}, stage_completed: {stage_completed}, current_stage: {current_stage}")
+        # input("stop")
+
+    pct_stage_completed = stage_completed/len(ref_seq)
+
+    # print(f"FINAL: pct_stage_completed: {pct_stage_completed}, n_steps_completing_each_stage: {n_steps_completing_each_stage}")
+    # input("FINAL")
+
+    # The last pose is never reached
+    if n_steps_completing_each_stage[-1] == 0:
+        # We don't count any of the previous stage's steps
+        pct_timesteps_completing_the_stages = 0
+    else:
+        pct_timesteps_completing_the_stages = np.sum(n_steps_completing_each_stage)/len(ref_seq)
+
+    return pct_stage_completed, pct_timesteps_completing_the_stages 
+
 
 # given a reward matrix, threshold, and number of steps K, find the max number of distinct frames in the reward matrix where reward_matrix[i:i+K] > threshold
 
@@ -113,6 +196,7 @@ def extract_exp_label_from_dir(exp_dir):
 def plot_multiple_directories(directory_results, 
                             output_file: str = 'multi_directory_performance.png',
                             labels: List[str] = [],
+                            title: str = "",
                             smoothing=5):
     """
     Create and save plot comparing performance across multiple directories
@@ -157,9 +241,10 @@ def plot_multiple_directories(directory_results,
     ax = plt.gca()
     ax.set_xlim([0, min_last_timestep]) # Constrain to the shortest sequence (in case some are 2M long)
 
-    plt.xlabel('Timestep', fontsize=12)
-    plt.ylabel('Performance vs Target', fontsize=12)
-    plt.title('Geometric State Performance Comparison', fontsize=14)
+    plt.xlabel('Environment Steps', fontsize=12)
+    plt.ylabel('Success Rate', fontsize=12)
+    plt.title(title if title else 'Geometric State Performance Comparison', fontsize=14)
+
     plt.grid(True, linestyle='--', alpha=0.3)
     
     # Adjust legend
@@ -195,25 +280,33 @@ def load_rollouts(directory: str):
     # Process each file
     timesteps = []
     states = []
+    qposes = []
     
     for file in sorted(files, key=extract_timestep):
         timestep = extract_timestep(file)
         state = np.load(file)
+        qpos_fp = file.replace("geom_xpos_states.npy", "states.npy")
+        qpos = np.load(qpos_fp)  # When it's loaded, it's in the shape (n_timesteps, n_envs, n_qpos)
+        # We reshape it to match the shape of the state
+        qpos = np.transpose(qpos, (1, 0, 2))
         states.append(state)
+        qposes.append(qpos)
         timesteps.append(timestep)
 
-    return np.stack(states), np.array(timesteps)
+    return np.stack(states), np.array(timesteps), np.array(qposes)
         
-def load_ref(directory: str):
+def load_ref(directory: str, seq_name: str = ""):
     config_path = os.path.join(directory, ".hydra", "config.yaml")
     with open(config_path, "r") as file:
         config = yaml.safe_load(file)
 
     task_name = config.get("env").get("task_name", "right_arm_extend_wave_higher")
+    if seq_name == "":
+        seq_name = config.get("reward_model").get("seq_name", "key_frames")
     use_geom_xpos = True
 
     # Because we want to compare all runs against the same reference sequence, this reference sequence should be key_frames
-    ref = load_reference_seq(task_name=task_name, seq_name="key_frames", use_geom_xpos=use_geom_xpos)
+    ref = load_reference_seq(task_name=task_name, seq_name=seq_name, use_geom_xpos=use_geom_xpos)
 
     print(f"Loaded reference sequence of shape {ref.shape}")
     return ref
@@ -258,24 +351,29 @@ def interquartile_mean_and_ci(values, confidence=0.95):
     
     return interquartile_mean, ci_lower, ci_upper
 
-def compute_performance(rollout_directory, performance_metric):
+def compute_performance(rollout_directory, performance_metric, ref_seq_name=""):
     
-    ref = load_ref(rollout_directory)
-    rollouts, timesteps = load_rollouts(rollout_directory)
+    ref = load_ref(rollout_directory, seq_name=ref_seq_name)
+    rollouts, timesteps, rollout_qpos = load_rollouts(rollout_directory)
 
     performances = []
     cis_lower = []
     cis_upper = []
-    for rollout in rollouts:
+    for i in range(len(rollouts)):
+        rollouts_for_a_timestep = rollouts[i]
+        rollouts_qpos_for_a_timestep = rollout_qpos[i]
+
         rollout_performances = []
-        if len(rollout.shape) == 3: 
+        if len(rollouts_for_a_timestep.shape) == 3: 
             # if there aren't multiple eval runs for this rollout
             # This is a hack to get around some older ground truth runs not having multiple eval samples
             # TODO: remove this, and get multiple runs for all (especially ground truth)
-            rollout = rollout[None]
-        for sample in rollout:
+            rollouts_for_a_timestep = rollouts_for_a_timestep[None]
 
-            performance = performance_metric(sample, ref)
+        for j in range(len(rollouts_for_a_timestep)):
+            sample = rollouts_for_a_timestep[j]
+            sample_qpos = rollouts_qpos_for_a_timestep[j]
+            performance, _ = performance_metric(sample, ref, sample_qpos)
             rollout_performances.append(performance)
         iqm, ci_lower, ci_upper = interquartile_mean_and_ci(rollout_performances)
         performances.append(iqm)
@@ -283,10 +381,11 @@ def compute_performance(rollout_directory, performance_metric):
         cis_upper.append(ci_upper)
     return performances, cis_lower, cis_upper, timesteps
 
-def compute_performance_many_experiments(rollout_directories, performance_metric):
+def compute_performance_many_experiments(rollout_directories, performance_metric, ref_seq_name=""):
     all_rollout_performances = {}
     for rollout_directory in rollout_directories:
-        rollout_performances, cis_lower, cis_upper, timesteps = compute_performance(rollout_directory, performance_metric)
+        print(f"Computing performance for {rollout_directory}")
+        rollout_performances, cis_lower, cis_upper, timesteps = compute_performance(rollout_directory, performance_metric, ref_seq_name=ref_seq_name)
         all_rollout_performances[rollout_directory] = (rollout_performances,cis_lower, cis_upper, timesteps)
     
     return all_rollout_performances
@@ -294,10 +393,11 @@ def compute_performance_many_experiments(rollout_directories, performance_metric
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-w", "--workshop", default=False,  action="store_true", help="Generate plots for the workshop experiments defined in workshop_experiments_folders.py")    
+    parser.add_argument("-v", "--visual_result", default=False,  action="store_true", help="Generate plots for the visual reward results for the workshop experiments defined in workshop_experiments_folders.py")
 
     args = parser.parse_args()
 
-    def metric(rollout, reference):
+    def metric(rollout, reference, rollout_qpos=None):
         """
         Compute based on the entire body's joint positions
         """
@@ -306,7 +406,7 @@ if __name__ == "__main__":
 
         return rollout_matching_metric(rollout, reference, joint_distance_threshold, N_timesteps_threshold)
     
-    def torso_metric(rollout, reference):
+    def torso_metric(rollout, reference, rollout_qpos=None):
         """
         Compute based on the
         - Torso height
@@ -319,7 +419,7 @@ if __name__ == "__main__":
         joint_weights[12:] = 1
 
         return rollout_matching_metric(rollout, reference, joint_distance_threshold, N_timesteps_threshold, joint_weights)
-    def arms_metric(rollout, reference):
+    def arms_metric(rollout, reference, rollout_qpos=None):
         """
         Compute based on the
         - Arms
@@ -331,15 +431,49 @@ if __name__ == "__main__":
 
         return rollout_matching_metric(rollout, reference, joint_distance_threshold, N_timesteps_threshold, joint_weights)
     
+    def workshop_metric(rollout, reference, rollout_qpos):
+        """
+        Compute based on the
+        - Torso height
+        - Arms
+
+        Arms are based on weighted euclidean distance. Torso height is an indicator function. 
+            If the torso height is above a certain threshold, we look at arm based success. Otherwise, there's no success. 
+
+        Because rollout is using geom_xpos (it has already been normalized with respect to the torso)
+            Instead, to get the torso height, we will use the qpos of the rollout
+        """
+        N_timesteps_threshold = 3
+        joint_distance_threshold = .5
+        joint_weights = np.zeros((18, 3))
+        joint_weights[12:] = 1
+        min_torso_height = 1.1
+
+        return rollout_matching_metric_with_torso_height(rollout, reference, rollout_qpos, joint_distance_threshold, N_timesteps_threshold, joint_weights, min_torso_height)
+    
     plot_folder = "workshop_figs"
 
     if args.workshop:
         """
-        Based on the experiments defined in workshop_experiments_folders.py, generate plots comparing the performance of the different experiments
+        Usage to plot workshop results (Based on the experiments defined in workshop_experiments_folders.py)
 
-        For each task defined in the experiments_dict, the plots are stored in workshop_figs/{task_name}/
+        Create plots for the workshop paper's joint-based distance metrics (the plots are stored in workshop_figs/joint_distance_metric_exp_figs/{task_name}/)
+            python eval_performance.py -w
+
+        Create plots for the workshop paper's visual-based distance metrics (the plots are stored in workshop_figs/visual_distance_metric_exp_figs/{task_name}/)
+            python eval_performance.py -w -v
         """
-        from workshop_experiments_folders import experiments_dict
+        from workshop_experiments_folders import joint_based_experiments_dict, visual_based_experiments_dict, task_name_to_plot
+
+        if args.visual_result:
+            experiments_dict = visual_based_experiments_dict
+            plot_folder = os.path.join(plot_folder, "visual_distance_metric_exp_figs")
+        else:
+            experiments_dict = joint_based_experiments_dict
+            plot_folder = os.path.join(plot_folder, "joint_distance_metric_exp_figs")
+
+        performance_metric_name = "torso-and-arms"
+        performance_metric = workshop_metric
 
         for task_name in experiments_dict.keys():
             baseline = experiments_dict[task_name]['ground_truth_baseline']
@@ -352,20 +486,19 @@ if __name__ == "__main__":
                 if sequence_type != 'ground_truth_baseline':
                     print(f"==== Computing performance for {task_name} - {sequence_type} ====")
 
-                    for d, d_name in zip([metric, torso_metric, arms_metric], ["full_body_metric", "torso_metric", "arms_metric"]):
-                        baseline_labels = list(baseline.keys())
-                        baseline_dirs = [baseline[baseline_label] for baseline_label in baseline_labels]
+                    baseline_labels = list(baseline.keys())
+                    baseline_dirs = [baseline[baseline_label] for baseline_label in baseline_labels]
 
-                        exp_labels = list(experiments_dict[task_name][sequence_type].keys())
-                        exp_dirs = [experiments_dict[task_name][sequence_type][exp_label] for exp_label in exp_labels]
+                    exp_labels = list(experiments_dict[task_name][sequence_type].keys())
+                    exp_dirs = [experiments_dict[task_name][sequence_type][exp_label] for exp_label in exp_labels]
 
-                        all_exp_labels = baseline_labels + exp_labels
-                        all_exp_dirs = baseline_dirs + exp_dirs
+                    all_exp_labels = baseline_labels + exp_labels
+                    all_exp_dirs = baseline_dirs + exp_dirs
 
-                        performance = compute_performance_many_experiments(all_exp_dirs, d)
-                        
-                        plot_file = os.path.join(task_plot_folder, f"{task_name}_{d_name}_{sequence_type}")
-                        plot_multiple_directories(performance, labels=all_exp_labels, output_file=plot_file)                  
+                    performance = compute_performance_many_experiments(all_exp_dirs, performance_metric, ref_seq_name=sequence_type)
+                    
+                    plot_file = os.path.join(task_plot_folder, f"{task_name}_{performance_metric_name}_{sequence_type}")
+                    plot_multiple_directories(performance, labels=all_exp_labels, title=task_name_to_plot[task_name], output_file=plot_file)                  
     else:
         experiment_directories = [
         "/share/portal/hw575/CrossQ/train_logs/2024-10-04-004735_sb3_sac_envr=goal_only_euclidean_geom_xpos-t=right_arm_extend_wave_higher_rm=hand_engineered_nt=None", # training for reference rollout

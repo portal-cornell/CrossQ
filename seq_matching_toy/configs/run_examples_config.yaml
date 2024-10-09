@@ -3,14 +3,17 @@ example: criss_cross_0
 cost_fn: nav_shortest_path
 
 seq_matching_fns:
-  # - name: ot
-  #   gamma: 0
-  #   scale: 1
-  # - name: dtw
-  #   scale: 1
-  #   pos_offset: 6
-  #   post_processing_method: 
-  #     - convert_to_positive_reward
+  - name: ot
+    gamma: 0
+    scale: 1
+    pos_offset: 2
+    post_processing_method: 
+      - convert_to_positive_reward
+  - name: dtw
+    scale: 1
+    pos_offset: 2
+    post_processing_method: 
+      - convert_to_positive_reward
   # - name: dtw
   #   scale: 1
   #   pos_offset: 6
@@ -23,12 +26,12 @@ seq_matching_fns:
   #   post_processing_method: 
   #     - convert_to_positive_reward
   #     - stage_multiplier_plus_based_on_last_state
-  - name: soft_dtw
-    gamma: 5
-    scale: 1
-    pos_offset: 4
-    post_processing_method: 
-      - convert_to_positive_reward
+  # - name: soft_dtw
+  #   gamma: 5
+  #   scale: 1
+  #   pos_offset: 3
+  #   post_processing_method: 
+  #     - convert_to_positive_reward
   # - name: soft_dtw
   #   gamma: 5
   #   scale: 1
@@ -50,41 +53,41 @@ seq_matching_fns:
   #   post_processing_method: 
   #     - convert_to_positive_reward
   #     - stage_multiplier_based_on_last_state
-  - name: soft_dtw
-    gamma: 5
-    scale: 1
-    pos_offset: 4
-    post_processing_method: 
-      - convert_to_positive_reward
-      - stage_multiplier_plus_based_on_max
-  - name: soft_dtw
-    gamma: 5
-    scale: 1
-    pos_offset: 4
-    post_processing_method: 
-      - convert_to_positive_reward
-      - stage_multiplier_plus_based_on_last_state
-  - name: soft_dtw
-    gamma: 10000
-    scale: 1
-    pos_offset: 4
-    post_processing_method: 
-      - convert_to_positive_reward
-  - name: soft_dtw
-    gamma: 10000
-    scale: 1
-    stage_bonus: 0
-    pos_offset: 4
-    post_processing_method: 
-      - convert_to_positive_reward 
-      - stage_multiplier_plus_based_on_max
-  - name: soft_dtw
-    gamma: 10000
-    scale: 1
-    pos_offset: 4
-    post_processing_method: 
-      - convert_to_positive_reward 
-      - stage_multiplier_plus_based_on_last_state
+  # - name: soft_dtw
+  #   gamma: 5
+  #   scale: 1
+  #   pos_offset: 4
+  #   post_processing_method: 
+  #     - convert_to_positive_reward
+  #     - stage_multiplier_plus_based_on_max
+  # - name: soft_dtw
+  #   gamma: 5
+  #   scale: 1
+  #   pos_offset: 4
+  #   post_processing_method: 
+  #     - convert_to_positive_reward
+  #     - stage_multiplier_plus_based_on_last_state
+  # - name: soft_dtw
+  #   gamma: 10000
+  #   scale: 1
+  #   pos_offset: 4
+  #   post_processing_method: 
+  #     - convert_to_positive_reward
+  # - name: soft_dtw
+  #   gamma: 10000
+  #   scale: 1
+  #   stage_bonus: 0
+  #   pos_offset: 4
+  #   post_processing_method: 
+  #     - convert_to_positive_reward 
+  #     - stage_multiplier_plus_based_on_max
+  # - name: soft_dtw
+  #   gamma: 10000
+  #   scale: 1
+  #   pos_offset: 4
+  #   post_processing_method: 
+  #     - convert_to_positive_reward 
+  #     - stage_multiplier_plus_based_on_last_state
 plot:
   rolcol_size: 2
 
