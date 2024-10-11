@@ -181,7 +181,7 @@ visual_rollout_gt_reference_experiments_dict = {
         "intermediate_10_frames": {
             "SDTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-09-215538_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
             "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-045016_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
-            "DTW+": "",
+            "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-183332_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-090904_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-003555_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_mrm=ot_vrm=joint_pred_resnet_nt=None",
         },
@@ -193,7 +193,7 @@ visual_rollout_gt_reference_experiments_dict = {
         "intermediate_10_frames": {
             "SDTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-09-215448_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
             "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-044801_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
-            "DTW+": "",
+            "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-183815_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-090651_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-003425_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=ot_vrm=joint_pred_resnet_nt=None"
         }
@@ -205,7 +205,7 @@ visual_rollout_gt_reference_experiments_dict = {
         "intermediate_10_frames": {
             "SDTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-09-215440_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_out_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
             "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-050147_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_out_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
-            "DTW+": "",
+            "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-183653_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-094722_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-002357_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_out_mrm=ot_vrm=joint_pred_resnet_nt=None"
         }
@@ -217,7 +217,7 @@ visual_rollout_gt_reference_experiments_dict = {
         'intermediate_10_frames': {
             "SDTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-09-160344_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_out_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
             "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-044621_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_out_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
-            "DTW+": "",
+            "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-183706_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-090020_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-003242_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_out_mrm=ot_vrm=joint_pred_resnet_nt=None"
         }
@@ -229,7 +229,7 @@ visual_rollout_gt_reference_experiments_dict = {
         "intermediate_10_frames": {
             "SDTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-09-160341_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
             "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-044628_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
-            "DTW+": "",
+            "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-183852_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-090020_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-003330_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=ot_vrm=joint_pred_resnet_nt=None"
         }
@@ -241,9 +241,9 @@ visual_rollout_gt_reference_experiments_dict = {
         "intermediate_10_frames": {
             "SDTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-09-215550_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
             "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-045714_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
-            "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-001906_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=dtw_vrm=joint_pred_resnet_nt=None",
+            "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-184104_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-094249_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=dtw_vrm=joint_pred_resnet_nt=None",
-            "OT": ""
+            "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-10-215207_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=ot_vrm=joint_pred_resnet_nt=None"
         }
     }
 }

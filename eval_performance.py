@@ -221,6 +221,7 @@ def plot_multiple_directories(directory_results,
     for (dir_name, (performances, lower, upper, timesteps)), color, label_id in zip(directory_results.items(), colors, label_ids):
         # Plot main line with confidence band
         timesteps = np.array(timesteps)
+        
         performances = smooth(np.array(performances), alpha=smoothing)
         lower = smooth(np.array(lower), alpha=smoothing)
         upper = smooth(np.array(upper), alpha=smoothing)
@@ -375,6 +376,7 @@ def compute_performance(rollout_directory, performance_metric, ref_seq_name=""):
             sample_qpos = rollouts_qpos_for_a_timestep[j]
             performance = performance_metric(sample, ref, sample_qpos)
             rollout_performances.append(performance)
+        
         iqm, ci_lower, ci_upper = interquartile_mean_and_ci(rollout_performances)
         performances.append(iqm)
         cis_lower.append(ci_lower)
