@@ -373,7 +373,7 @@ def compute_performance(rollout_directory, performance_metric, ref_seq_name=""):
         for j in range(len(rollouts_for_a_timestep)):
             sample = rollouts_for_a_timestep[j]
             sample_qpos = rollouts_qpos_for_a_timestep[j]
-            performance, _ = performance_metric(sample, ref, sample_qpos)
+            performance = performance_metric(sample, ref, sample_qpos)
             rollout_performances.append(performance)
         iqm, ci_lower, ci_upper = interquartile_mean_and_ci(rollout_performances)
         performances.append(iqm)
@@ -384,6 +384,8 @@ def compute_performance(rollout_directory, performance_metric, ref_seq_name=""):
 def compute_performance_many_experiments(rollout_directories, performance_metric, ref_seq_name=""):
     all_rollout_performances = {}
     for rollout_directory in rollout_directories:
+        if not rollout_directory:
+            continue
         print(f"Computing performance for {rollout_directory}")
         rollout_performances, cis_lower, cis_upper, timesteps = compute_performance(rollout_directory, performance_metric, ref_seq_name=ref_seq_name)
         all_rollout_performances[rollout_directory] = (rollout_performances,cis_lower, cis_upper, timesteps)
@@ -463,11 +465,13 @@ if __name__ == "__main__":
         Create plots for the workshop paper's visual-based distance metrics (the plots are stored in workshop_figs/visual_distance_metric_exp_figs/{task_name}/)
             python eval_performance.py -w -v
         """
-        from workshop_experiments_folders import joint_based_experiments_dict, visual_based_experiments_dict, task_name_to_plot
+        from workshop_experiments_folders import joint_based_experiments_dict, visual_based_experiments_dict, visual_rollout_gt_reference_experiments_dict, task_name_to_plot
 
         if args.visual_result:
             experiments_dict = visual_based_experiments_dict
             plot_folder = os.path.join(plot_folder, "visual_distance_metric_exp_figs")
+            # experiments_dict = visual_rollout_gt_reference_experiments_dict
+            # plot_folder = os.path.join(plot_folder, "visual_rollout_gt_reference_experiments_dict")
         else:
             experiments_dict = joint_based_experiments_dict
             plot_folder = os.path.join(plot_folder, "joint_distance_metric_exp_figs")

@@ -11,3 +11,4 @@ confidence_kappa: 2 # from wild visual navigation (higher -> relaxed uncertainty
 add_to_gt_rewards: True
 rank: 0
 target_joint_state: /share/portal/hw575/CrossQ/create_demo/demos/left-arm-extend-wave-higher_geom-xpos.npy
+scale_uncertainty_before_matching: False

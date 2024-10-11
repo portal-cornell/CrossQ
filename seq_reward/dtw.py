@@ -1,10 +1,12 @@
 import numpy as np
 
-def compute_dtw_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1, inverted_cost=False, modification_dict={}):
+def compute_dtw_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1, inverted_cost=False,  uncertainty_scaling_matrix=None, modification_dict={}):
     # Calculate the cost matrix between the reference sequence and the observed sequence
     #   size: (train_freq, ref_seq_len)
     cost_matrix = cost_fn(obs, ref)
-
+    if uncertainty_scaling_matrix is not None:
+        cost_matrix = cost_matrix * uncertainty_scaling_matrix
+        
     if modification_dict != {}:
         if modification_dict["method"] == "equal_dist_cost":
             cost_scale = modification_dict["cost_scale"]

@@ -208,7 +208,7 @@ def vlm_inference_worker(rank: int, cfg: DictConfig, stop_event: multiprocessing
 
     Parameters:
         rank: int
-            The rank of the worker
+            The rank of the workerYu
         cfg: DictConfig
             The hydra config object
         stop_event: multiprocessing.Event

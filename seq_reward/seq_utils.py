@@ -145,7 +145,7 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
             fn_name = f"{fn_name}_g=F"
         else:
             fn_name = f"{fn_name}_g={gamma}"
-        fn = lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale: compute_soft_dtw_reward(obs_seq, ref_seq, cost_fn, gamma, scale,inverted_cost=inverted_cost)
+        fn = lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale, uncertainty_scaling_matrix=None: compute_soft_dtw_reward(obs_seq, ref_seq, cost_fn, gamma, scale,inverted_cost=inverted_cost, uncertainty_scaling_matrix=uncertainty_scaling_matrix)
     else:
         raise NotImplementedError(f"Unknown sequence matching function: {fn_name}")
     

@@ -1,7 +1,7 @@
 import numpy as np
 import ot
 
-def compute_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1, gamma=0.01, modification_dict={}) -> np.ndarray:
+def compute_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1, gamma=0.01,uncertainty_scaling_matrix=None, modification_dict={}) -> np.ndarray:
     """
     Compute the Optimal Transport (OT) reward between the reference sequence and the observed sequence
 
@@ -23,6 +23,8 @@ def compute_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1, gamma=
     # Calculate the cost matrix between the reference sequence and the observed sequence
     #   size: (train_freq, ref_seq_len)
     cost_matrix = cost_fn(obs, ref)
+    if uncertainty_scaling_matrix is not None:
+        cost_matrix = cost_matrix * uncertainty_scaling_matrix
 
     if modification_dict != {}:
         if modification_dict["method"] == "equal_dist_cost":

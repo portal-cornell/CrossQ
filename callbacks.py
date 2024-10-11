@@ -59,6 +59,8 @@ class VisualJointBasedSeqRewardCallback(BaseCallback):
         self.visual_model_device = f"cuda:{rank}"
 
         self.uncertainty_stats_for_logging = RunningStats()
+
+        self.scale_uncertainty_before_matching = self.visual_model_cfg.get('scale_uncertainty_before_matching', False)
         
         logger.info(f"[VisualSeqRewardCallback] Initialized with matching fn {self._matching_fn_name} and batch_size={self.batch_size}")
 
@@ -69,9 +71,10 @@ class VisualJointBasedSeqRewardCallback(BaseCallback):
 
         if self.use_image_for_ref:
             ref_seq_torch = th.as_tensor(np.array(self._ref_seq)).permute(0,3,1,2).to(self.visual_model_device) / 255.0
-            joint_positions, _ = self.model.compute_joint_predictions_with_uncertainty(ref_seq_torch)
+            joint_positions, uncertainties = self.model.compute_joint_predictions_with_uncertainty(ref_seq_torch)
             joint_positions = joint_positions.view(-1, 18, 3) # TODO: hard coding joint dim here for ease
             self._ref_seq = joint_positions.cpu().numpy()
+            self._ref_conf = self.model.compute_confidence_weights(uncertainties.cpu().numpy(), self.model.uncertainty_stats)
 
     def _on_training_end(self) -> None:
         """
@@ -125,8 +128,24 @@ class VisualJointBasedSeqRewardCallback(BaseCallback):
             env_joint_positions = joint_positions[:, env_i]
             env_confidence_weights = confidence_weights[:, env_i] 
 
-            matching_reward, _ = self._matching_fn(env_joint_positions, self._ref_seq) 
-            matching_reward *= env_confidence_weights
+            
+            if self.scale_uncertainty_before_matching:
+                # multiply the cost matrix for sequence matching by the inverse of the confidence
+                # i.e., a low confidence for both ref and obs -> higher cost -> less matching for a given obs
+                # a high confidence for one but not the other obs -> somewhat higher cost -> less matching for a given obs
+                # high confidence for both -> lower cost -> more matching
+                conf_scaling_matrix = np.tile(env_confidence_weights.reshape(-1, 1), (1, len(self._ref_seq)))
+
+                if self.use_image_for_ref:
+                    ref_conf_scaling_matrix = np.tile(self._ref_conf, (len(env_joint_positions), 1))
+                    conf_scaling_matrix *= ref_conf_scaling_matrix
+
+                uncertainty_scaling_matrix = 1 - conf_scaling_matrix
+                
+                matching_reward, _ = self._matching_fn(env_joint_positions, self._ref_seq, uncertainty_scaling_matrix=uncertainty_scaling_matrix) 
+            else:
+                matching_reward, _ = self._matching_fn(env_joint_positions, self._ref_seq) 
+                matching_reward *= env_confidence_weights
             matching_reward_list.append(matching_reward)
         
         rewards = np.stack(matching_reward_list, axis=1)
@@ -250,7 +269,7 @@ class JointBasedSeqRewardCallback(BaseCallback):
                 obs = obs_to_process[:, env_i]
             else:
                 obs = obs_to_process[:, env_i, :22]  # size: (train_freq, 22)
-            
+
             matching_reward, _ = self._matching_fn(obs, self._ref_seq)  # size: (train_freq,)
             # logger.debug(f"matching_reward={matching_reward.shape}")
             matching_reward_list.append(matching_reward)

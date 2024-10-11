@@ -2,12 +2,14 @@ from tslearn.metrics import SoftDTW
 
 import numpy as np
 
-def compute_soft_dtw_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, gamma=1, scale=1, inverted_cost=False, modification_dict={}) -> np.ndarray:
+def compute_soft_dtw_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, gamma=1, scale=1, uncertainty_scaling_matrix=None, inverted_cost=False, modification_dict={}) -> np.ndarray:
     assert gamma > 0, "Currently not supporting gamma == 0"
 
     # Calculate the cost matrix between the reference sequence and the observed sequence
     #   size: (train_freq, ref_seq_len)
     cost_matrix = cost_fn(obs, ref)
+    if uncertainty_scaling_matrix is not None:
+        cost_matrix = cost_matrix * uncertainty_scaling_matrix
 
     if modification_dict != {}:
         if modification_dict["method"] == "equal_dist_cost":
