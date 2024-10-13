@@ -108,6 +108,8 @@ visual_based_experiments_dict = {
             "DTW+": "",
             "DTW": "",
             "OT": "",
+            "roboclip_sac": "/home/aw588/git_annshin/roboclip_local/train_logs/2024-10-12-200152_t=right_arm_extend_wave_higher_nt=sac",
+            "roboclip_ppo": "/home/aw588/git_annshin/roboclip_local/train_logs/2024-10-13-134730_t=right_arm_extend_wave_higher_nt=ppo",
         },
     },
     "left_arm_extend_wave_higher": {
@@ -119,7 +121,9 @@ visual_based_experiments_dict = {
             "SDTW": "",
             "DTW+": "",
             "DTW": "",
-            "OT": ""
+            "OT": "",
+            "roboclip_sac": "/home/aw588/git_annshin/roboclip_local/train_logs/2024-10-12-154406_t=left_arm_extend_wave_higher_nt=sac",
+            "roboclip_ppo": "/home/aw588/git_annshin/roboclip_local/train_logs/2024-10-12-205955_t=left_arm_extend_wave_higher_nt=ppo",
         }
     },
     "right_arm_out": {
@@ -131,7 +135,9 @@ visual_based_experiments_dict = {
             "SDTW": "",
             "DTW+": "",
             "DTW": "",
-            "OT": ""
+            "OT": "",
+            "roboclip_sac": "/home/aw588/git_annshin/roboclip_local/train_logs/2024-10-12-154616_t=right_arm_out_nt=sac",
+            "roboclip_ppo": "/home/aw588/git_annshin/roboclip_local/train_logs/2024-10-13-134739_t=right_arm_out_nt=ppo",
         }
     },
     "left_arm_out": {
@@ -143,7 +149,9 @@ visual_based_experiments_dict = {
             "SDTW": "",
             "DTW+": "",
             "DTW": "",
-            "OT": ""
+            "OT": "",
+            "roboclip_sac": "/home/aw588/git_annshin/roboclip_local/train_logs/2024-10-12-205825_t=left_arm_out_nt=sac",
+            "roboclip_ppo": "/home/aw588/git_annshin/roboclip_local/train_logs/2024-10-13-134746_t=left_arm_out_nt=ppo",
         }
     },
     "both_arms_out": {
@@ -155,7 +163,9 @@ visual_based_experiments_dict = {
             "SDTW": "",
             "DTW+": "",
             "DTW": "",
-            "OT": ""
+            "OT": "",
+            "roboclip_sac": "/home/aw588/git_annshin/roboclip_local/train_logs/2024-10-12-154244_t=both_arms_out_nt=sac",
+            "roboclip_ppo": "/home/aw588/git_annshin/roboclip_local/train_logs/2024-10-12-205908_t=both_arms_out_nt=ppo",
         }
     },
     "both_arms_down": {
@@ -167,7 +177,9 @@ visual_based_experiments_dict = {
             "SDTW": "",
             "DTW+": "",
             "DTW": "",
-            "OT": ""
+            "OT": "",
+            "roboclip_sac": "/home/aw588/git_annshin/roboclip_local/train_logs/2024-10-12-154447_t=both_arms_down_nt=sac",
+            "roboclip_ppo": "/home/aw588/git_annshin/roboclip_local/train_logs/2024-10-13-134733_t=both_arms_down_nt=ppo",
         }
     }
 }
