@@ -22,6 +22,7 @@ import numpy as np
 import scipy.stats as stats
 from torchvision.utils import save_image
 import argparse
+import pdb
 
 def weighted_euclidean_distance(batch_1, batch_2, weights):
     """
@@ -219,11 +220,24 @@ def plot_multiple_directories(directory_results,
     
     # Plot each directory's data
     for (dir_name, (performances, lower, upper, timesteps)), color, label_id in zip(directory_results.items(), colors, label_ids):
+        # Skip every other performance
+        performances = performances[1:][::2]
+        lower = lower[1:][::2]
+        upper = upper[1:][::2]
+        timesteps = timesteps[1:][::2]
+
         # Plot main line with confidence band
         timesteps = np.array(timesteps)
-        performances = smooth(np.array(performances), alpha=smoothing)
-        lower = smooth(np.array(lower), alpha=smoothing)
-        upper = smooth(np.array(upper), alpha=smoothing)
+        # performances = smooth(np.array(performances), alpha=smoothing)
+        # lower = smooth(np.array(lower), alpha=smoothing)
+        # upper = smooth(np.array(upper), alpha=smoothing)
+        window_size = 3
+        performances = smooth_with_pd_rolling(np.array(performances), window_size)
+        lower = smooth_with_pd_rolling(np.array(lower), window_size)
+        upper = smooth_with_pd_rolling(np.array(upper), window_size)
+
+        print(f"After Smoothing Performance: {np.array(performances).shape}")
+
         # Plot confidence interval
         plt.fill_between(timesteps, lower, upper, color=color, alpha=0.2)
       
@@ -248,8 +262,7 @@ def plot_multiple_directories(directory_results,
     plt.grid(True, linestyle='--', alpha=0.3)
     
     # Adjust legend
-    plt.legend()
-    
+    # plt.legent()
 
     plt.tight_layout()
     
@@ -324,6 +337,11 @@ def smooth(x, alpha:int):
         return smoothed_x
     return x
 
+def smooth_with_pd_rolling(data, window_size):
+    import pandas as pd
+    data = pd.Series(data)
+    return data.rolling(window=window_size).mean()
+
 def interquartile_mean_and_ci(values, confidence=0.95):
     # Sort the array
     sorted_values = np.sort(values)
@@ -351,11 +369,26 @@ def interquartile_mean_and_ci(values, confidence=0.95):
     
     return interquartile_mean, ci_lower, ci_upper
 
+def mean_and_ci(values, confidence=0.95):
+    """Calculate the mean and confidence interval of a list of values"""
+    sample_mean = np.mean(values)
+    sem = stats.sem(values)  # Standard Error of the Mean
+    
+    # Compute the margin of error for the 95% confidence interval
+    margin_of_error = sem * stats.t.ppf((1 + confidence) / 2., len(values)-1)
+    
+    # Compute the confidence interval
+    ci_lower = sample_mean - margin_of_error
+    ci_upper = sample_mean + margin_of_error
+    
+    return sample_mean, ci_lower, ci_upper
+
 def compute_performance(rollout_directory, performance_metric, ref_seq_name=""):
     
     ref = load_ref(rollout_directory, seq_name=ref_seq_name)
     rollouts, timesteps, rollout_qpos = load_rollouts(rollout_directory)
 
+    all_rollout_performances_across_timesteps = []  # Store all the rollout performances across timesteps (# of timesteps, 8), where 8 is the number of eval runs per timestep
     performances = []
     cis_lower = []
     cis_upper = []
@@ -375,20 +408,34 @@ def compute_performance(rollout_directory, performance_metric, ref_seq_name=""):
             sample_qpos = rollouts_qpos_for_a_timestep[j]
             performance, _ = performance_metric(sample, ref, sample_qpos)
             rollout_performances.append(performance)
-        iqm, ci_lower, ci_upper = interquartile_mean_and_ci(rollout_performances)
-        performances.append(iqm)
+
+        all_rollout_performances_across_timesteps.extend(rollout_performances)
+
+        # iqm, ci_lower, ci_upper = interquartile_mean_and_ci(rollout_performances)
+        mean, ci_lower, ci_upper = mean_and_ci(rollout_performances)
+        performances.append(mean)
         cis_lower.append(ci_lower)
         cis_upper.append(ci_upper)
-    return performances, cis_lower, cis_upper, timesteps
+
+    return performances, cis_lower, cis_upper, timesteps, all_rollout_performances_across_timesteps
 
 def compute_performance_many_experiments(rollout_directories, performance_metric, ref_seq_name=""):
+    """
+    Return
+        all_rollout_performances - Dictionary mapping rollout directories to (performances, cis_lower, cis_upper, timesteps)
+        raw_all_rollout_performances - Dictionary mapping rollout directories to all_rollout_performances_across_timesteps
+            Essentially, this is the raw success rate that was used to compute performances, cis_lower, and cis_upper
+                We accumulate this so that we can plot the IQM (which is across all tasks)
+    """
     all_rollout_performances = {}
+    raw_all_rollout_performances = {}
     for rollout_directory in rollout_directories:
         print(f"Computing performance for {rollout_directory}")
-        rollout_performances, cis_lower, cis_upper, timesteps = compute_performance(rollout_directory, performance_metric, ref_seq_name=ref_seq_name)
+        rollout_performances, cis_lower, cis_upper, timesteps, all_rollout_performances_across_timesteps = compute_performance(rollout_directory, performance_metric, ref_seq_name=ref_seq_name)
         all_rollout_performances[rollout_directory] = (rollout_performances,cis_lower, cis_upper, timesteps)
+        raw_all_rollout_performances[rollout_directory] = all_rollout_performances_across_timesteps
     
-    return all_rollout_performances
+    return all_rollout_performances, raw_all_rollout_performances
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -486,19 +533,23 @@ if __name__ == "__main__":
                 if sequence_type != 'ground_truth_baseline':
                     print(f"==== Computing performance for {task_name} - {sequence_type} ====")
 
-                    baseline_labels = list(baseline.keys())
-                    baseline_dirs = [baseline[baseline_label] for baseline_label in baseline_labels]
+                    # baseline_labels = list(baseline.keys())
+                    # baseline_dirs = [baseline[baseline_label] for baseline_label in baseline_labels]
 
                     exp_labels = list(experiments_dict[task_name][sequence_type].keys())
                     exp_dirs = [experiments_dict[task_name][sequence_type][exp_label] for exp_label in exp_labels]
 
-                    all_exp_labels = baseline_labels + exp_labels
-                    all_exp_dirs = baseline_dirs + exp_dirs
+                    # all_exp_labels = baseline_labels + exp_labels
+                    # all_exp_dirs = baseline_dirs + exp_dirs
+                    all_exp_labels = exp_labels
+                    all_exp_dirs = exp_dirs
 
-                    performance = compute_performance_many_experiments(all_exp_dirs, performance_metric, ref_seq_name=sequence_type)
+                    performance, raw_all_rollout_performances = compute_performance_many_experiments(all_exp_dirs, performance_metric, ref_seq_name=sequence_type)
                     
                     plot_file = os.path.join(task_plot_folder, f"{task_name}_{performance_metric_name}_{sequence_type}")
-                    plot_multiple_directories(performance, labels=all_exp_labels, title=task_name_to_plot[task_name], output_file=plot_file)                  
+                    plot_multiple_directories(performance, labels=all_exp_labels, title=task_name_to_plot[task_name], output_file=plot_file) 
+
+                    # breakpoint()                 
     else:
         experiment_directories = [
         "/share/portal/hw575/CrossQ/train_logs/2024-10-04-004735_sb3_sac_envr=goal_only_euclidean_geom_xpos-t=right_arm_extend_wave_higher_rm=hand_engineered_nt=None", # training for reference rollout
