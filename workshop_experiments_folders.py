@@ -95,7 +95,7 @@ joint_based_experiments_dict = {
     }
 }
 
-# Copy the format of joint_based_experiments_dict, but leave the path as empty string
+# Visual rollout + visual reference
 visual_based_experiments_dict = {
     "right_arm_extend_wave_higher": {
         "ground_truth_baseline": {
@@ -172,7 +172,7 @@ visual_based_experiments_dict = {
 }
 
 
-# Copy the format of joint_based_experiments_dict, but leave the path as empty string
+# Visual rollout + gt reference
 visual_rollout_gt_reference_experiments_dict = {
     "right_arm_extend_wave_higher": {
         "ground_truth_baseline": {
@@ -247,3 +247,84 @@ visual_rollout_gt_reference_experiments_dict = {
         }
     }
 }
+
+
+# Visual rollout + gt reference + pre match confidence scaling
+visual_rollout_gt_reference_pre_match_scaling = {
+    "right_arm_extend_wave_higher": {
+        "ground_truth_baseline": {
+            "Last-Joint": "/share/portal/hw575/CrossQ/train_logs/workshop_results/right_arm_extend_wave_higher/2024-10-06-111557_sb3_sac_envr=goal_only_euclidean_geom_xpos-t=right_arm_extend_wave_higher_rm=hand_engineered_nt=None"
+        },
+        "intermediate_10_frames": {
+            "SDTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-011853_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
+            "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-062019_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
+            "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-11-224705_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_mrm=dtw_vrm=joint_pred_resnet_nt=None",
+            "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-085110_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_mrm=dtw_vrm=joint_pred_resnet_nt=None",
+            "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-034933_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_mrm=ot_vrm=joint_pred_resnet_nt=None",
+        },
+    },
+    "left_arm_extend_wave_higher": {
+        "ground_truth_baseline": {
+            "Last-Joint": "/share/portal/hw575/CrossQ/train_logs/workshop_results/left_arm_extend_wave_higher/2024-10-07-215648_sb3_sac_envr=goal_only_euclidean_geom_xpos-t=left_arm_extend_wave_higher_rm=hand_engineered_nt=None"
+        },
+        "intermediate_10_frames": {
+            "SDTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-030250_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
+            "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-113915_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
+            "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-11-224547_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=dtw_vrm=joint_pred_resnet_nt=None",
+            "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-154405_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=dtw_vrm=joint_pred_resnet_nt=None",
+            "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-072005_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=ot_vrm=joint_pred_resnet_nt=None"
+        }
+    },
+    "right_arm_out": {
+        "ground_truth_baseline": {
+            "Last-Joint": "/share/portal/hw575/CrossQ/train_logs/workshop_results/right_arm_out/2024-10-08-012519_sb3_sac_envr=goal_only_euclidean_geom_xpos-t=right_arm_out_rm=hand_engineered_nt=None"
+        },
+        "intermediate_10_frames": {
+            "SDTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-035257_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_out_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
+            "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-120453_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_out_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
+            "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-11-234112_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
+            "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-160912_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
+            "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-075932_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_out_mrm=ot_vrm=joint_pred_resnet_nt=None"
+        }
+    },
+    "left_arm_out": {
+        "ground_truth_baseline": {
+            "Last-Joint": "/share/portal/hw575/CrossQ/train_logs/workshop_results/left_arm_out/2024-10-06-111708_sb3_sac_envr=goal_only_euclidean_geom_xpos-t=left_arm_out_rm=hand_engineered_nt=None"
+        },
+        'intermediate_10_frames': {
+            "SDTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-011951_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_out_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
+            "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-062515_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_out_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
+            "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-11-224629_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
+            "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-085919_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
+            "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-035312_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_out_mrm=ot_vrm=joint_pred_resnet_nt=None"
+        }
+    },
+    "both_arms_out": {
+        "ground_truth_baseline": {
+            "Last-Joint": "/share/portal/hw575/CrossQ/train_logs/workshop_results/both_arms_out/2024-10-07-220337_sb3_sac_envr=goal_only_euclidean_geom_xpos-t=both_arms_out_rm=hand_engineered_nt=None"
+        },
+        "intermediate_10_frames": {
+            "SDTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-030250_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
+            "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-114356_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
+            "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-11-224458_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
+            "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-155102_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
+            "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-072053_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=ot_vrm=joint_pred_resnet_nt=None"
+        }
+    },
+    "both_arms_down": {
+        "ground_truth_baseline": {
+            "Last-Joint": "/share/portal/hw575/CrossQ/train_logs/workshop_results/both_arms_down/2024-10-08-012937_sb3_sac_envr=goal_only_euclidean_geom_xpos-t=both_arms_down_rm=hand_engineered_nt=None"            
+        },
+        "intermediate_10_frames": {
+            "SDTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-071428_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
+            "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-113353_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
+            "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-12-025823_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=dtw_vrm=joint_pred_resnet_nt=None",
+            "DTW": "", # TODO
+            "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-11-224341_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=ot_vrm=joint_pred_resnet_nt=None"
+        }
+    }
+}
+
+
+
+

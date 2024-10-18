@@ -2,13 +2,17 @@ name: joint_pred_resnet
 vlm_model: resnet50
 rank0_batch_size_pct: 1.0  # Determine how many percentage of the batch the main worker (rank = 0) need to process when doing reward calculation
 reward_batch_size: 8 # Batch size sent to the VLM reward model
-# checkpoint: /share/portal/wph52/models/joint_pred/train_logs/default/2024-09-19-155952_model=resnet_linear_startpt=True_freezebackbone=False_xpos=True_lr=0.008nt=None/checkpoints/best_model_epoch_98.pth
-checkpoint: /share/portal/wph52/models/joint_pred/train_logs/default/2024-09-26-194446_model=resnet_reco_xpos=True_data=joints_xpos_seq_startpt=True_freezebackbone=True_lr=0.008nt=pretrained_uncertainty/checkpoints/best_model_epoch_29.pth
 output_dim: 54 # 18 joints * 3 dimensions each for joint geom xpos pos data
 estimate_confidence: True
-use_image_for_ref: True
-confidence_kappa: 2 # from wild visual navigation (higher -> relaxed uncertainty)
+confidence_kappa: 2  # from wild visual navigation (higher -> relaxed uncertainty)
+use_image_for_ref: False
 add_to_gt_rewards: True
 rank: 0
 target_joint_state: /share/portal/hw575/CrossQ/create_demo/demos/left-arm-extend-wave-higher_geom-xpos.npy
 scale_uncertainty_before_matching: False
+
+# New checkpoint (with fine tuning on gt sequence data)
+# checkpoint: /share/portal/wph52/models/joint_pred/train_logs/default/2024-10-11-205608_model=resnet_reco_xpos=True_data=joints_xpos_seq_startpt=True_freezebackbone=True_lr=0.008nt=reference_rollouts/checkpoints/best_model_epoch_98.pth
+
+# Old checkpoint (before fine tuning on gt sequence data)
+checkpoint: /share/portal/wph52/models/joint_pred/train_logs/default/2024-09-26-194446_model=resnet_reco_xpos=True_data=joints_xpos_seq_startpt=True_freezebackbone=True_lr=0.008nt=pretrained_uncertainty/checkpoints/best_model_epoch_29.pth

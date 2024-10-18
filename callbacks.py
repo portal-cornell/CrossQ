@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 import imageio
 import gymnasium
 import torch as th
+from torchvision import transforms
 import numpy as np
 from numpy import array
 from stable_baselines3.common.callbacks import BaseCallback
@@ -23,7 +24,7 @@ from numbers import Number
 from loguru import logger
 from einops import rearrange
 
-from seq_reward.seq_utils import get_matching_fn, load_reference_seq, load_images_from_reference_seq, seq_matching_viz
+from seq_reward.seq_utils import get_matching_fn, load_reference_seq, load_visual_reference_seq, load_images_from_reference_seq, seq_matching_viz
 from seq_reward.cost_fns import euclidean_distance_advanced, euclidean_distance_advanced_arms_only
 from vlm_reward.reward_models.joint_pred import load_joint_prediction_model
 
@@ -31,6 +32,8 @@ from vlm_reward.reward_main import compute_rewards
 from vlm_reward.reward_transforms import half_gaussian_filter_1d
 from constants import TASK_SEQ_DICT
 from utils import calc_iqm
+
+
 
 class VisualJointBasedSeqRewardCallback(BaseCallback):
     """
@@ -44,8 +47,14 @@ class VisualJointBasedSeqRewardCallback(BaseCallback):
         self.use_image_for_ref = use_image_for_ref
         
         # Load the ref seq. Note: if using image, it must be processed into an actual ref seq in _on_training_start (once the model has been initialized)
-        self._ref_seq = load_reference_seq(task_name=task_name, seq_name=matching_fn_cfg["seq_name"], use_geom_xpos=self.use_geom_xpos, use_image=self.use_image_for_ref)
-        logger.info(f"[VisualSeqRewardCallback] Loaded reference sequence. task_name={task_name}, seq_name={matching_fn_cfg['seq_name']}, shape={self._ref_seq.shape}")
+        
+        if self.use_image_for_ref:
+            # TODO: Will's hacky way of using the predicted joint states with the model fine tuned on the target trajectories
+            self._ref_seq= load_visual_reference_seq(task_name=task_name, seq_name=matching_fn_cfg['seq_name'])
+        else:
+            self._ref_seq = load_reference_seq(task_name=task_name, seq_name=matching_fn_cfg["seq_name"], use_geom_xpos=self.use_geom_xpos, use_image=self.use_image_for_ref)
+        
+        # logger.info(f"[VisualSeqRewardCallback] Loaded reference sequence. task_name={task_name}, seq_name={matching_fn_cfg['seq_name']}, shape={self._ref_seq.shape}")
         
         self._scale = matching_fn_cfg['scale']
         self._matching_fn, self._matching_fn_name = get_matching_fn(matching_fn_cfg, matching_fn_cfg["cost_fn"])
@@ -53,7 +62,6 @@ class VisualJointBasedSeqRewardCallback(BaseCallback):
         # visual specific attributes
         self.visual_model_cfg = visual_model_cfg
         self.batch_size = self.visual_model_cfg["reward_batch_size"]
-        self.kappa = self.visual_model_cfg["confidence_kappa"] # from wild visual navigation (higher -> relaxed uncertainty)
         self.add_to_gt_rewards = self.visual_model_cfg["add_to_gt_rewards"]
         rank = self.visual_model_cfg['rank']
         self.visual_model_device = f"cuda:{rank}"
@@ -65,16 +73,23 @@ class VisualJointBasedSeqRewardCallback(BaseCallback):
         logger.info(f"[VisualSeqRewardCallback] Initialized with matching fn {self._matching_fn_name} and batch_size={self.batch_size}")
 
     def _on_training_start(self) -> None:
-        """
-        This method is called before the first rollout starts.
-        """
-
         if self.use_image_for_ref:
-            ref_seq_torch = th.as_tensor(np.array(self._ref_seq)).permute(0,3,1,2).to(self.visual_model_device) / 255.0
-            joint_positions, uncertainties = self.model.compute_joint_predictions_with_uncertainty(ref_seq_torch)
-            joint_positions = joint_positions.view(-1, 18, 3) # TODO: hard coding joint dim here for ease
-            self._ref_seq = joint_positions.cpu().numpy()
-            self._ref_conf = self.model.compute_confidence_weights(uncertainties.cpu().numpy(), self.model.uncertainty_stats)
+            transform = transforms.Compose([
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ])  
+
+            transformed_frames = [transform(frame) for frame in self._ref_seq]
+
+            # Stack the transformed frames into a batch tensor
+            batch_tensor = th.stack(transformed_frames).to(self.visual_model_device)
+            
+            joint_positions, uncertainties = self.model.compute_joint_predictions_with_uncertainty(batch_tensor, apply_transform=False)
+
+            self._ref_seq = joint_positions.view(-1, 18, 3).detach().cpu().numpy()
+            self._ref_conf = self.model.compute_confidence_weights(uncertainties, self.model.uncertainty_stats).detach().cpu().numpy()
 
     def _on_training_end(self) -> None:
         """
@@ -128,7 +143,6 @@ class VisualJointBasedSeqRewardCallback(BaseCallback):
             env_joint_positions = joint_positions[:, env_i]
             env_confidence_weights = confidence_weights[:, env_i] 
 
-            
             if self.scale_uncertainty_before_matching:
                 # multiply the cost matrix for sequence matching by the inverse of the confidence
                 # i.e., a low confidence for both ref and obs -> higher cost -> less matching for a given obs
@@ -140,7 +154,7 @@ class VisualJointBasedSeqRewardCallback(BaseCallback):
                     ref_conf_scaling_matrix = np.tile(self._ref_conf, (len(env_joint_positions), 1))
                     conf_scaling_matrix *= ref_conf_scaling_matrix
 
-                uncertainty_scaling_matrix = 1 - conf_scaling_matrix
+                uncertainty_scaling_matrix = 2 - conf_scaling_matrix # so uncertainty scaling is never 0
                 
                 matching_reward, _ = self._matching_fn(env_joint_positions, self._ref_seq, uncertainty_scaling_matrix=uncertainty_scaling_matrix) 
             else:
@@ -473,6 +487,7 @@ class VideoRecorderCallback(BaseCallback):
         matching_fn_cfg: dict = {}, 
         visual_fn_cfg: dict = {},
         calc_visual_reward: bool = False,
+        scale_uncertainty_before_matching: bool = False,
         verbose=0
     ):
         """
@@ -502,13 +517,16 @@ class VideoRecorderCallback(BaseCallback):
         self._use_image_for_ref = use_image_for_ref
         self._threshold = threshold
         self._calc_visual_reward = calc_visual_reward
+        self._scale_uncertainty_before_matching = visual_fn_cfg.get('scale_uncertainty_before_matching', False)
         self._visual_model_device = f"cuda:{visual_model_rank}"
 
         if self._calc_visual_reward:
             self.all_uncertainties = []
 
         if task_name != "":
-            self._goal_ref_seq = load_reference_seq(task_name=task_name, seq_name="key_frames", use_geom_xpos=self._use_geom_xpos, use_image=self._use_image_for_ref)
+ 
+            self._goal_ref_seq = load_reference_seq(task_name=task_name, seq_name="key_frames", use_geom_xpos=self._use_geom_xpos, use_image=False)
+
             logger.info(f"[VideoRecorderCallback] Loaded reference sequence. task_name={task_name}, seq_name=key_frames, use_geom_xpos={self._use_geom_xpos}, shape={self._goal_ref_seq.shape}")
 
             self.set_ground_truth_goal_matching_fn(task_name, use_geom_xpos)
@@ -523,7 +541,13 @@ class VideoRecorderCallback(BaseCallback):
 
         if matching_fn_cfg != {}:
             # The reference sequence that is used to calculate the sequence matching reward
-            self._seq_matching_ref_seq = load_reference_seq(task_name=task_name, seq_name=matching_fn_cfg["seq_name"], use_geom_xpos=self._use_geom_xpos)
+            if self._use_image_for_ref:
+                # TODO: Will's hacky way of using the predicted joint states with the model fine tuned on the target trajectories
+                # Only works when there is a sequence matching function
+                self._seq_matching_ref_seq = load_visual_reference_seq(task_name, seq_name=matching_fn_cfg['seq_name'])
+            else:
+                self._seq_matching_ref_seq = load_reference_seq(task_name=task_name, seq_name=matching_fn_cfg["seq_name"], use_geom_xpos=self._use_geom_xpos)
+
             # For the frames, we remove the initial frame which matches the initial position
             self._seq_matching_ref_seq_frames = load_images_from_reference_seq(task_name=task_name, seq_name=matching_fn_cfg["seq_name"])[1:]
             # TODO: For now, we can only visualize this when the reference frame is defined via a gif
@@ -536,19 +560,28 @@ class VideoRecorderCallback(BaseCallback):
             self._reward_vmin = matching_fn_cfg.get("reward_vmin", -1)
             self._reward_vmax = matching_fn_cfg.get("reward_vmax", 0)
 
-            logger.info(f"[VideoRecorderCallback] Loaded reference sequence for seq level matching. task_name={task_name}, seq_name={matching_fn_cfg['seq_name']}, use_geom_xpos={self._use_geom_xpos}, shape={self._seq_matching_ref_seq.shape}, image_frames_shape={self._seq_matching_ref_seq_frames.shape}")
+            logger.info(f"[VideoRecorderCallback] Loaded reference sequence for seq level matching. task_name={task_name}, seq_name={matching_fn_cfg['seq_name']}, use_geom_xpos={self._use_geom_xpos},  image_frames_shape={self._seq_matching_ref_seq_frames.shape}")
         else:
             self._calc_matching_reward = False
     
     def _on_training_start(self) -> None:
-        """
-        This method is called before the first rollout starts.
-        """
         if self._use_image_for_ref:
-            ref_seq_torch = th.as_tensor(np.array(self._goal_ref_seq)).permute(0,3,1,2).to(self._visual_model_device) / 255.0
-            joint_positions, _ = self.model.compute_joint_predictions_with_uncertainty(ref_seq_torch)
-            joint_positions = joint_positions.view(-1, 18, 3) # TODO: hard coding joint dim here for ease
-            self._goal_ref_seq = joint_positions.cpu().numpy()
+            transform = transforms.Compose([
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ])  
+
+            transformed_frames = [transform(frame) for frame in self._seq_matching_ref_seq]
+
+            # Stack the transformed frames into a batch tensor
+            batch_tensor = th.stack(transformed_frames)
+            
+            joint_positions, uncertainties = self.model.compute_joint_predictions_with_uncertainty(batch_tensor, apply_transform=False)
+
+            self._seq_matching_ref_seq = joint_positions.view(-1, 18, 3).detach().cpu().numpy()
+            self._seq_matching_ref_conf = self.model.compute_confidence_weights(uncertainties, self.model.uncertainty_stats).detach().cpu().numpy()
 
     def _on_training_end(self) -> None:
         if self._calc_visual_reward:
@@ -827,11 +860,30 @@ class VideoRecorderCallback(BaseCallback):
 
                 joint_positions = joint_positions.cpu().numpy()
                 confidence_weights = confidence_weights.cpu().numpy()
-                vlm_matching_reward, vlm_matching_reward_info = self._matching_fn(joint_positions, self._seq_matching_ref_seq)
-                vlm_matching_reward *= confidence_weights
-                vlm_matching_reward_info["confidence"] = confidence_weights
 
+                if self._scale_uncertainty_before_matching:
+                    # multiply the cost matrix for sequence matching by the inverse of the confidence
+                    # i.e., a low confidence for both ref and obs -> higher cost -> less matching for a given obs
+                    # a high confidence for one but not the other obs -> somewhat higher cost -> less matching for a given obs
+                    # high confidence for both -> lower cost -> more matching
+                    conf_scaling_matrix = np.tile(confidence_weights.reshape(-1, 1), (1, len(self._seq_matching_ref_seq)))
+
+                    if self._use_image_for_ref:
+                        ref_conf_scaling_matrix = np.tile(self._seq_matching_ref_conf, (len(joint_positions), 1))
+                        conf_scaling_matrix *= ref_conf_scaling_matrix
+
+                    uncertainty_scaling_matrix = 2 - conf_scaling_matrix # so uncertainty scaling is never 0
+                    
+                    vlm_matching_reward, vlm_matching_reward_info = self._matching_fn(joint_positions, self._seq_matching_ref_seq, uncertainty_scaling_matrix=uncertainty_scaling_matrix) 
+                else:
+
+                    vlm_matching_reward, vlm_matching_reward_info = self._matching_fn(joint_positions, self._seq_matching_ref_seq)
+                    vlm_matching_reward *= confidence_weights
+
+                vlm_matching_reward_info["confidence"] = confidence_weights
                 self.all_uncertainties.append(uncertainties.cpu().numpy().flatten())
+                unc = np.concatenate(self.all_uncertainties)
+                np.save(os.path.join(self._rollout_save_path, "all_uncertainties.npy"), unc)
 
                 self.logger.record("rollout/avg_vlm_matching_reward", 
                                 np.mean(vlm_matching_reward)/self._scale, 

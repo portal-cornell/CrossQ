@@ -94,6 +94,46 @@ def load_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bool = False
         return loaded_joint_states[1:]
     
 
+def load_visual_reference_seq(task_name:str,seq_name):
+    """
+    Load the reference sequence for the given task name and sequence name from constants.TASK_SEQ_DICT
+
+    Parameters:
+        task_name: str
+            Specifies the specific task that we want to load the reference sequence for
+        seq_name: str
+            Specifies the specific sequence that we want to load the reference sequence for
+            (e.g. "key_frames")
+        use_geom_xpos: bool
+            True then we load path that ends with "geom-xpos.npy"
+            False then we load path that ends with "joint-state.npy"
+        use_image: bool
+            True when we want to get an image (overrides use_geom_xpos)
+    """
+
+    assert task_name in TASK_SEQ_DICT, f"Unknown task name: {task_name}"
+    
+    assert type(TASK_SEQ_DICT[task_name]["sequences"][seq_name]) == str, f"Unknown type for TASK_SEQ_DICT[{task_name}]['sequences'][{seq_name}]. Has to be either a list or a string, but got {type(TASK_SEQ_DICT[task_name]['sequences'][seq_name])}"
+    
+    new_fp = TASK_SEQ_DICT[task_name]["sequences"][seq_name]
+
+    gif_path = new_fp.replace("_geom-xpos.npy", "").replace("_joint-state.npy", "") + ".gif"
+    
+    gif = Image.open(gif_path)
+    frames = []
+    
+    try:
+        while True:
+            frames.append(gif.copy())
+            gif.seek(gif.tell() + 1)
+    except EOFError:
+        pass  # End of frames
+
+    frames = [f.convert('RGB') for f in frames]
+
+    return frames[1:]
+
+
 def load_images_from_reference_seq(task_name:str, seq_name: str) -> (np.ndarray):
     assert task_name in TASK_SEQ_DICT, f"Unknown task name: {task_name}"
     assert seq_name in TASK_SEQ_DICT[task_name]["sequences"], f"Unknown sequence name: {seq_name}."
@@ -136,9 +176,9 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
 
     if fn_name == "ot":
         gamma = float(fn_config["gamma"])
-        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale: compute_ot_reward(obs_seq, ref_seq, cost_fn, scale, gamma), f"{fn_name}_g={gamma}"
+        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale, uncertainty_scaling_matrix=None: compute_ot_reward(obs_seq, ref_seq, cost_fn, scale, gamma,  uncertainty_scaling_matrix=uncertainty_scaling_matrix), f"{fn_name}_g={gamma}"
     elif fn_name == "dtw":
-        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_dtw_reward(obs_seq, ref_seq, cost_fn, scale, inverted_cost=inverted_cost), fn_name
+        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale, uncertainty_scaling_matrix=None: compute_dtw_reward(obs_seq, ref_seq, cost_fn, scale, inverted_cost=inverted_cost,  uncertainty_scaling_matrix=uncertainty_scaling_matrix), fn_name
     elif fn_name == "soft_dtw":
         gamma = float(fn_config["gamma"])
         if gamma == 10000.0:

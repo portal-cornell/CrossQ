@@ -221,7 +221,6 @@ def plot_multiple_directories(directory_results,
     for (dir_name, (performances, lower, upper, timesteps)), color, label_id in zip(directory_results.items(), colors, label_ids):
         # Plot main line with confidence band
         timesteps = np.array(timesteps)
-        
         performances = smooth(np.array(performances), alpha=smoothing)
         lower = smooth(np.array(lower), alpha=smoothing)
         upper = smooth(np.array(upper), alpha=smoothing)
@@ -374,9 +373,8 @@ def compute_performance(rollout_directory, performance_metric, ref_seq_name=""):
         for j in range(len(rollouts_for_a_timestep)):
             sample = rollouts_for_a_timestep[j]
             sample_qpos = rollouts_qpos_for_a_timestep[j]
-            performance = performance_metric(sample, ref, sample_qpos)
+            performance, _ = performance_metric(sample, ref, sample_qpos)
             rollout_performances.append(performance)
-        
         iqm, ci_lower, ci_upper = interquartile_mean_and_ci(rollout_performances)
         performances.append(iqm)
         cis_lower.append(ci_lower)
@@ -386,7 +384,7 @@ def compute_performance(rollout_directory, performance_metric, ref_seq_name=""):
 def compute_performance_many_experiments(rollout_directories, performance_metric, ref_seq_name=""):
     all_rollout_performances = {}
     for rollout_directory in rollout_directories:
-        if not rollout_directory:
+        if not rollout_directory: # may have empty directories (if for example an experiment has not finished yet)
             continue
         print(f"Computing performance for {rollout_directory}")
         rollout_performances, cis_lower, cis_upper, timesteps = compute_performance(rollout_directory, performance_metric, ref_seq_name=ref_seq_name)
@@ -467,13 +465,19 @@ if __name__ == "__main__":
         Create plots for the workshop paper's visual-based distance metrics (the plots are stored in workshop_figs/visual_distance_metric_exp_figs/{task_name}/)
             python eval_performance.py -w -v
         """
-        from workshop_experiments_folders import joint_based_experiments_dict, visual_based_experiments_dict, visual_rollout_gt_reference_experiments_dict, task_name_to_plot
-
+        from workshop_experiments_folders import joint_based_experiments_dict, visual_based_experiments_dict, visual_rollout_gt_reference_experiments_dict, visual_rollout_gt_reference_pre_match_scaling, task_name_to_plot
+        from visual_ref_experiments_folders import visual_rollout_visual_reference_pre_match_scaling
+        
         if args.visual_result:
-            experiments_dict = visual_based_experiments_dict
-            plot_folder = os.path.join(plot_folder, "visual_distance_metric_exp_figs")
             # experiments_dict = visual_rollout_gt_reference_experiments_dict
-            # plot_folder = os.path.join(plot_folder, "visual_rollout_gt_reference_experiments_dict")
+            # plot_folder = os.path.join(plot_folder, "visual_rollout_gt_reference_exp_figs")
+            # experiments_dict = visual_based_experiments_dict
+            # plot_folder = os.path.join(plot_folder, "visual_distance_metric_exp_figs")
+            # experiments_dict = visual_rollout_gt_reference_pre_match_scaling
+            # plot_folder = os.path.join(plot_folder, "visual_rollout_gt_ref_pre_scaling_exp_figs")
+
+            experiments_dict = visual_rollout_visual_reference_pre_match_scaling
+            plot_folder = os.path.join(plot_folder, "visual_rollout_visual_ref_pre_scaling_exp_figs")
         else:
             experiments_dict = joint_based_experiments_dict
             plot_folder = os.path.join(plot_folder, "joint_distance_metric_exp_figs")

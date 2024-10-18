@@ -71,7 +71,8 @@ class JointVLMSAC(SAC):
         episode_length: int = 120,
         render_dim: Tuple[int, int] = (480, 480),
         add_to_gt_rewards: bool = True,
-        ref_joint_states = None
+        ref_joint_states = None,
+        confidence_kappa=2,
     ):
         # TODO: Add a parameter to point to the dataset relevant to the task
         # train_freq[0] because we are assuming that the train_freq is a tuple
@@ -132,7 +133,7 @@ class JointVLMSAC(SAC):
         if ref_joint_states is not None:
             self._ref_joint_states = ref_joint_states.cuda(0)
         self.uncertainty_stats = RunningNormalStats(alpha=.99)
-        self.kappa = 2 # from wvn (higher -> relaxed uncertainty)
+        self.kappa = confidence_kappa # wvn used 2, but this leads to lots of 0 preds for good states (higher -> relaxed uncertainty)
         
         self.inference_only = inference_only
         if not self.inference_only:
@@ -205,27 +206,34 @@ class JointVLMSAC(SAC):
 
         return rollout
     
-    def compute_joint_predictions(self, frames):
+    def compute_joint_predictions(self, frames, apply_transform=True):
         """Compute joint positions using the visual model"""
         batches = torch.split(frames, self.reward_model_batch_size)
         all_preds = []
         
         for batch in batches:
-            xpos_preds = self.forward_visual_model(batch)
+            if apply_transform:
+                xpos_preds = self.forward_visual_model(batch)
+            else: 
+                xpos_preds, emb, emb_reco = self.reward_model(batch)
             all_preds.append(xpos_preds)
 
         joint_positions = torch.cat(all_preds, dim=0)
         
         return joint_positions
 
-    def compute_joint_predictions_with_uncertainty(self, frames):
+    def compute_joint_predictions_with_uncertainty(self, frames, apply_transform=True):
         """Compute joint positions using the visual model"""
         batches = torch.split(frames, self.reward_model_batch_size)
         all_preds = []
         all_uncertainties = []
         
         for batch in batches:
-            xpos_preds, emb, emb_reco = self.forward_visual_model(batch)
+            if apply_transform:
+                xpos_preds, emb, emb_reco = self.forward_visual_model(batch)
+            else:
+                xpos_preds, emb, emb_reco = self.reward_model(batch)
+
             _, D = emb_reco.shape
             uncertainty = 1/D * (torch.linalg.vector_norm(emb - emb_reco, dim=1)**2) # MSE = 1/N * norm^2
             
@@ -368,7 +376,7 @@ class JointVLMSAC(SAC):
         batch_transformed = self.image_transform(batch)
         return self.reward_model(batch_transformed)
 
-    def _compute_joint_rewards(self, frames, ref_joint_states, batch_size):
+    def _compute_joint_rewards(self, frames, ref_joint_states, batch_size, apply_transform=True):
         """Only use the goal joint xpos states to calculate the reward
         - The reward is based on the euclidean distance between the current joint states and the reference joint states
 
@@ -380,9 +388,11 @@ class JointVLMSAC(SAC):
         all_preds = []
         all_uncertainties = []
         for i, batch in enumerate(batches):
-            #xpos_preds = model(batch_transformed)
-
-            xpos_preds, emb, emb_reco = self.forward_visual_model(batch)
+            if apply_transform:
+                xpos_preds, emb, emb_reco = self.forward_visual_model(batch)
+            else:
+                xpos_preds, emb, emb_reco = self.reward_model(batch)
+                
             uncertainty = torch.linalg.vector_norm(emb - emb_reco, dim=1)
             
             all_preds.append(xpos_preds)
@@ -600,8 +610,14 @@ class RunningNormalStats:
             alpha (float): The smoothing factor. Default is 0.98.
                            Higher values give more weight to past observations.
         """
-        self.gt_mean = 0.0017900332
-        self.gt_std = 0.00032042875 
+        # stats for old model (9/26):
+        self.gt_mean = 0.0031699459068477154
+        self.gt_std = 0.002458093920722604
+
+        # stats for fine tuned autoencoder on reference (10/11), successful for sdtw+ visual ref (kappa=.5)
+        # self.gt_mean = 0.00631257938221097
+        # self.gt_std = 0.005063631106168032
+
         self.alpha = alpha
         self.mean = None
         self.squared_mean = None

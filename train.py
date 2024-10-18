@@ -108,7 +108,8 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         episode_length = cfg.env.episode_length,
         render_dim = cfg.env.render_dim,
         add_to_gt_rewards = cfg.visual_reward_model.add_to_gt_rewards if use_vlm_for_reward else False,
-        ref_joint_states=ref_joint_states
+        ref_joint_states=ref_joint_states,
+        confidence_kappa = cfg.visual_reward_model.confidence_kappa
     )
 
     # TODO: Not sure if .load() is better than .set_parameters()
@@ -155,7 +156,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3),
             n_eval_episodes=cfg.compute.n_cpu_workers,
             use_geom_xpos="geom_xpos" in cfg.env.reward_type if "reward_type" in cfg.env else False,
-            use_image_for_ref=False, # Use ground truth for reference during eval
+            use_image_for_ref=False, # Always use image for ref during eval # cfg.visual_reward_model.get("use_image_for_ref", False), 
             # This allow us to calculate the unifying reward/metric that all methods are compared against
             #   i.e. it defines "rollout/sum_total_reward_per_epsisode" in wandb
             task_name=cfg.env.task_name if "task_name" in cfg.env else "",
@@ -164,6 +165,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             success_fn_cfg=dict(cfg.success_eval),
             # For joint based reward (this allow us to visualize the sequence matching reward in a rollout
             matching_fn_cfg=dict(cfg.matching_reward_model) if cfg.matching_reward_model.name == "ot" or "dtw" in cfg.matching_reward_model.name else {},
+            visual_fn_cfg=dict(cfg.visual_reward_model),
             calc_visual_reward=use_vlm_for_reward or use_joint_vlm_for_reward,
         )
 
