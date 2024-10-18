@@ -107,6 +107,8 @@ visual_based_experiments_dict = {
             "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-09-014029_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-08-212449_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "OT": "",
+            "roboclip_sac": "/share/portal/aw588/train_logs/roboclip/2024-10-12-200152_t=right_arm_extend_wave_higher_nt=sac",
+            "roboclip_ppo": "/share/portal/aw588/train_logs/roboclip/2024-10-13-134730_t=right_arm_extend_wave_higher_nt=ppo",
         },
     },
     "left_arm_extend_wave_higher": {
@@ -119,6 +121,13 @@ visual_based_experiments_dict = {
             "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-09-011740_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-08-211133_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "OT": ""
+            "SDTW+": "",
+            "SDTW": "",
+            "DTW+": "",
+            "DTW": "",
+            "OT": "",
+            "roboclip_sac": "/share/portal/aw588/train_logs/roboclip/2024-10-12-154406_t=left_arm_extend_wave_higher_nt=sac",
+            "roboclip_ppo": "/share/portal/aw588/train_logs/roboclip/2024-10-12-205955_t=left_arm_extend_wave_higher_nt=ppo",
         }
     },
     "right_arm_out": {
@@ -131,6 +140,13 @@ visual_based_experiments_dict = {
             "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-09-015007_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-08-213341_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "OT": ""
+            "SDTW+": "",
+            "SDTW": "",
+            "DTW+": "",
+            "DTW": "",
+            "OT": "",
+            "roboclip_sac": "/share/portal/aw588/train_logs/roboclip/2024-10-12-154616_t=right_arm_out_nt=sac",
+            "roboclip_ppo": "/share/portal/aw588/train_logs/roboclip/2024-10-13-134739_t=right_arm_out_nt=ppo",
         }
     },
     "left_arm_out": {
@@ -155,6 +171,13 @@ visual_based_experiments_dict = {
             "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-09-014029_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-08-212446_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "OT": ""
+            "SDTW+": "",
+            "SDTW": "",
+            "DTW+": "",
+            "DTW": "",
+            "OT": "",
+            "roboclip_sac": "/share/portal/aw588/train_logs/roboclip/2024-10-12-154244_t=both_arms_out_nt=sac",
+            "roboclip_ppo": "/share/portal/aw588/train_logs/roboclip/2024-10-12-205908_t=both_arms_out_nt=ppo",
         }
     },
     "both_arms_down": {
@@ -167,6 +190,13 @@ visual_based_experiments_dict = {
             "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-09-005311_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-08-205723_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "OT": ""
+            "SDTW+": "",
+            "SDTW": "",
+            "DTW+": "",
+            "DTW": "",
+            "OT": "",
+            "roboclip_sac": "/share/portal/aw588/train_logs/roboclip/2024-10-12-154447_t=both_arms_down_nt=sac",
+            "roboclip_ppo": "/share/portal/aw588/train_logs/roboclip/2024-10-13-134733_t=both_arms_down_nt=ppo",
         }
     }
 }
