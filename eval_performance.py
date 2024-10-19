@@ -206,9 +206,15 @@ def plot_multiple_directories(directory_results,
         directory_results: Dictionary mapping directory names to (timesteps, performances) tuples
         output_file: Path to save the output plot
     """
-    
-    # Get a good color palette for the number of directories
-    colors = plt.get_cmap('Dark2').colors
+    # Approach to color
+    color_dict = {
+        "SDTW+": "#1B946C",
+        "SDTW": "#EF772B",
+        "DTW+": "#7D5CBD",
+        "DTW": "#69B3FF",
+        "OT": "#E3247F",
+        "RoboCLIP": "#5B5B5B"
+    }
     
     min_last_timestep = float('inf')
 
@@ -217,52 +223,61 @@ def plot_multiple_directories(directory_results,
         label_ids = list(range(len(labels)))
     else:
         label_ids = list(range(len(directory_results)))
+
+    plt.grid(True, linestyle='--', alpha=0.3)
     
     # Plot each directory's data
-    for (dir_name, (performances, lower, upper, timesteps)), color, label_id in zip(directory_results.items(), colors, label_ids):
+    for (dir_name, (performances, lower, upper, timesteps)), label_id in zip(directory_results.items(), label_ids):
+        # TODO: Right now we manually control whether to skip every other performance and what's the window size
         # Skip every other performance
-        performances = performances[1:][::2]
-        lower = lower[1:][::2]
-        upper = upper[1:][::2]
-        timesteps = timesteps[1:][::2]
+        # performances = performances[1:][::2]
+        # lower = lower[1:][::2]
+        # upper = upper[1:][::2]
+        # timesteps = timesteps[1:][::2]
 
         # Plot main line with confidence band
         timesteps = np.array(timesteps)
         # performances = smooth(np.array(performances), alpha=smoothing)
         # lower = smooth(np.array(lower), alpha=smoothing)
         # upper = smooth(np.array(upper), alpha=smoothing)
-        window_size = 3
+        window_size = 5
         performances = smooth_with_pd_rolling(np.array(performances), window_size)
         lower = smooth_with_pd_rolling(np.array(lower), window_size)
         upper = smooth_with_pd_rolling(np.array(upper), window_size)
 
         print(f"After Smoothing Performance: {np.array(performances).shape}")
 
-        # Plot confidence interval
-        plt.fill_between(timesteps, lower, upper, color=color, alpha=0.2)
-      
-        # Plot the main line
         if labels:
             exp_label = labels[label_id]
         else:
             exp_label = extract_exp_label_from_dir(dir_name)
+        color = color_dict[exp_label]
+
+        # Plot confidence interval
+        plt.fill_between(timesteps, lower, upper, color=color, alpha=0.2)
+      
+        # Plot the main line
         plt.plot(timesteps, performances, color=color, linewidth=1.5, 
-                label=exp_label, alpha=0.8)
+                label=exp_label)
 
         min_last_timestep = min(max(timesteps), min_last_timestep)
     
     # Customize plot
     ax = plt.gca()
     ax.set_xlim([0, min_last_timestep]) # Constrain to the shortest sequence (in case some are 2M long)
-
-    plt.xlabel('Environment Steps', fontsize=12)
-    plt.ylabel('Success Rate', fontsize=12)
-    plt.title(title if title else 'Geometric State Performance Comparison', fontsize=14)
-
-    plt.grid(True, linestyle='--', alpha=0.3)
+    ax.set_ylim([0, 1.1])
+    plt.xlabel('Environment Steps', fontsize=20)
+    plt.ylabel('Success Rate', fontsize=20)
+    plt.title(title if title else 'Geometric State Performance Comparison', fontsize=24)
     
     # Adjust legend
     # plt.legent()
+    # Put the legend out of the figure (make the legend line thicker)
+    # leg = plt.legend(loc='upper left', bbox_to_anchor=(4, 4), fontsize=20, ncol=4)
+
+    # # change the line width for the legend
+    # for line in leg.get_lines():
+    #     line.set_linewidth(8.0)
 
     plt.tight_layout()
     
@@ -271,6 +286,62 @@ def plot_multiple_directories(directory_results,
     plt.close()
     
     print(f"Plot saved as {output_file}")
+
+    # breakpoint()
+
+
+def plot_bar_plot(results_dict, 
+                  approach_labels: List[str] = [],
+                  output_file: str = 'multi_directory_performance.png'):
+    """
+    Create and save a bar plot of IQM and CI for each approach
+    
+    Args:
+        results_dict (dict): Dictionary mapping directory names to a list of raw results
+        output_file (str): Path to save the output plot
+        labels (List[str]): List of labels for each approach
+        title (str): Title of the plot
+    """
+    # Get a good color palette for the number of directories
+    # colors = plt.get_cmap('Dark2').colors
+
+    # approach to color
+    color_dict = {
+        "SDTW+": "#1B946C",
+        "SDTW": "#EF772B",
+        "DTW+": "#7D5CBD",
+        "DTW": "#69B3FF",
+        "OT": "#E3247F",
+        "RoboCLIP": "#5B5B5B"
+    }
+
+    # Set the grid to be under the bars
+    plt.grid(True, linestyle='--', alpha=0.3, zorder=0)
+
+    # Plot each directory's data
+    for label in approach_labels:
+        raw_scores = results_dict[label]
+
+        # Compute the interquartile mean and confidence interval
+        iqm, ci_lower, ci_upper = interquartile_mean_and_ci(raw_scores)
+
+        print(f"Label: {label}, IQM: {iqm}, CI: [{ci_lower}, {ci_upper}]")
+
+        # Plot the bar (with label's font size at 18)
+        plt.bar(label, iqm, yerr=[[iqm - ci_lower], [ci_upper - iqm]], color=color_dict[label], zorder=3, capsize=10)
+
+        # Add the IQM value above the bar
+        plt.text(label, iqm + 0.05, f"{iqm:.2f}", ha='center', va='bottom', fontsize=16)
+
+    plt.xticks(fontsize=16)
+    plt.ylabel('IQM Success Rate', fontsize=20)
+
+    plt.tight_layout()
+
+    # Save plot
+    plt.savefig(output_file, dpi=300, bbox_inches='tight')
+    plt.close()
+    
 
 def load_rollouts(directory: str):
     """
@@ -319,7 +390,7 @@ def load_ref(directory: str, seq_name: str = ""):
     use_geom_xpos = True
 
     # Because we want to compare all runs against the same reference sequence, this reference sequence should be key_frames
-    ref = load_reference_seq(task_name=task_name, seq_name=seq_name, use_geom_xpos=use_geom_xpos)
+    ref = load_reference_seq(task_name=task_name, seq_name=seq_name, use_geom_xpos=use_geom_xpos)[:6]
 
     print(f"Loaded reference sequence of shape {ref.shape}")
     return ref
@@ -357,15 +428,14 @@ def interquartile_mean_and_ci(values, confidence=0.95):
     interquartile_mean = np.mean(interquartile_values)
     
     # Compute the sample mean and standard error of the mean (SEM)
-    sample_mean = np.mean(values)
     sem = stats.sem(values)  # Standard Error of the Mean
     
     # Compute the margin of error for the 95% confidence interval
-    margin_of_error = sem * stats.t.ppf((1 + confidence) / 2., len(values)-1)
+    margin_of_error = sem * stats.t.ppf((1 + confidence) / 2., len(interquartile_values)-1)
     
     # Compute the confidence interval
-    ci_lower = sample_mean - margin_of_error
-    ci_upper = sample_mean + margin_of_error
+    ci_lower = interquartile_mean - margin_of_error
+    ci_upper = interquartile_mean + margin_of_error
     
     return interquartile_mean, ci_lower, ci_upper
 
@@ -409,7 +479,7 @@ def compute_performance(rollout_directory, performance_metric, ref_seq_name=""):
             performance, _ = performance_metric(sample, ref, sample_qpos)
             rollout_performances.append(performance)
 
-        all_rollout_performances_across_timesteps.extend(rollout_performances)
+        all_rollout_performances_across_timesteps.append(rollout_performances)
 
         # iqm, ci_lower, ci_upper = interquartile_mean_and_ci(rollout_performances)
         mean, ci_lower, ci_upper = mean_and_ci(rollout_performances)
@@ -441,6 +511,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-w", "--workshop", default=False,  action="store_true", help="Generate plots for the workshop experiments defined in workshop_experiments_folders.py")    
     parser.add_argument("-v", "--visual_result", default=False,  action="store_true", help="Generate plots for the visual reward results for the workshop experiments defined in workshop_experiments_folders.py")
+    parser.add_argument("-b", "--bar_plot", default=False,  action="store_true", help="Generate bar plots for the workshop experiments defined in workshop_experiments_folders.py")
 
     args = parser.parse_args()
 
@@ -522,6 +593,8 @@ if __name__ == "__main__":
         performance_metric_name = "torso-and-arms"
         performance_metric = workshop_metric
 
+        last_timestep_performances = {}  # Mapping the approach to the last timestep's raw performances
+
         for task_name in experiments_dict.keys():
             baseline = experiments_dict[task_name]['ground_truth_baseline']
 
@@ -537,19 +610,49 @@ if __name__ == "__main__":
                     # baseline_dirs = [baseline[baseline_label] for baseline_label in baseline_labels]
 
                     exp_labels = list(experiments_dict[task_name][sequence_type].keys())
+                    # exp_labels = ["RoboCLIP", "OT", "DTW+", "SDTW+"]
                     exp_dirs = [experiments_dict[task_name][sequence_type][exp_label] for exp_label in exp_labels]
 
-                    # all_exp_labels = baseline_labels + exp_labels
-                    # all_exp_dirs = baseline_dirs + exp_dirs
                     all_exp_labels = exp_labels
                     all_exp_dirs = exp_dirs
 
+                    # all_exp_labels = baseline_labels + exp_labels
+                    # all_exp_dirs = baseline_dirs + exp_dirs
+
                     performance, raw_all_rollout_performances = compute_performance_many_experiments(all_exp_dirs, performance_metric, ref_seq_name=sequence_type)
+
+                    for i in range(len(all_exp_labels)):
+                        exp_label = all_exp_labels[i]
+                        rollout_dir = all_exp_dirs[i]
+
+                        if exp_label not in last_timestep_performances:
+                            last_timestep_performances[exp_label] = []
+                        
+                        # Because raw_all_rollout_performances is of shape (n_timesteps, n_eval_runs)
+                        # We want to get the last timestep's performance for each eval run
+                        print(f"raw_all_rollout_performances[rollout_dir].shape: {np.array(raw_all_rollout_performances[rollout_dir]).shape} | raw_all_rollout_performances[rollout_dir][-1]: {np.array(raw_all_rollout_performances[rollout_dir][-1]).shape}")
+                        last_timestep_performances[exp_label].extend(raw_all_rollout_performances[rollout_dir][-1])
+                        
+                        print(last_timestep_performances)
+
+                        # breakpoint()
                     
                     plot_file = os.path.join(task_plot_folder, f"{task_name}_{performance_metric_name}_{sequence_type}")
                     plot_multiple_directories(performance, labels=all_exp_labels, title=task_name_to_plot[task_name], output_file=plot_file) 
 
                     # breakpoint()                 
+            
+        with open(f"./workshop_figs/last_timestep_performances_{'visual' if args.visual_result else 'joint'}.yaml", "w") as file:
+            yaml.dump(last_timestep_performances, file, indent=4)
+    elif args.bar_plot:
+        # Load the yaml
+        with open(f"./workshop_figs/last_timestep_performances_{'visual' if args.visual_result else 'joint'}.yaml", "r") as file:
+            last_timestep_performances = yaml.safe_load(file)
+
+        # approaches_to_plot = ["RoboCLIP", "OT", "DTW+", "SDTW+"]
+        approaches_to_plot = ["RoboCLIP", "OT", "DTW", "DTW+", "SDTW", "SDTW+"]
+
+        plot_bar_plot(last_timestep_performances, approaches_to_plot, output_file=f"workshop_figs/last_timestep_performances_{'visual' if args.visual_result else 'joint'}.png")
     else:
         experiment_directories = [
         "/share/portal/hw575/CrossQ/train_logs/2024-10-04-004735_sb3_sac_envr=goal_only_euclidean_geom_xpos-t=right_arm_extend_wave_higher_rm=hand_engineered_nt=None", # training for reference rollout
