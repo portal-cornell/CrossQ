@@ -468,6 +468,8 @@ if __name__ == "__main__":
         from workshop_experiments_folders import joint_based_experiments_dict, visual_based_experiments_dict, visual_rollout_gt_reference_experiments_dict, visual_rollout_gt_reference_pre_match_scaling, task_name_to_plot
         from visual_ref_experiments_folders import visual_rollout_visual_reference_pre_match_scaling
         
+        exp_labels = ['SDTW+', 'SDTW', 'DTW', 'OT', 'roboclip_sac']
+
         if args.visual_result:
             # experiments_dict = visual_rollout_gt_reference_experiments_dict
             # plot_folder = os.path.join(plot_folder, "visual_rollout_gt_reference_exp_figs")
@@ -499,11 +501,15 @@ if __name__ == "__main__":
                     baseline_labels = list(baseline.keys())
                     baseline_dirs = [baseline[baseline_label] for baseline_label in baseline_labels]
 
-                    exp_labels = list(experiments_dict[task_name][sequence_type].keys())
+                    #exp_labels = list(experiments_dict[task_name][sequence_type].keys())
                     exp_dirs = [experiments_dict[task_name][sequence_type][exp_label] for exp_label in exp_labels]
 
-                    all_exp_labels = baseline_labels + exp_labels
-                    all_exp_dirs = baseline_dirs + exp_dirs
+                    # all_exp_labels = baseline_labels + exp_labels
+                    # all_exp_dirs = baseline_dirs + exp_dirs
+                    
+                    # No goal joint baseline
+                    all_exp_labels = exp_labels
+                    all_exp_dirs = exp_dirs
 
                     performance = compute_performance_many_experiments(all_exp_dirs, performance_metric, ref_seq_name=sequence_type)
                     

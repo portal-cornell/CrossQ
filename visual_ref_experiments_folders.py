@@ -11,6 +11,8 @@ visual_rollout_visual_reference_pre_match_scaling = {
             "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-141316_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-063357_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-023852_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_mrm=ot_vrm=joint_pred_resnet_nt=None",
+            "roboclip_sac": "/share/portal/aw588/train_logs/roboclip/2024-10-12-200152_t=right_arm_extend_wave_higher_nt=sac",
+            "roboclip_ppo": "/share/portal/aw588/train_logs/roboclip/2024-10-13-134730_t=right_arm_extend_wave_higher_nt=ppo",
         },
     },
     "left_arm_extend_wave_higher": {
@@ -22,7 +24,9 @@ visual_rollout_visual_reference_pre_match_scaling = {
             "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-101114_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
             "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-140010_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-062307_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=dtw_vrm=joint_pred_resnet_nt=None",
-            "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-022553_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=ot_vrm=joint_pred_resnet_nt=None"
+            "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-022553_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=ot_vrm=joint_pred_resnet_nt=None",
+            "roboclip_sac": "/share/portal/aw588/train_logs/roboclip/2024-10-12-154406_t=left_arm_extend_wave_higher_nt=sac",
+            "roboclip_ppo": "/share/portal/aw588/train_logs/roboclip/2024-10-12-205955_t=left_arm_extend_wave_higher_nt=ppo",
         }
     },
     "right_arm_out": {
@@ -34,7 +38,9 @@ visual_rollout_visual_reference_pre_match_scaling = {
             "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-153727_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_out_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
             "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-083610_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-033521_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
-            "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-010537_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_out_mrm=ot_vrm=joint_pred_resnet_nt=None"
+            "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-010537_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_out_mrm=ot_vrm=joint_pred_resnet_nt=None",
+            "roboclip_sac": "/share/portal/aw588/train_logs/roboclip/2024-10-12-154616_t=right_arm_out_nt=sac",
+            "roboclip_ppo": "/share/portal/aw588/train_logs/roboclip/2024-10-13-134739_t=right_arm_out_nt=ppo"
         }
     },
     "left_arm_out": {
@@ -46,7 +52,9 @@ visual_rollout_visual_reference_pre_match_scaling = {
             "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-153754_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_out_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
             "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-141233_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-063208_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
-            "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-023701_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_out_mrm=ot_vrm=joint_pred_resnet_nt=None"
+            "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-023701_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_out_mrm=ot_vrm=joint_pred_resnet_nt=None",
+            "roboclip_sac": "/share/portal/aw588/train_logs/roboclip/2024-10-12-205825_t=left_arm_out_nt=sac",
+            "roboclip_ppo": "/share/portal/aw588/train_logs/roboclip/2024-10-13-134746_t=left_arm_out_nt=ppo",
         }
     },
     "both_arms_out": {
@@ -59,7 +67,9 @@ visual_rollout_visual_reference_pre_match_scaling = {
             "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-153857_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
             "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-154837_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-075453_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=dtw_vrm=joint_pred_resnet_nt=None",
-            "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-030639_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=ot_vrm=joint_pred_resnet_nt=None"
+            "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-030639_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=ot_vrm=joint_pred_resnet_nt=None",
+            "roboclip_sac": "/share/portal/aw588/train_logs/roboclip/2024-10-12-154244_t=both_arms_out_nt=sac",
+            "roboclip_ppo": "/share/portal/aw588/train_logs/roboclip/2024-10-12-205908_t=both_arms_out_nt=ppo",
         }
     },
     "both_arms_down": {
@@ -72,7 +82,9 @@ visual_rollout_visual_reference_pre_match_scaling = {
             "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-153943_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
             "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-154834_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=dtw_vrm=joint_pred_resnet_nt=None",
             "DTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-075508_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=dtw_vrm=joint_pred_resnet_nt=None",
-            "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-030921_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=ot_vrm=joint_pred_resnet_nt=None"
+            "OT": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-030921_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=ot_vrm=joint_pred_resnet_nt=None",
+            "roboclip_sac": "/share/portal/aw588/train_logs/roboclip/2024-10-12-154447_t=both_arms_down_nt=sac",
+            "roboclip_ppo": "/share/portal/aw588/train_logs/roboclip/2024-10-13-134733_t=both_arms_down_nt=ppo",
         }
     }
 }
