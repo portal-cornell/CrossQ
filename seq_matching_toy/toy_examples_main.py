@@ -18,6 +18,8 @@ from seq_matching_toy.toy_examples.straight_line_long import *
 # Figures for workshop paper
 from seq_matching_toy.toy_examples.nav_2by2_0_ot_fail import *
 from seq_matching_toy.toy_examples.nav_1by4_0_dtw_fail import *
+from seq_matching_toy.toy_examples.nav_2by2_1_sdtw_fail import *
+from seq_matching_toy.toy_examples.nav_1by4_1_sdtw_fail import *
 
 examples = {
     "criss_cross_0": criss_cross_0,
@@ -40,4 +42,6 @@ examples = {
     # Figures for workshop paper
     "nav_2by2_0_ot_fail": nav_2by2_0_ot_fail,
     "nav_1by4_0_dtw_fail": nav_1by4_0_dtw_fail,
+    "nav_1by4_1_sdtw_fail": nav_1by4_1_sdtw_fail,
+    "nav_2by2_1_sdtw_fail": nav_2by2_1_sdtw_fail,
 }
