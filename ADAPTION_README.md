@@ -69,6 +69,13 @@ Some error like this: "CUDA backend failed to initialize: Found CUDA version 120
 pip install nvidia-cublas-cu12==12.4.2.65 nvidia-cuda-cupti-cu12==12.4.99 nvidia-cuda-nvrtc-cu12==12.4.99 nvidia-cuda-runtime-cu12==12.4.99 nvidia-cudnn-cu12==8.9.7.29 nvidia-cufft-cu12==11.2.0.44 nvidia-cusolver-cu12==11.6.0.99 nvidia-cusparse-cu12==12.3.0.142 nvidia-nccl-cu12==2.20.5
 ```
 
+## Adding Metaworld
+Need to reinstall gymnasium
+```
+pip install gymnasium==0.29.1
+```
+
+
 # How to train
 
 ## Training

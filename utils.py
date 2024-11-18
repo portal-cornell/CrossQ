@@ -100,9 +100,10 @@ def get_make_env_kwargs(cfg: DictConfig):
     #     make_env_kwargs = dict(
     #         max_episode_steps = cfg.env.episode_length,
     #     )
-    make_env_kwargs = dict(
-            episode_length = cfg.env.episode_length,
-        )
+    make_env_kwargs = dict()
+
+    if "episode_length" in cfg.env:
+        make_env_kwargs["episode_length"] = cfg.env.episode_length
     
     if "custom" in cfg.env.name.lower():
         make_env_kwargs["reward_type"] = cfg.env.reward_type
@@ -110,6 +111,7 @@ def get_make_env_kwargs(cfg: DictConfig):
             make_env_kwargs["task_name"] = cfg.env.task_name
 
     return make_env_kwargs
+
 
 def calc_iqm(results):
     """

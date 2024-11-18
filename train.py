@@ -30,9 +30,48 @@ from loguru import logger
 
 import multiprocess
 from envs.base import get_make_env
+from stable_baselines3.common.monitor import Monitor
 from vlm_reward.reward_models.model_factory import load_reward_model
 from vlm_reward.reward_main import dist_worker_compute_reward
+from vlm_reward.vlm_buffer import GeomXposReplayBuffer
+from stable_baselines3.common.buffers import ReplayBuffer
 from callbacks import VideoRecorderCallback, WandbCallback, JointBasedSeqRewardCallback
+
+def get_training_envs(cfg: DictConfig):
+    if cfg.env.name == "HumanoidSpawnedUpCustom":
+        make_env_kwargs = utils.get_make_env_kwargs(cfg)
+        make_env_fn = get_make_env(cfg.env.name, **make_env_kwargs)
+        vec_env_kwargs = dict(render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3))
+        training_env = make_vec_env(
+            make_env_fn,
+            n_envs=cfg.compute.n_cpu_workers,
+            seed=cfg.seed,
+            vec_env_cls=SubprocVecEnv,
+            use_gpu_ids=list(range(cfg.compute.n_gpu_workers)),
+            vec_env_kwargs=vec_env_kwargs,
+        )
+    elif cfg.env.name == "Metaworld":
+        assert cfg.env.task_name, "task_name must be provided for Metaworld environments"
+
+        def make_env_fn():
+            from metaworld.envs import (ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE,
+                                ALL_V2_ENVIRONMENTS_GOAL_HIDDEN)
+            
+            return Monitor(ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE[cfg.env.task_name](render_mode="rgb_array"))
+        vec_env_kwargs = dict(render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3))
+
+        training_env = make_vec_env(
+            make_env_fn,
+            n_envs=cfg.compute.n_cpu_workers,
+            seed=cfg.seed,
+            vec_env_cls=SubprocVecEnv,
+            use_gpu_ids=list(range(cfg.compute.n_gpu_workers)),
+            vec_env_kwargs=vec_env_kwargs,
+        )
+    else:
+        raise NotImplementedError(f"Environment {cfg.env.name} not implemented")
+
+    return training_env, make_env_fn, vec_env_kwargs
 
 def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] = None):
     """
@@ -54,19 +93,10 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
     logger.info(f"using vlm to predict joint pos: {use_joint_vlm_for_reward}")
 
     # Initialize the environment
-    make_env_kwargs = utils.get_make_env_kwargs(cfg)
+    logger.info(f"Creating environment={cfg.env.name} instances with {dict(cfg.env)}")
 
-    logger.info(f"Creating environment={cfg.env.name} instances with {make_env_kwargs=}")
-
-    make_env_fn = get_make_env(cfg.env.name, **make_env_kwargs)
-    training_env = make_vec_env(
-        make_env_fn,
-        n_envs=cfg.compute.n_cpu_workers,
-        seed=cfg.seed,
-        vec_env_cls=SubprocVecEnv,
-        use_gpu_ids=list(range(cfg.compute.n_gpu_workers)),
-        vec_env_kwargs=dict(render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3)),
-    )
+    # Notes: make_env_fn, vec_env_kwargs are used to create the inference environment later
+    training_env, make_env_fn, vec_env_kwargs = get_training_envs(cfg)
 
     logger.info("Creating the learner...")
 
@@ -88,7 +118,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         learning_rate=cfg.rl_algo.lr,
         buffer_size=1_000_000,
         learning_starts=5000,
-        batch_size=256,
+        batch_size=cfg.rl_algo.batch_size,
         tau=cfg.rl_algo.tau,
         gamma=0.99,
         train_freq=(cfg.env.episode_length, "step"),
@@ -102,6 +132,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         }),
         verbose=0,
         seed=cfg.seed,
+        replay_buffer_class=GeomXposReplayBuffer if cfg.env.name == "HumanoidSpawnedUpCustom" else ReplayBuffer, 
         ### VLM_SAC specific reward (SAC will ignore this)
         inference_only=False,
         reward_model_config = OmegaConf.to_container(cfg.reward_model, resolve=True, throw_on_missing=True) if use_vlm_for_reward else None,
@@ -149,7 +180,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
                 seed=42,
                 vec_env_cls=SubprocVecEnv,
                 use_gpu_ids=list(range(cfg.compute.n_gpu_workers)),
-                vec_env_kwargs=dict(render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3)),
+                vec_env_kwargs=vec_env_kwargs,
             ),
             # SubprocVecEnv([make_env_fn], render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3)),
             rollout_save_path=os.path.join(cfg.logging.run_path, "eval"),
@@ -159,8 +190,10 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             use_geom_xpos="geom_xpos" in cfg.env.reward_type if "reward_type" in cfg.env else False,
             # This allow us to calculate the unifying reward/metric that all methods are compared against
             #   i.e. it defines "rollout/sum_total_reward_per_epsisode" in wandb
-            task_name=cfg.env.task_name if "task_name" in cfg.env else "",
-            threshold=cfg.env.pose_matching_stage_threshold,
+            # TODO [11/18/2024]: For now, we ignore the ground truth calculation for the MetaWorld envs
+            env_name = cfg.env.name,
+            task_name=cfg.env.task_name if ((cfg.env.name == "HumanoidSpawnedUpCustom") and ("task_name" in cfg.env)) else "",
+            threshold=cfg.env.pose_matching_stage_threshold if "pose_matching_stage_threshold" in cfg.env else 0.0,
             # For calculating success rate
             success_fn_cfg=dict(cfg.success_eval),
             # For joint based reward (this allow us to visualize the sequence matching reward in a rollout

@@ -285,6 +285,7 @@ class VideoRecorderCallback(BaseCallback):
         n_eval_episodes: int = 1,
         deterministic: bool = True,
         use_geom_xpos: bool = True,
+        env_name: str = "",
         task_name: str = "",
         threshold: float = 0.5,
         success_fn_cfg: dict = {},
@@ -318,8 +319,9 @@ class VideoRecorderCallback(BaseCallback):
         self._use_geom_xpos = use_geom_xpos
         self._threshold = threshold
         self._calc_visual_reward = calc_visual_reward
+        self._env_name = env_name
 
-        if task_name != "":
+        if task_name != "" and task_name is not None:
             self._goal_ref_seq = load_reference_seq(task_name=task_name, seq_name="key_frames", use_geom_xpos=self._use_geom_xpos)
             logger.info(f"[VideoRecorderCallback] Loaded reference sequence. task_name={task_name}, seq_name=key_frames, use_geom_xpos={self._use_geom_xpos}, shape={self._goal_ref_seq.shape}")
 
@@ -379,7 +381,7 @@ class VideoRecorderCallback(BaseCallback):
                     rollout: np.array (rollout_length, ...)
                         The rollout sequence to calculate the reward
                 """
-                # Calculate reward from the rollout to self.goal_ref_seq
+                # Calculate reward from the rollout to self.gogal_ref_seq
                 reward_matrix = np.exp(-euclidean_distance_advanced(rollout, ref))
 
                 # Detect when a stage is completed (the rollout is close to the goal_ref_seq) (under self._threshold)
@@ -486,7 +488,8 @@ class VideoRecorderCallback(BaseCallback):
             # Saving for each env
             states = []
             rewards = []
-            geom_xposes = [[] for _ in range(self._n_eval_episodes)]
+            if self._use_geom_xpos:
+                geom_xposes = [[] for _ in range(self._n_eval_episodes)]
 
             def grab_screens(_locals: Dict[str, Any], _globals: Dict[str, Any]) -> None:
                 """
@@ -505,6 +508,10 @@ class VideoRecorderCallback(BaseCallback):
 
                     image_int = np.uint8(screen)[:self._render_dim[0], :self._render_dim[1], :]
 
+                    if self._env_name == "Metaworld":
+                        # For some reason, the image is flipped upside down
+                        image_int = np.flipud(image_int)
+
                     raw_screens.append(Image.fromarray(image_int))
                     screens.append(Image.fromarray(image_int))  # The frames here will get plotted with info later
                     infos.append(_locals.get('info', {}))
@@ -512,12 +519,13 @@ class VideoRecorderCallback(BaseCallback):
                     states.append(_locals["observations"][:, :22])
                     rewards.append(_locals["rewards"])
 
-                geom_xpos = _locals.get('info', {})["geom_xpos"]
+                if self._use_geom_xpos:
+                    geom_xpos = _locals.get('info', {})["geom_xpos"]
 
-                # Normalize the joint states based on the torso (index 1)
-                geom_xpos = geom_xpos - geom_xpos[1]
-                geom_xposes[env_i].append(geom_xpos)
-            
+                    # Normalize the joint states based on the torso (index 1)
+                    geom_xpos = geom_xpos - geom_xpos[1]
+                    geom_xposes[env_i].append(geom_xpos)
+                
             evaluate_policy(
                 self.model,
                 self._eval_env,
@@ -531,7 +539,8 @@ class VideoRecorderCallback(BaseCallback):
 
             states = np.array(states)  # size: (rollout_length, n_eval_episodes, 22)
             rewards = np.array(rewards) # size: (rollout_length, n_eval_episodes)
-            geom_xposes = np.array(geom_xposes) # (n_eval_episodes, rollout_length, 18, 3)
+            if self._use_geom_xpos:
+                geom_xposes = np.array(geom_xposes) # (n_eval_episodes, rollout_length, 18, 3)
 
             if self._calc_gt_reward:
                 # Calculate the goal matching reward
@@ -700,12 +709,13 @@ class VideoRecorderCallback(BaseCallback):
             # Save the rollouts locally    
             with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_states.npy"), "wb") as f:
                 np.save(f, np.array(states))
-
-            with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_geom_xpos_states.npy"), "wb") as f:
-                np.save(f, np.array(geom_xposes))
-            
+                
             with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_rewards.npy"), "wb") as f:
                 np.save(f, np.array(rewards))
+
+            if self._use_geom_xpos:
+                with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_geom_xpos_states.npy"), "wb") as f:
+                    np.save(f, np.array(geom_xposes))
 
         return True
 

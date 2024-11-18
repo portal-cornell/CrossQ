@@ -1,6 +1,6 @@
 seed: 9
 
-total_timesteps: 2000000
+total_timesteps: 1000000
 
 run_notes: null
 
@@ -13,7 +13,7 @@ compute:
 
 logging:
   log_freq: 300  # How many times to log during training
-  video_save_freq: 20000 # Frequency to save the video
+  video_save_freq: 10000 # Frequency to save the video
   model_save_freq: 200000  # Frequency to save the model
 
   wandb_project: crossQ
@@ -28,15 +28,15 @@ success_eval:
   threshold_for_arm_pos: 0.55
 
 defaults:
-  - env: HumanoidSpawnedUpCustom
-  - reward_model: joint_pred_resnet
+  - env: Metaworld
+  - reward_model: hand_engineered
   - reward_model/modification: nothing
   - rl_algo: sb3_sac
   - _self_
 
 hydra:
   run:
-    dir: ./train_logs/${now:%Y-%m-%d-%H%M%S}_${rl_algo.name}_envr=${env.reward_type}-t=${env.task_name}_rm=${reward_model.name}_nt=${run_notes}
+    dir: ./train_logs/${now:%Y-%m-%d-%H%M%S}_${rl_algo.name}_envt=${env.task_name}_rm=${reward_model.name}_nt=${run_notes}
 
 # If you want to specify a specific reward function used in the env, you can uncomment and overwrite reward_type
 # env:

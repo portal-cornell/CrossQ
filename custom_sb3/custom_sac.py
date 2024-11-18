@@ -83,7 +83,8 @@ class CustomSAC(SAC):
         self.previous_num_timesteps = self.num_timesteps
         self.previous_num_episodes = self._episode_num
 
-        self.replay_buffer.clear_geom_xpos()
+        if type(self.replay_buffer) == GeomXposReplayBuffer:
+            self.replay_buffer.clear_geom_xpos()
 
         return rollout
     

@@ -1,0 +1,6 @@
+name: Metaworld
+task_name: button-press-v2-goal-observable
+episode_length: 500
+render_dim: 
+  - 480
+  - 480
