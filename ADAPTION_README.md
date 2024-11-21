@@ -70,7 +70,13 @@ pip install nvidia-cublas-cu12==12.4.2.65 nvidia-cuda-cupti-cu12==12.4.99 nvidia
 ```
 
 ## Adding Metaworld
-Need to reinstall gymnasium
+1. If you have just cloned the repo, make sure to run the following command at the root directory ("CrossQ"):
+```
+git submodule update --init
+```
+2. `cd envs/Metaworld` and run `pip install -e .`
+
+3. To make the gym version play well with the rest of the code, you need to reinstall gymnasium
 ```
 pip install gymnasium==0.29.1
 ```
