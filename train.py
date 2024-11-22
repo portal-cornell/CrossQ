@@ -195,7 +195,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
 
 def vlm_inference_worker(rank: int, cfg: DictConfig, stop_event: multiprocessing.Event):
     """
-    Creates a VLM reward model and runs the inference (reward calculcation) on the frames sent by the main worker
+    Creates a VLM reward model and runs the inference (reward calculation) on the frames sent by the main worker
 
     Parameters:
         rank: int

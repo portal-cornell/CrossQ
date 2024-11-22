@@ -7,6 +7,7 @@ import torch as th
 import numpy as np
 from numpy import array
 from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.logger import Video
 from stable_baselines3.common.logger import Image as WandbImage
@@ -120,8 +121,9 @@ class GridNavSeqRewardCallback(BaseCallback):
 
         matching_reward_list = []
         for env_i in range(self.model.env.num_envs):
+            
             obs_to_use = self.model.rollout_buffer.observations[1:, env_i]  # Skip the first observation because we are calculating the reward based on what it looks like in the next state
-            # Keep track of the history. Agent cannot revisit the same 
+            # Keep track of the history. Agent cannot revisit the same state
             history = [obs_to_use[i].tolist() for i in range(len(obs_to_use))]
             final_obs = update_location(agent_pos=obs_to_use[-1].astype(np.int64), action=int(self.model.rollout_buffer.actions[-1, env_i]), map_array=self._map, history=history)
             obs_to_use = np.concatenate([obs_to_use, np.expand_dims(final_obs, 0)], axis=0)
@@ -311,7 +313,7 @@ class GridNavVideoRecorderCallback(BaseCallback):
                 self.model,
                 self._eval_env,
                 callback=grab_screens,
-                n_eval_episodes=self._n_eval_episodes,
+                n_eval_epVisodes=self._n_eval_episodes,
                 deterministic=self._deterministic,
             )
 
@@ -321,7 +323,6 @@ class GridNavVideoRecorderCallback(BaseCallback):
             actions = np.concatenate(actions)
 
             obs_to_use = states[1:]  # Skip the first observation because we are calculating the reward based on what it looks like in the next state
-            
             if self.use_history:
                 final_obs = np.reshape(obs_to_use[-1], self._map.shape)
                 cur_pos_np = np.nonzero(final_obs == 2)
@@ -538,6 +539,347 @@ class GridNavVideoRecorderCallback(BaseCallback):
         wandb.log(log_dict, step=num_timesteps)
 
         return True
+
+
+class MinigridSeqRewardCallback(BaseCallback):
+    def __init__(self, ref_seq, matching_fn_cfg, cost_fn_name, env_fn, temporal_encoding=False, add_to_existing_r=False, verbose=0):
+        super(MinigridSeqRewardCallback, self).__init__(verbose)
+
+        self._matching_fn, self._matching_fn_name = get_matching_fn(matching_fn_cfg, cost_fn_name)
+
+        self._ref_seq = ref_seq
+        self._temporal_encoding = temporal_encoding
+        self._add_to_existing_r = matching_fn_cfg["add_to_env_rew"]
+        self.env=env_fn() # used only for running transition function
+
+        logger.info(f"[GridNavSeqRewardCallback] Loaded reference sequence. self._ref_seq.shape={self._ref_seq.shape} self._ref_seq=\n{self._ref_seq}")
+         
+    def on_rollout_end(self) -> None:
+        """
+        This method is called after the rollout ends.
+        You can access and modify the rewards in the ReplayBuffer here.
+        """
+        
+        matching_reward_list = []
+        for env_i in range(self.model.env.unwrapped.num_envs):
+            # for each (s_i, a_i), we want a reward which is based on the next state: r_{i} = r(transition(s_i, a_i))
+            
+            if self._temporal_encoding:
+                # :-1 because obs[-1] is the timestep, which we don't want to include
+                env_obs = self.model.rollout_buffer.observations[:, env_i, :-1]
+            else:
+                env_obs = self.model.rollout_buffer.observations[:, env_i]
+            
+            # get s_{T+1} in order to calculate reward for (s_T,a_T)
+            final_obs = env_obs[-1]         
+            final_action = self.model.rollout_buffer.actions[-1, env_i]  
+            self.env.unwrapped.reset()
+            self.env.unwrapped.set_state(final_obs[:2].astype(int), final_obs[2].astype(int))
+            next_final_obs, _, _, _, _  = self.env.unwrapped.step(final_action.astype(int))
+            if self._temporal_encoding:
+                next_final_obs = next_final_obs[:-1]
+
+            shifted_obs = np.concatenate((env_obs[1:], next_final_obs[None])) # TODO: env_obs[:] here for phi(s+1) - phi(s)
+                        
+            matching_reward, _ = self._matching_fn(shifted_obs, self._ref_seq)  # size: (n_steps,)
+            matching_reward_list.append(matching_reward)
+
+        rewards = np.stack(matching_reward_list, axis=1)  # size: (n_steps, n_envs)
+
+        if self._add_to_existing_r:
+            self.model.rollout_buffer.rewards += rewards
+        else:
+            self.model.rollout_buffer.rewards = rewards
+
+
+    def _on_step(self) -> bool:
+        """
+        Just need to define this method to avoid NotImplementedError
+
+        Return: 
+            If the callback returns False, training is aborted early.
+        """
+        return True
+
+class MinigridVideoRecorderCallback(BaseCallback):
+    def __init__(
+        self,
+        eval_env_fn: gymnasium.Env,
+        rollout_save_path: str,
+        render_freq: int,
+        n_eval_episodes: int = 1,
+        deterministic: bool = True,
+        ref_seq: str = "",
+        matching_fn_cfg: dict = {}, 
+        cost_fn_name: str = "manhattan",
+        reward_vmin: int = 0, 
+        reward_vmax: int = 0, 
+        reward_discount_factor: int = 1,
+        temporal_encoding: bool = False,
+        verbose=0
+    ):
+        """
+        Records a video of an agent's trajectory traversing ``eval_env`` and logs it to
+        TensorBoard
+
+        Pararmeters
+            eval_env: A gym environment from which the trajectory is recorded
+                Assumes that there's only 1 environment
+            rollout_save_path: The path to save the rollouts (states and rewards)
+            render_freq: Render the agent's trajectory every eval_freq call of the callback.
+            n_eval_episodes: Number of episodes to render
+            deterministic: Whether to use deterministic or stochastic policy
+            goal_seq_name: The name of the reference sequence to compare with (This defines the unifying metric that all approaches attempting to solve the same task gets compared against)
+            seq_name: The name of the reference sequence to compare with
+                You only need to set this if you want to calculate the OT reward
+            matching_fn_cfg: The configuration for the matching function
+
+            reward_discount_factor: the discount factor (gamma) used by the rl algorithm for calculating returns
+        """
+        super().__init__(verbose)
+
+        self._eval_env = SubprocVecEnv([eval_env_fn]) # env for evaluating
+        self._render_env = eval_env_fn() # env only for rendering
+        self._render_freq = render_freq
+        self._n_eval_episodes = n_eval_episodes
+        self._deterministic = deterministic
+        self._rollout_save_path = rollout_save_path  # Save the state of the environment
+
+        self._ref_seq = ref_seq
+        
+        self._ref_seq_render = self.render_reference()
+        logger.info(f"[GridNavVideoRecorderCallback] Loaded reference sequence. self._ref_seq.shape={self._ref_seq.shape} self._ref_seq=\n{self._ref_seq}")
+
+        self._reward_vmin = reward_vmin
+        self._reward_vmax = reward_vmax
+
+        self._gt_reward_fn = self.set_ground_truth_fn()
+
+        if matching_fn_cfg != {}:
+            self._calc_matching_reward = True
+            self._matching_fn, self._matching_fn_name = get_matching_fn(matching_fn_cfg, cost_fn_name)
+        else:
+            self._calc_matching_reward = False
+
+        self._temporal_encoding = temporal_encoding
+        self._reward_discount_factor = reward_discount_factor
+
+    def render_reference(self):
+        """
+        Create renders of the reference sequence for visualization
+        """
+        # return np.ones((len(self._ref_seq),5,5,3))
+        self._render_env.unwrapped.reset()
+        
+        renders = []
+        for pose in self._ref_seq:
+            agent_pos = (pose[0], pose[1])
+            agent_dir = pose[2] 
+
+            self._render_env.unwrapped.set_state(agent_pos, agent_dir)
+            render = self._render_env.render()
+            renders.append(render)
+        renders = np.stack(renders)
+        return renders
+
+    def set_ground_truth_fn(self):
+        """
+        Set the ground truth function for the matching function
+        """
+        def nav_key_point_following(obs_seq, ref_seq):
+            """
+            Counting the number of key points that the agent has followed
+            """
+            score = 0
+            j = 0
+
+            score_at_each_timestep = []
+
+            for i in range(len(obs_seq)):
+                if j < len(ref_seq):
+                    if np.array_equal(obs_seq[i], ref_seq[j]):
+                        score += 1
+                        j += 1
+
+                score_at_each_timestep.append(score/len(ref_seq))
+            
+            return score_at_each_timestep
+        
+        return nav_key_point_following
+
+    def _on_step(self) -> bool:
+        if self.n_calls % self._render_freq == 0:
+            raw_screens = []
+            screens = []
+            states = []
+            infos = []
+            rewards = []
+            actions = []
+
+            def grab_screens(_locals: Dict[str, Any], _globals: Dict[str, Any]) -> None:
+                """
+                Renders the environment in its current state, recording the screen in
+                the captured `screens` list
+
+                :param _locals: A dictionary containing all local variables of the
+                 callback's scope
+                :param _globals: A dictionary containing all global variables of the
+                 callback's scope
+                """
+                screen = self._eval_env.render()
+                image_int = np.uint8(screen)
+
+                raw_screens.append(Image.fromarray(image_int))
+                screens.append(Image.fromarray(image_int))  # The frames here will get plotted with info later
+                infos.append(_locals.get('info', {}))
+
+                states.append(_locals["observations"])
+                rewards.append(_locals["rewards"])
+                actions.append(_locals["actions"])
+
+            evaluate_policy(
+                self.model,
+                self._eval_env,
+                callback=grab_screens,
+                n_eval_episodes=self._n_eval_episodes,
+                deterministic=self._deterministic,
+            )
+
+            # Originally, states is a list of np.arrays size (1, env_obs_size)
+            #   We want to concatenate them to get a single np.array size (n_timesteps, env_obs_size)
+            states = np.concatenate(states)
+            actions = np.concatenate(actions)
+
+            if self._temporal_encoding: # remove the timestep part of the state
+                states = states[:, :-1]
+
+            # The renders are shifted right (so the first render is actually the second, and the last render wraps around to the start state)
+            screens = screens[-1:] + screens[:-1]
+            raw_screens = raw_screens[-1:] + raw_screens[:-1]
+            # self._render_env.unwrapped.reset()
+            # self._render_env.unwrapped.set_state(states[0,:-1], states[0, -1])
+            # start_screen = self._render_env.render()
+            # screens.insert(0, start_screen)
+            # raw_screens.insert(0, start_screen.copy())
+            # screens = screens[:-1]
+            # raw_screens = raw_screens[:-1]
+
+            # Save the raw_screens locally
+            imageio.mimsave(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts.gif"), raw_screens, duration=1/30, loop=0)
+            
+            gt_rewards = self._gt_reward_fn(states, self._ref_seq)
+
+
+            for i in range(len(infos)):
+                infos[i]["gt_r"] = f"{gt_rewards[i]:.4f}"
+
+            self.logger.record("rollout/episode_max_gt_reward", 
+                                np.max(gt_rewards), 
+                                exclude=("stdout", "log"))
+
+            append_to_csv([np.max(gt_rewards), self.num_timesteps], ["ordered_target_frames_achieved", "timestep"], os.path.join(self._rollout_save_path,f"performance.csv"))
+
+            self.logger.record("rollout/episode_mean_gt_reward", 
+                                np.mean(gt_rewards), 
+                                exclude=("stdout", "log", "json", "csv"))
+
+            if self._calc_matching_reward:
+                raw_screens = np.stack(raw_screens)
+                matching_reward, info = self._matching_fn(states, self._ref_seq)  # size: (n_steps,)
+
+                self.logger.record("rollout/mean_match_plus_env_reward", 
+                                np.mean(matching_reward + rewards), 
+                                exclude=("stdout", "log", "json", "csv"))
+
+                # Add the matching_reward to the infos so that we can plot it
+                for i in range(len(infos)):
+                    infos[i]["matching_reward"] = f"{matching_reward[i]:.2f}"
+
+                # Save the matching_rewards locally    
+                with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_matching_rewards.npy"), "wb") as f:
+                    np.save(f, np.array(states))
+
+                # TODO: messy code taken from seq_matching_toy/run_seq_matching_on_examples.py
+                #   Basically allows us to visualizing the matching function on a rollout
+                rolcol_size = 1
+
+
+                discounts = np.array([self._reward_discount_factor ** t for t in range(len(matching_reward))])
+                rl_return = np.dot(discounts, matching_reward)
+
+
+                # Do not plot the assignment if using sparse reward (since it doesn't exist)
+                if self._matching_fn_name == "sparse_reward":
+                    fig_width = (rolcol_size * (len(self._ref_seq) + 2))
+                    fig, ax = plt.subplots(1, 1, figsize=(fig_width, len(raw_screens) + 1))
+
+                    plot_matrix_as_heatmap_on_ax(ax, fig, raw_screens, self._ref_seq_render, np.expand_dims(matching_reward,1), f"{self._matching_fn_name} R (Return (y={self._reward_discount_factor}): {rl_return:.2f})",  seq_cmap="plasma", matrix_cmap="Greens", rolcol_size=rolcol_size,  
+                                            vmin=self._reward_vmin, vmax=self._reward_vmax)
+                else:
+
+                    # 3 * because we have 3 figure columns
+                    #   In each figure columns, we have len(ref_seq) for the reference sequence/cost matrix, 1 column for the vertical stack of obs seq, and 1 column for the colorbar
+                    fig_width = 3 * (rolcol_size * (len(self._ref_seq) + 2))
+
+                    #  We have len(obs_seq) for the observed sequence/cost matrix, 1 row for the horizontal stack of ref seq
+                    fig_height = rolcol_size * (len(raw_screens) + 1)
+
+                    # Create the figure (2 columns, and the number of rows will be the number of sequence matching algorithms)
+                    fig, axs = plt.subplots(1, 3, figsize=(fig_width, fig_height))
+
+                    # Plot the cost matrix
+                    ax = axs[0]
+                    plot_matrix_as_heatmap_on_ax(ax, fig, raw_screens, self._ref_seq_render, info["cost_matrix"], f"{self._matching_fn_name} Cost", seq_cmap="plasma", matrix_cmap="gray_r", rolcol_size=rolcol_size)
+
+                    # Plot the assignment matrix
+                    ax = axs[1]
+                    
+                    plot_matrix_as_heatmap_on_ax(ax, fig, raw_screens, self._ref_seq_render, info["assignment"], f"{self._matching_fn_name} Assign", seq_cmap="plasma",  matrix_cmap="Greens", rolcol_size=rolcol_size, vmin=0, vmax=1)
+
+                    # Plot the reward
+                    ax = axs[2]
+                    plot_matrix_as_heatmap_on_ax(ax, fig, raw_screens, self._ref_seq_render, np.expand_dims(matching_reward,1), f"{self._matching_fn_name} R (Return (y={self._reward_discount_factor}): {rl_return:.2f})",  seq_cmap="plasma", matrix_cmap="Greens", rolcol_size=rolcol_size,  
+                                                vmin=self._reward_vmin, vmax=self._reward_vmax)
+                    
+
+                    plt.tight_layout()
+
+                img_path = os.path.join(self._rollout_save_path, f"{self.num_timesteps}_matching_fn_viz.png")
+                plt.savefig(img_path)
+
+                img = Image.open(img_path)
+
+                # Log to wandb
+                self.logger.record(
+                    "trajectory/matching_fn_viz",
+                    WandbImage(np.array(img), "HWC"),
+                    exclude=("stdout", "log", "json", "csv"),
+                )
+
+                plt.close(fig)
+
+            # Plot info on the frames  
+            for i in range(1, len(screens)):
+                plot_info_on_frame(screens[i], infos[i-1])
+
+            screens = [np.uint8(s).transpose(2, 0, 1) for s in screens]
+
+            # Log to wandb
+            self.logger.record(
+                "trajectory/video",
+                Video(th.ByteTensor(array([screens])), fps=40),
+                exclude=("stdout", "log", "json", "csv"),
+            )
+
+            # Save the rollouts locally    
+            with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_states.npy"), "wb") as f:
+                np.save(f, np.array(states))
+            
+            with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_rewards.npy"), "wb") as f:
+                np.save(f, np.array(rewards))
+
+        return True
+
 
 class WandbCallback(SB3WandbCallback):
     def __init__(

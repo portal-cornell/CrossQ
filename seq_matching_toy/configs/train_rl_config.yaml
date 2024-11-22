@@ -11,7 +11,7 @@ compute:
 
 logging:
   log_freq: 300  # How many times to log during training
-  video_save_freq: 2000 # Frequency to save the video
+  video_save_freq: 5000 # Frequency to save the video
   model_save_freq: 50000  # Frequency to save the model
 
   wandb_project: seq_matching_toy
@@ -21,13 +21,9 @@ logging:
   run_name: null
   run_path: null
 
-env:
-  example_name: nav_3by3_0
-  episode_length: 10
-  include_history: false
-
 rl_algo:
   name: ppo
+  recurrent_policy: False
   total_timesteps: 100000
   n_epochs: 10
   lr: 2.5e-4
@@ -49,6 +45,7 @@ log_folder: seq_matching_toy/rl_train_logs
 
 defaults:
   - seq_reward_model: dtw
+  - env: nav2d
   - _self_
 
 hydra:

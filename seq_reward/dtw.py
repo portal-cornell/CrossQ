@@ -51,6 +51,92 @@ def compute_dtw_reward(obs: np.ndarray, ref: np.ndarray, cost_fn, scale=1, inver
 
     return final_reward, info
 
+def compute_probability_reward(obs, ref, cost_fn, max_cost):
+    cost_matrix = cost_fn(obs, ref)
+    cost_matrix /= max_cost
+    probability_matrix = np.exp(-cost_matrix)
+    #probability_matrix = (max_cost-cost_matrix) / max_cost
+
+    # max_probs[i, j] represents the max probability that reference j was reached at any timestep before i
+    # this is a lower bound on the total probability that reference j was reached by timestep i
+    max_probs = np.zeros_like(probability_matrix)
+    max_probs[0, :] = probability_matrix[0, :]
+    for i in range(1, max_probs.shape[0]):
+        for j in range(max_probs.shape[1]):
+            max_probs[i, j] = max(max_probs[i-1, j], probability_matrix[i, j]) # monotonically increasing probability matrix
+                
+    # cumu_probs[i, j] represents a lower bound on the probability that reference j and all previous references were reached by timestep i
+    cumu_log_probs = np.zeros_like(probability_matrix)
+    #cumu_log_probs[:, 0] = np.log(max_probs[:,0])
+    cumu_log_probs[:, 0] = max_probs[:,0]
+    for i in range(max_probs.shape[0]):
+        for j in range(1, max_probs.shape[1]):
+            #normalized_log_prob = np.log(max_probs[i,j]) 
+            #cumu_log_probs[i, j] = normalized_log_prob + cumu_log_probs[i, j-1]
+            cumu_log_probs[i, j] = max_probs[i,j] * cumu_log_probs[i, j-1]
+
+    final_reward = cumu_log_probs[:,  -1] # only because we are doing np.log( ... np.exp())
+    #final_reward = cumu_log_probs[:,  -1] / max_cost /  cumu_log_probs.shape[1] # only because we are doing np.log( ... np.exp())
+    #cumu_probs = np.sum(np.log(max_probs), axis=1)
+    info = dict(
+        assignment=cumu_log_probs,
+        original_assignment=cumu_log_probs,
+        cost_matrix=max_probs,
+        transported_cost=cumu_log_probs,
+    )
+    return final_reward, info
+
+def compute_ordered_probability_reward(obs, ref, cost_fn, max_cost):
+    cost_matrix = cost_fn(obs, ref)
+    cost_matrix /= max_cost
+    probability_matrix = np.exp(-cost_matrix)
+    #probability_matrix = (max_cost-cost_matrix) / max_cost
+
+    # max_probs[i] represents max probability that the column's state was reached by timestep i
+    max_probs = np.zeros_like(probability_matrix)
+    max_probs[0, :] = probability_matrix[0, :]
+    for i in range(1, max_probs.shape[0]):
+        for j in range(max_probs.shape[1]):
+            # monotonically increasing along rows, decreasing along columns probability matrix
+            max_probs[i, j] = max(max_probs[i-1, j], probability_matrix[i, j])
+
+    for i in range(max_probs.shape[0]):
+        for j in range(1, max_probs.shape[1]):
+            # monotonically increasing along rows, decreasing along columns probability matrix
+            max_probs[i, j] = min(max_probs[i, j-1], max_probs[i, j])
+                         
+    # if there is an inversion, send probability to 0
+    # new_max_probs = np.copy(max_probs)
+    # for j in range(max_probs.shape[1]-1):
+    #     for i in range(max_probs.shape[0]):
+    #         if max_probs[i, j+1] > max_probs[i, j]:
+    #             new_max_probs[i, j] = 0
+    #             new_max_probs[i, j+1] = 0
+
+    # max_probs = new_max_probs
+
+    # cumu_probs[i, j] represents a lower bound on the probability that reference j was reached by timestep i
+    cumu_log_probs = np.zeros_like(probability_matrix)
+    #cumu_log_probs[:, 0] = np.log(max_probs[:,0])
+    cumu_log_probs[:, 0] = max_probs[:,0]
+    for i in range(max_probs.shape[0]):
+        for j in range(1, max_probs.shape[1]):
+            #normalized_log_prob = np.log(max_probs[i,j]) 
+            #cumu_log_probs[i, j] = normalized_log_prob + cumu_log_probs[i, j-1]
+            cumu_log_probs[i, j] = max_probs[i,j] * cumu_log_probs[i, j-1]
+
+    final_reward = cumu_log_probs[:,  -1] # only because we are doing np.log( ... np.exp())
+    #final_reward = cumu_log_probs[:,  -1] / max_cost /  cumu_log_probs.shape[1] # only because we are doing np.log( ... np.exp())
+    #cumu_probs = np.sum(np.log(max_probs), axis=1)
+    info = dict(
+        assignment=cumu_log_probs,
+        original_assignment=cumu_log_probs,
+        cost_matrix=max_probs,
+        transported_cost=cumu_log_probs,
+    )
+    return final_reward, info
+
+
 def _dtw(cost_matrix):
     l1, l2 = cost_matrix.shape
     acc_cost_mat = np.full((l1 + 1, l2 + 1), np.inf)

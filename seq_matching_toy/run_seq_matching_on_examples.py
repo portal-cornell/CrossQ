@@ -6,10 +6,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 from loguru import logger
+from PIL import Image
 from tqdm import tqdm
 
-from seq_matching_toy.toy_examples_main import examples
+from seq_matching_toy.toy_envs.minigrid_sequence import make_sequence_env
 from seq_reward.seq_utils import get_matching_fn, plot_matrix_as_heatmap_on_ax
+from seq_matching_toy.toy_examples_main import load_map_from_example_dict, load_ref_seq_from_example_dict, load_reward_vmin_vmax_from_example_dict, load_starting_pos_from_example_dict, load_observations_from_examples_dict
 
 def prepare_seq_matching_fns(seq_matching_fn_configs, cost_fn_name, reward_vmin, reward_vmax):
     """
@@ -20,14 +22,28 @@ def prepare_seq_matching_fns(seq_matching_fn_configs, cost_fn_name, reward_vmin,
 
     for fn_config in seq_matching_fn_configs:
         fn_config = dict(fn_config)
-        fn_config["reward_vmin"] = reward_vmin
-        fn_config["reward_vmax"] = reward_vmax
-
         fn, fn_name = get_matching_fn(fn_config, cost_fn_name)
         seq_matching_fns_dict[fn_name] = fn
         
     return seq_matching_fns_dict
 
+def render_poses(render_env, pose_seq):
+    """
+    Create renders of the pose sequence for visualization
+    """
+    # return np.ones((len(self._ref_seq),5,5,3))
+    render_env.unwrapped.reset()
+    
+    renders = []
+    for pose in pose_seq:
+        agent_pos = (pose[0], pose[1])
+        agent_dir = pose[2] 
+
+        render_env.unwrapped.set_state(agent_pos, agent_dir)
+        render = render_env.render()
+        renders.append(render)
+    renders = np.stack(renders)
+    return renders
     
 def run_examples_from_config(cfg: DictConfig):
     """
@@ -50,18 +66,27 @@ def run_examples_from_config(cfg: DictConfig):
 
     logger.info(f"Saving the plots to {data_save_dir}")
 
-    example_name = cfg.example
+    example_name = cfg.env.example_name
+    map_array = load_map_from_example_dict(example_name)
+    starting_pos = load_starting_pos_from_example_dict(example_name)
+    ref_seq = load_ref_seq_from_example_dict(example_name)
+    obs_seqs = load_observations_from_examples_dict(example_name)
+    vmin, vmax = load_reward_vmin_vmax_from_example_dict(example_name)
 
     n_seq_matching_fns = len(cfg.seq_matching_fns)
     
-    reward_vmin = examples[example_name]["plot"]["reward_vmin"]
-    reward_vmax = examples[example_name]["plot"]["reward_vmax"]
+    seq_matching_fns_dict = prepare_seq_matching_fns(cfg.seq_matching_fns, cfg.cost_fn, vmin, vmax)
 
-    seq_matching_fns_dict = prepare_seq_matching_fns(cfg.seq_matching_fns, cfg.cost_fn, reward_vmin, reward_vmax)
+    render_env = make_sequence_env(map_array=np.copy(map_array), starting_pos=starting_pos, render_mode="rgb_array", temporal_encoding= cfg.env.temporal_encoding, episode_length=cfg.env.episode_length)
+    ref_render = render_poses(render_env, ref_seq)
 
-    for obs_id in tqdm(examples[example_name]["obs_seqs"].keys()):
-        ref_seq = np.array(examples[example_name]["ref_seq"])
-        obs_seq = np.array(examples[example_name]["obs_seqs"][obs_id]["seq"])
+    for obs_id in tqdm(obs_seqs.keys()):
+        obs_seq = np.array(obs_seqs[obs_id]["seq"])
+        obs_render = render_poses(render_env, obs_seq)
+
+        # Save a gif of the example observation
+        obs_pil = [Image.fromarray(img) for img in obs_render]
+        obs_pil[0].save(os.path.join(data_save_dir, f"{example_name}_obs_{obs_id}.gif"), save_all=True, append_images=obs_pil[1:], duration=len(obs_pil)*5, loop=0)
 
         rolcol_size = cfg.plot.rolcol_size
 
@@ -73,25 +98,33 @@ def run_examples_from_config(cfg: DictConfig):
         fig_height = n_seq_matching_fns * (rolcol_size * (len(obs_seq) + 1))
 
         # Create the figure (2 columns, and the number of rows will be the number of sequence matching algorithms)
+        
         fig, axs = plt.subplots(n_seq_matching_fns, 3, figsize=(fig_width, fig_height))
 
         for fn_idx, fn_name in enumerate(seq_matching_fns_dict.keys()):
             seq_matching_fn = seq_matching_fns_dict[fn_name]
             
             reward, info = seq_matching_fn(obs_seq, ref_seq)
+                    
+            discounts = np.array([cfg.rl_algo.gamma ** t for t in range(len(reward))])
+            rl_return = np.dot(discounts, reward)
+            
+            if "sparse_reward" in fn_name:
+                print(f"sparse reward: {reward}")
+                continue
+            else: 
+                # Plot the cost matrix
+                ax = axs[fn_idx, 0]
+                plot_matrix_as_heatmap_on_ax(ax, fig, obs_render, ref_render, info["cost_matrix"], f"{fn_name} C", seq_cmap="plasma", matrix_cmap="gray_r", rolcol_size=rolcol_size,)
 
-            # Plot the cost matrix
-            ax = axs[fn_idx, 0]
-            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, info["cost_matrix"], f"{fn_name} C", seq_cmap="plasma", matrix_cmap="gray_r", rolcol_size=rolcol_size,)
+                # Plot the assignment matrix
+                ax = axs[fn_idx, 1]   
+                plot_matrix_as_heatmap_on_ax(ax, fig, obs_render, ref_render, info["assignment"], f"{fn_name} A", seq_cmap="plasma", matrix_cmap="Greens", rolcol_size=rolcol_size, vmin=0, vmax=1)
 
-            # Plot the assignment matrix
-            ax = axs[fn_idx, 1]   
-            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, info["assignment"], f"{fn_name} A", seq_cmap="plasma", matrix_cmap="Greens", rolcol_size=rolcol_size, vmin=0, vmax=1)
-
-            # Plot the reward
-            ax = axs[fn_idx, 2]
-            plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, np.expand_dims(reward,1), f"{fn_name} R (Sum {np.sum(reward):.2f})", seq_cmap="plasma", matrix_cmap="Greens", rolcol_size=rolcol_size,
-                                         vmin=examples[example_name]["plot"]["reward_vmin"], vmax=examples[example_name]["plot"]["reward_vmax"])
+                # Plot the reward
+                ax = axs[fn_idx, 2]
+                plot_matrix_as_heatmap_on_ax(ax, fig, obs_render, ref_render, np.expand_dims(reward,1), f"{fn_name} Return (y={cfg.rl_algo.gamma}): {rl_return:.5f})", seq_cmap="plasma", matrix_cmap="Greens", rolcol_size=rolcol_size,
+                                            vmin=vmin, vmax=vmin)
 
         plt.tight_layout()
         plt.savefig(os.path.join(data_save_dir, f"{example_name}_obs_{obs_id}.png"))

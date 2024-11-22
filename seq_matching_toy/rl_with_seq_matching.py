@@ -12,11 +12,12 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.callbacks import CallbackList
 from loguru import logger
 
-from custom_sb3 import PPO
+from custom_sb3 import PPO, RECURRENT_PPO
 from reinforce_model import REINFORCE
 from seq_matching_toy.toy_envs.grid_nav import *
-from seq_matching_toy.toy_examples_main import examples
-from seq_matching_toy.gridnav_rl_callbacks import WandbCallback, GridNavVideoRecorderCallback, GridNavSeqRewardCallback
+from seq_matching_toy.toy_envs.minigrid_sequence import make_sequence_env
+from seq_matching_toy.toy_examples_main import load_map_from_example_dict, load_ref_seq_from_example_dict, load_reward_vmin_vmax_from_example_dict, load_starting_pos_from_example_dict
+from seq_matching_toy.gridnav_rl_callbacks import WandbCallback, GridNavVideoRecorderCallback, GridNavSeqRewardCallback, MinigridSeqRewardCallback, MinigridVideoRecorderCallback
 
 
 # Define sweep config
@@ -46,64 +47,6 @@ sweep_configuration = {
         # "episode_length": {"values": [8]},
     },
 }
-
-def load_map_from_example_dict(example_name: str) -> NDArray:
-    """
-    Load the map from the example dictionary.
-
-    Parameters:
-        example_name: str
-            - The name of the example
-
-    Returns:
-        map_array: NDArray
-            - The map array
-    """
-    return examples[example_name]["map_array"]
-
-def load_starting_pos_from_example_dict(example_name: str) -> NDArray:
-    """
-    Load the starting position from the example dictionary.
-
-    Parameters:
-        example_name: str
-            - The name of the example
-
-    Returns:
-        starting_pos: NDArray
-            - The starting position of the agent
-    """
-    return examples[example_name]["starting_pos"]
-
-def load_ref_seq_from_example_dict(example_name: str) -> NDArray:
-    """
-    Load the reference seq from the example dictionary.
-
-    Parameters:
-        example_name: str
-            - The name of the example
-
-    Returns:
-        ref_seq: NDArray
-            - The array of reference sequences
-    """
-    return examples[example_name]["ref_seq"]
-
-def load_reward_vmin_vmax_from_example_dict(example_name: str) -> NDArray:
-    """
-    Load the reard vmin and vmax from the example dictionary.
-
-    Parameters:
-        example_name: str
-            - The name of the example
-
-    Returns:
-        reward_vmin: float
-            - The minimum value of the reward to receive in the environment
-        reward_vmax: float
-            - The maximum value of the reward to receive in the environment
-    """
-    return examples[example_name]["plot"]["reward_vmin"], examples[example_name]["plot"]["reward_vmax"]
 
 def get_output_folder_name(data_log_dir) -> str:
     """
@@ -160,10 +103,12 @@ def train(cfg: DictConfig):
     else:
         grid_class = GridNavigationEnv
 
+    tags =cfg.logging.wandb_tags + [f"ep_{cfg.env.episode_length}", cfg.env.example_name, cfg.seq_reward_model.name, f"disc_{cfg.rl_algo.gamma}", f"ent_{cfg.rl_algo.ent_coef}"] + (["temporal"] if cfg.env.temporal_encoding else [])
+
     with wandb.init(
         project=cfg.logging.wandb_project,
         name=cfg.logging.run_name,
-        tags=cfg.logging.wandb_tags,
+        tags=tags,
         sync_tensorboard=True,
         config=OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True),
         mode=cfg.logging.wandb_mode,
@@ -181,22 +126,31 @@ def train(cfg: DictConfig):
             ent_coef = cfg.rl_algo.ent_coef
             vf_coef = cfg.rl_algo.vf_coef
             episode_length = cfg.env.episode_length
-
-        if reinforce or policy_gradient:
-            env = grid_class(map_array=np.copy(map_array), starting_pos=starting_pos, render_mode="rgb_array", episode_length=episode_length)
-        else:
-            make_env_fn = lambda: Monitor(grid_class(map_array=np.copy(map_array), starting_pos=starting_pos, render_mode="rgb_array", episode_length=episode_length))
-
+        
+        if cfg.env.minigrid:
+            make_env_fn = lambda: Monitor(make_sequence_env(map_array=np.copy(map_array), starting_pos=starting_pos, render_mode="rgb_array", temporal_encoding= cfg.env.temporal_encoding, episode_length=episode_length))
             training_env = make_vec_env(
                 make_env_fn,
                 n_envs=cfg.compute.n_cpu_workers,
                 seed=cfg.seed,
                 vec_env_cls=SubprocVecEnv,
             )
+        else:
+            if reinforce or policy_gradient:
+                training_env = grid_class(map_array=np.copy(map_array), starting_pos=starting_pos, render_mode="rgb_array", episode_length=episode_length)
+            else:
+                make_env_fn = lambda: Monitor(grid_class(map_array=np.copy(map_array), starting_pos=starting_pos, render_mode="rgb_array", episode_length=episode_length))
+
+                training_env = make_vec_env(
+                    make_env_fn,
+                    n_envs=cfg.compute.n_cpu_workers,
+                    seed=cfg.seed,
+                    vec_env_cls=SubprocVecEnv,
+                )
 
         if reinforce or policy_gradient:
             model = REINFORCE(
-                        env = env,
+                        env = training_env,
                         n=cfg.rl_algo.n,
                         learning_rate=lr,
                         ent_coef=ent_coef,
@@ -205,8 +159,11 @@ def train(cfg: DictConfig):
                         use_relative_reward=cfg.rl_algo.use_relative_reward if "use_relative_reward" in cfg.rl_algo else False,
                         video_save_freq=cfg.logging.video_save_freq)
         else:
+            ppo_class = RECURRENT_PPO if cfg.rl_algo.recurrent_policy else PPO
+            policy_type = "MlpLstmPolicyMlpPolicy" if cfg.rl_algo.recurrent_policy else "MlpPolicy"
+
             # Define the model
-            model = PPO("MlpPolicy", 
+            model = ppo_class(policy_type, 
                         training_env, 
                         n_steps=cfg.env.episode_length,
                         n_epochs=cfg.rl_algo.n_epochs,
@@ -216,7 +173,8 @@ def train(cfg: DictConfig):
                         gamma=cfg.rl_algo.gamma,
                         ent_coef=ent_coef,
                         vf_coef=vf_coef,
-                        verbose=1)
+                        verbose=1,
+                        seed=cfg.seed)
     
         # Make an alias for the wandb in the run_path
         if cfg.logging.wandb_mode != "disabled" and not cfg.sweep.enabled:
@@ -234,26 +192,49 @@ def train(cfg: DictConfig):
         matching_fn_cfg["reward_vmin"] = reward_vmin
         matching_fn_cfg["reward_vmax"] = reward_vmax
 
-        video_callback = GridNavVideoRecorderCallback(
-            SubprocVecEnv([make_env_fn]) if not (reinforce or policy_gradient) else env,
-            rollout_save_path=os.path.join(cfg.logging.run_path, "eval"),
-            render_freq=cfg.logging.video_save_freq // cfg.compute.n_cpu_workers,
-            map_array = np.copy(map_array),
-            ref_seq = np.copy(ref_seq),
-            matching_fn_cfg = matching_fn_cfg,
-            cost_fn_name = cfg.cost_fn,
-            reward_vmin = reward_vmin,
-            reward_vmax = reward_vmax,
-            use_history=cfg.env.include_history
-        )
+        if cfg.env.minigrid:
+            video_callback = MinigridVideoRecorderCallback(
+                make_env_fn,
+                rollout_save_path=os.path.join(cfg.logging.run_path, "eval"),
+                render_freq=cfg.logging.video_save_freq // cfg.compute.n_cpu_workers,
+                ref_seq = np.copy(ref_seq),
+                matching_fn_cfg = matching_fn_cfg,
+                cost_fn_name = cfg.cost_fn,
+                temporal_encoding= cfg.env.temporal_encoding,
+                reward_vmin = reward_vmin,
+                reward_vmax = reward_vmax,
+                reward_discount_factor=cfg.rl_algo.gamma
+            )
 
-        seq_matching_callback = GridNavSeqRewardCallback(
-            map_array = np.copy(map_array),
-            ref_seq = np.copy(ref_seq),
-            matching_fn_cfg = matching_fn_cfg,
-            cost_fn_name = cfg.cost_fn,
-            use_history=cfg.env.include_history
-        )
+            seq_matching_callback = MinigridSeqRewardCallback(
+                ref_seq = np.copy(ref_seq),
+                matching_fn_cfg = matching_fn_cfg,
+                cost_fn_name = cfg.cost_fn,
+                temporal_encoding= cfg.env.temporal_encoding,
+                env_fn = make_env_fn
+            )
+
+        else:
+            video_callback = GridNavVideoRecorderCallback(
+                SubprocVecEnv([make_env_fn]) if not (reinforce or policy_gradient) else env,
+                rollout_save_path=os.path.join(cfg.logging.run_path, "eval"),
+                render_freq=cfg.logging.video_save_freq // cfg.compute.n_cpu_workers,
+                map_array = np.copy(map_array),
+                ref_seq = np.copy(ref_seq),
+                matching_fn_cfg = matching_fn_cfg,
+                cost_fn_name = cfg.cost_fn,
+                reward_vmin = reward_vmin,
+                reward_vmax = reward_vmax,
+                use_history=cfg.env.include_history
+            )
+
+            seq_matching_callback = GridNavSeqRewardCallback(
+                map_array = np.copy(map_array),
+                ref_seq = np.copy(ref_seq),
+                matching_fn_cfg = matching_fn_cfg,
+                cost_fn_name = cfg.cost_fn,
+                use_history=cfg.env.include_history
+            )
 
         callback_list = [wandb_callback, video_callback, seq_matching_callback]
 
@@ -269,6 +250,7 @@ def train(cfg: DictConfig):
         logger.info("Done.")
         wandb_run.finish()
 
-
+# pylint: disable=no-value-for-parameter
 if __name__ == "__main__":
     train_or_sweep()
+# pylint: enable=no-value-for-parameter

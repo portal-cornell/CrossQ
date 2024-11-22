@@ -47,16 +47,41 @@ def clean_folder(folder_path: str) -> None:
     return False
 
 
+def get_directory_size(directory):
+    """Calculate the total size of a directory in bytes."""
+    total_size = 0
+    for dirpath, dirnames, filenames in os.walk(directory):
+        for f in filenames:
+            fp = os.path.join(dirpath, f)
+            # Check if file exists to avoid errors
+            if os.path.exists(fp):
+                total_size += os.path.getsize(fp)
+    return total_size
+
+def show_top_level_directory_sizes(base_dir):
+    # Get a list of all top-level directories in the base directory
+    folders = [f for f in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, f))]
+
+    # Loop through the folders and calculate their size
+    for folder in folders:
+        folder_path = os.path.join(base_dir, folder)
+        folder_size = get_directory_size(folder_path)
+        print(f"Folder: {folder}, Size: {folder_size / (1024 * 1024):.2f} MB")
+
+
+
 if __name__ == "__main__":
-    folder_path = "/share/portal/hw575/CrossQ/train_logs"
+    folder_path = "/share/portal/wph52/CrossQ"
+    show_top_level_directory_sizes(folder_path)
+    
 
     has_gif_folder_list = []
 
-    for f in os.listdir(folder_path):
-        has_gif = clean_folder(os.path.join(folder_path, f))
+    # for f in os.listdir(folder_path):
+    #     has_gif = clean_folder(os.path.join(folder_path, f))
         
-        if has_gif:
-            has_gif_folder_list.append(os.path.join(folder_path, f, "eval"))
+    #     if has_gif:
+    #         has_gif_folder_list.append(os.path.join(folder_path, f, "eval"))
 
     # print(has_gif_folder_list)
 
@@ -66,7 +91,7 @@ if __name__ == "__main__":
     # print()
     # print(len([f for f in has_gif_folder_list if "both_arms_out" in f or "left_arm_out" in f or "right_arm_out" in f or "left_arm_extend_wave_higher" in f or "right_arm_extend_wave_higher" in f]))
 
-    print("==============")
-    print([f for f in has_gif_folder_list if ("both_arms_out" in f or "left_arm_out" in f or "right_arm_out" in f or "left_arm_extend_wave_higher" in f or "right_arm_extend_wave_higher" in f) and ("09-24" in f or "09-26" in f) and ("2xArm+1xStanding" not in f)])
-    print()
-    print(len([f for f in has_gif_folder_list if ("both_arms_out" in f or "left_arm_out" in f or "right_arm_out" in f or "left_arm_extend_wave_higher" in f or "right_arm_extend_wave_higher" in f) and ("09-24" in f or "09-26" in f) and ("2xArm+1xStanding" not in f)]))
+    # print("==============")
+    # print([f for f in has_gif_folder_list if ("both_arms_out" in f or "left_arm_out" in f or "right_arm_out" in f or "left_arm_extend_wave_higher" in f or "right_arm_extend_wave_higher" in f) and ("09-24" in f or "09-26" in f) and ("2xArm+1xStanding" not in f)])
+    # print()
+    # print(len([f for f in has_gif_folder_list if ("both_arms_out" in f or "left_arm_out" in f or "right_arm_out" in f or "left_arm_extend_wave_higher" in f or "right_arm_extend_wave_higher" in f) and ("09-24" in f or "09-26" in f) and ("2xArm+1xStanding" not in f)]))

@@ -1,7 +1,6 @@
-name: soft_dtw
-gamma: 5
+name: sparse_reward
 scale: 1
-pos_offset: 6
-post_processing_method: 
-    - convert_to_positive_reward
+goal_radius: 1
+goal_bonus: 1
+post_processing_method: []
 add_to_env_rew: false # True to add the environment rewards to the sequence matching rewards 

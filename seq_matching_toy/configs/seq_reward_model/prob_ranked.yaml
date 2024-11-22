@@ -1,6 +1,7 @@
-name: dtw
+name: prob_ranked
 scale: 1
-pos_offset: 6
-post_processing_method: 
-    - convert_to_positive_reward
+pos_offset: 17
 add_to_env_rew: false # True to add the environment rewards to the sequence matching rewards 
+rank_weighting: .1
+post_processing_method: 
+    - penalize_inversions

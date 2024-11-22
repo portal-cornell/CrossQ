@@ -1,0 +1,5 @@
+example_name: lava_nav
+episode_length: 20
+include_history: false
+temporal_encoding: True
+minigrid: True

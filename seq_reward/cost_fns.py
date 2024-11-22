@@ -1,5 +1,6 @@
 import numpy as np
 import heapq
+from scipy.spatial.distance import cdist
 
 def cosine_distance(x, y):
     distance = np.dot(x, y.T) / np.linalg.norm(x, axis=1, keepdims=True) / np.linalg.norm(y.T, axis=0, keepdims=True) # Transpose B to match dimensions
@@ -159,6 +160,12 @@ def a_star_shortest_path(matrix, start, goal):
 
     return float('inf')  # If there's no valid path to the goal
 
+def manhattan_distance(x, y):
+    """
+    Manhattan distance matrix between two sequences of coordinates
+    """
+    return cdist(x, y, metric='cityblock')
+
 def nav_shortest_path_distance(x, y, invert=False):
     """
     x: (x_batch_size, A, B)
@@ -200,6 +207,8 @@ def nav_shortest_path_distance(x, y, invert=False):
 
     return cost_matrix
 
+
+
 COST_FN_DICT = {
     "cosine": cosine_distance,
     "euclidean": euclidean_distance_advanced,
@@ -210,4 +219,6 @@ COST_FN_DICT = {
     "edit_distance": edit_distance,
     "nav_manhattan": nav_manhantan_distance,
     "nav_shortest_path": nav_shortest_path_distance,
+    "manhattan": manhattan_distance,
+   #"p_prev_visited_manhattan": p_prev_visited_manhattan
 }

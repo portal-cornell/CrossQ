@@ -6,12 +6,16 @@ from PIL import Image
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 
+from seq_reward.sparse_reward import compute_sparse_reward
+from seq_reward.even_distribution import compute_even_distribution_reward
 from seq_reward.optimal_transport import compute_ot_reward
 from seq_reward.soft_dtw import compute_soft_dtw_reward
-from seq_reward.dtw import compute_dtw_reward
+from seq_reward.dtw import compute_dtw_reward, compute_probability_reward, compute_ordered_probability_reward
 from seq_reward.cost_fns import COST_FN_DICT
 
 from constants import TASK_SEQ_DICT
+
+from scipy.stats import kendalltau
 
 def load_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bool = False) -> np.ndarray:
     """
@@ -111,21 +115,30 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
         fn_name: str
             - The name of the function
     """
-    assert  fn_config["name"] in ["ot", "dtw", "soft_dtw"], f"Currently only supporting ['optimal_transport', 'dtw', 'soft_dtw'], got {fn_config['name']}"
     logger.info(f"Loading the following reward model:\n{fn_config}")
 
     cost_fn = COST_FN_DICT[cost_fn_name]
-    scale = float(fn_config["scale"])
+    scale = float(fn_config.get("scale", 1))
     fn_name = fn_config["name"]
 
     inverted_cost = False #cost_fn_name == "nav_shortest_path"
 
-    if fn_name == "ot":
+    if fn_name == "ot" or fn_name=="ot_minus":
         gamma = float(fn_config["gamma"])
         fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale: compute_ot_reward(obs_seq, ref_seq, cost_fn, scale, gamma), f"{fn_name}_g={gamma}"
-    elif fn_name == "dtw":
+    elif fn_name == "even_distribution":
+        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_even_distribution_reward(obs_seq, ref_seq, cost_fn, scale), fn_name
+    elif fn_name == "sparse_reward":
+        radius = float(fn_config["goal_radius"])
+        goal_bonus = float(fn_config["goal_bonus"])
+        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_sparse_reward(obs_seq, ref_seq, cost_fn, radius, goal_bonus), fn_name
+    elif "dtw" in fn_name and "sdtw" not in fn_name and "soft" not in fn_name:
         fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_dtw_reward(obs_seq, ref_seq, cost_fn, scale, inverted_cost=inverted_cost), fn_name
-    elif fn_name == "soft_dtw":
+    elif "prob_reward" == fn_name or "prob_ranked" == fn_name:
+        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_probability_reward(obs_seq, ref_seq, cost_fn, max_cost=float(fn_config.get("pos_offset", 0))), fn_name
+    elif "ordered_prob_reward" == fn_name:
+        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_ordered_probability_reward(obs_seq, ref_seq, cost_fn, max_cost=float(fn_config.get("pos_offset", 0))), fn_name
+    elif "soft_dtw" in fn_name or "sdtw" in fn_name:
         gamma = float(fn_config["gamma"])
         if gamma == 10000.0:
             fn_name = f"{fn_name}_g=F"
@@ -150,6 +163,10 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
                     original_fn=augmented_fn, 
                     original_fn_name=fn_name, 
                     stage_bonus=float(fn_config.get("stage_bonus", 0)))
+            elif method == "stage_reward_based_on_max":
+                augmented_fn, fn_name = augment_fn_with_stage_reward_based_on_max(original_fn=augmented_fn, 
+                    original_fn_name=fn_name, 
+                    stage_bonus=float(fn_config.get("stage_bonus", 0)))
             elif method == "stage_multiplier_based_on_last_state":
                 augmented_fn, fn_name = augment_fn_with_stage_multiplier_based_on_last_state(
                     original_fn=augmented_fn, 
@@ -171,6 +188,20 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
                     original_fn=augmented_fn, 
                     original_fn_name=fn_name, 
                     pos_offset=float(fn_config.get("pos_offset", 0)))
+            elif method == "stage_penalty_based_on_last_state":
+               augmented_fn, fn_name = augment_fn_with_penalize_cost_based_on_last_state( 
+                    original_fn=augmented_fn, 
+                    original_fn_name=fn_name, 
+                    stage_penalty=float(fn_config.get("stage_penalty", 1)))
+            elif method == "p_prev_visited":
+                augmented_fn, fn_name = augment_fn_with_p_prev_visited(
+                    original_fn=augmented_fn, 
+                    original_fn_name=fn_name)
+            elif method == "penalize_inversions":
+                augmented_fn, fn_name = augment_fn_with_penalize_inversions(
+                    original_fn=augmented_fn, 
+                    original_fn_name=fn_name,
+                    rank_weighting=float(fn_config.get('rank_weighting', 0)))
             else:
                 raise NotImplementedError(f"Unknown post processing method: {post_processing_method}")
             
@@ -178,20 +209,142 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
     else:
         return fn, fn_name
 
-
-
 def augment_fn_with_exp_reward(original_fn, original_fn_name):
     new_fn_name = original_fn_name + "_exp"
 
     def post_processor(reward):
-        """
-        The reward is - cost right now. We can exponentiate it to make it positive and between 0 and 1.
-        """
         return np.exp(reward)
     
     def new_fn(*args, **kwargs):
         reward, info = original_fn(*args, **kwargs)
         new_reward = post_processor(reward)
+        return new_reward, info
+    
+    return new_fn, new_fn_name
+
+
+def p_prev_visited(d):
+    h = np.zeros_like(d)
+
+    h[:, 0] = d[:, 0]
+
+    for i in range(d.shape[1]):
+        first_h_argmax = d[:, i].argmax()
+        h[:, i] = d[:, i]
+        h[first_h_argmax:, i] = d[first_h_argmax,i]
+        
+        if i > 1:
+            h[:, i] *= h[:, i-1]
+
+    # for i, row in enumerate(h[1:], start=1):
+    #     for j, col in enumerate(row[1:], start=1):
+
+    #         #h[i, j] = d[i, j] * h[i-1, j-1] + (1-d[i,j]) * h[i-1, j] 
+
+    #        # h[i, j] = d[i, j] * h[i-1, j-1] * (1 - h[i-1, j]) + h[i,j]
+    #         h[i, j] = d[i, j] * h[i-1, j-1] + (1-d[i,j]) * h[:i, j].max()
+            
+    #         # max_obs = h[:i, j-1].argmax() 
+    #         # max_obs = h[:i, j].argmax() 
+
+    #         # if i >= 2:
+    #         #     h[i,j] -= min(d[i-1, j], 1-d[i-1, j-1]) * h[i-2, j-1]
+    return h   
+
+def augment_fn_with_p_prev_visited(original_fn, original_fn_name): 
+    new_fn_name = original_fn_name + "_prev"
+
+    def post_processor(cost_matrix):
+        """
+        must apply convert_to_pos first
+        """
+        #reward_matrix = np.exp(-cost_matrix)
+        reward_matrix = (7-cost_matrix) / 7
+        new_cost = p_prev_visited(reward_matrix)
+
+        new_reward = np.sum(new_cost, axis=1)
+
+        return new_reward, new_cost
+
+    def new_fn(*args, **kwargs):
+        _, info = original_fn(*args, **kwargs)
+        new_reward, new_cost = post_processor(info["cost_matrix"])
+
+        info["assignment"] = new_cost
+        return new_reward, info
+    
+    return new_fn, new_fn_name
+
+
+def augment_fn_with_penalize_inversions(original_fn, original_fn_name, rank_weighting): 
+    new_fn_name = original_fn_name + "_prev"
+
+    def post_processor(original_reward, cost_matrix):
+        """
+        must apply convert_to_pos first
+        """
+
+        ## TODO: argmax because cost_matrix is actually the reward when coming from prob_rewards (for vis purposes)
+        # switch this to argmin when it is cost_matrix
+        closest_frames_to_refs = np.argmax(cost_matrix, axis=0)
+        ref_ranking = np.arange(cost_matrix.shape[1])
+        rank_correlation = kendalltau(closest_frames_to_refs, ref_ranking).statistic
+        rank_correlation = (1 + rank_correlation) / 2 # kt is in range [-1, 1], but we want [0,1]
+        new_reward = (1-rank_weighting) * original_reward + rank_weighting * rank_correlation
+        return new_reward
+
+    def new_fn(*args, **kwargs):
+        reward, info = original_fn(*args, **kwargs)
+        new_reward = post_processor(reward, info["cost_matrix"])
+
+        return new_reward, info
+    
+    return new_fn, new_fn_name
+
+def augment_fn_with_penalize_cost_based_on_last_state(original_fn, original_fn_name, stage_penalty=None):
+    """
+    Parameters:
+        stage_penalty: float
+            The penalty that we add to the cost when we move backward from one stage to the previous
+            If None, this uses the max distance to any reference frame as the penalty
+    """
+    new_fn_name = original_fn_name + "_stg_lst"
+
+    def post_processor(matching_matrix, cost_matrix, scale=1, inverted_cost=False):
+        """
+        When the assignment moves backward, we penalize the reward (not cumulative).
+
+        Parameters:
+            reward: np.ndarray (obs_seq_len, )
+            matching_matrix: np.ndarray (obs_seq_len, ref_seq_len)
+        """
+        previous_step_assignment = 0
+        reward_bonus = 0
+
+        costs = np.sum(cost_matrix * matching_matrix, axis=1)  # size: (train_freq,)
+
+        for i in range(len(matching_matrix)):
+            assignment = matching_matrix[i].argmax()
+
+            # print(f"i={i} assignment={assignment} previous_step_assignment={previous_step_assignment}")
+
+            if assignment < previous_step_assignment:
+                # simply subtract the previous reward (since it moved backwards, shouldn't get that reward)
+                costs[i] = cost_matrix[i].argmax()
+            
+        if inverted_cost:
+            rewards = scale * np.array(costs)
+        else:
+            rewards = -scale * np.array(costs)
+
+        # Normalize the rewards to be 0 and 1
+        # return np.array(rewards) / matching_matrix.shape[1]
+        # TODO: Change it back for humanoid
+        return rewards
+                        
+    def new_fn(*args, **kwargs):
+        _, info = original_fn(*args, **kwargs)
+        new_reward = post_processor(info["assignment"], info["cost_matrix"])
 
         return new_reward, info
     
@@ -255,6 +408,68 @@ def augment_fn_with_stage_reward_based_on_last_state(original_fn, original_fn_na
         return new_reward, info
     
     return new_fn, new_fn_name
+
+
+def augment_fn_with_stage_reward_based_on_max(original_fn, original_fn_name, stage_bonus):
+    """
+    Parameters:
+        stage_bonus: float
+            The bonus that we add to the reward when we progress from one stage to another stage.
+    """
+    new_fn_name = original_fn_name + "_stg_lst"
+
+    def post_processor(reward, matching_matrix):
+        """
+        Assuming the matching_matrix is time consistent.
+
+        When the assignment changes (progress from one ref frame to another ref frame), we add a bonus to the reward.
+
+        Parameters:
+            reward: np.ndarray (obs_seq_len, )
+            matching_matrix: np.ndarray (obs_seq_len, ref_seq_len)
+        """
+        previous_step_assignment = 0
+        reward_bonus = 0
+
+        rewards = []
+
+        # print(f"reward={reward}")
+        # print(f"matching_matrix={matching_matrix}")
+
+        for i in range(len(reward)):
+            assignment = matching_matrix[i].argmax()
+
+            # print(f"i={i} assignment={assignment} previous_step_assignment={previous_step_assignment}")
+
+            if assignment != previous_step_assignment:
+                # Since reward[i] is the last reward at the end of the current stage, the reward bonus for 
+                #   the next stage should get updated
+                previous_step_max_reward = np.max(reward[matching_matrix.argmax(axis=1) == previous_step_assignment])
+
+                reward_bonus += stage_bonus + previous_step_max_reward
+            
+            new_reward = reward[i] + reward_bonus
+
+            rewards.append(new_reward)
+
+            previous_step_assignment = assignment
+
+            # print(f"i={i} reward[i]={reward[i]} reward_bonus={reward_bonus} new_reward={new_reward}")
+            # input("stop")
+        
+        # Normalize the rewards to be 0 and 1
+        # return np.array(rewards) / matching_matrix.shape[1]
+        # TODO: Change it back for humanoid
+        return np.array(rewards)
+                        
+    def new_fn(*args, **kwargs):
+        reward, info = original_fn(*args, **kwargs)
+        new_reward = post_processor(reward, info["assignment"])
+
+        return new_reward, info
+    
+    return new_fn, new_fn_name
+
 
 
 def augment_fn_with_stage_multiplier_based_on_last_state(original_fn, original_fn_name):
@@ -541,7 +756,7 @@ def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, 
 
     # Add text annotations (numbers) on each cell in the heatmap
     # label_text_font_size = max(obs_len, ref_len) / min(matrix.shape[0], matrix.shape[1]) * rolcol_size
-    label_text_font_size = max(obs_len, ref_len) / min(matrix.shape[0], matrix.shape[1]) * rolcol_size * 10   # x10 For generating toy example for workshop paper
+    label_text_font_size = max(obs_len, ref_len) / min(matrix.shape[0], matrix.shape[1]) * rolcol_size   # x10 For generating toy example for workshop paper
     if label_text_font_size >= 1:
         for i in range(matrix.shape[0]):
             for j in range(matrix.shape[1]):
@@ -568,7 +783,7 @@ def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, 
     ax.axis('off')
 
 
-def seq_matching_viz(matching_fn_name, obs_seq, ref_seq, matching_reward, info, reward_vmin, reward_vmax, path_to_save_fig, seq_cmap=None, rolcol_size=1):
+def seq_matching_viz(matching_fn_name, obs_seq, ref_seq, matching_reward, info, reward_vmin, reward_vmax, path_to_save_fig, r_discount_factor=1, seq_cmap=None, rolcol_size=1):
     # 2 * because we have 2 figure columns (where we will plot the entire ref seq)
     #   In each figure columns, we have len(ref_seq) for the reference sequence/cost matrix, 1 column for the vertical stack of obs seq, and 1 column for the colorbar
     # The last column (for the reward) will just have 4 things (1 column for the vertical stack of obs seq, 1 column for the colorbar, and 2 column for the reward)
@@ -588,13 +803,16 @@ def seq_matching_viz(matching_fn_name, obs_seq, ref_seq, matching_reward, info, 
     ax = axs[1]
     plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, info["assignment"], f"{matching_fn_name} Assign", seq_cmap=seq_cmap, matrix_cmap="Greens", rolcol_size=rolcol_size, vmin=0, vmax=1)
 
+    discounts = np.array([r_discount_factor ** t for t in range(len(matching_reward))])
+    rl_return = np.dot(discounts, matching_reward)
+
     # Plot the reward
     ax = axs[2]
     # Only plot the last 2 frames of the ref seq
     if len(ref_seq) > 2:
-        plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq[-3:-1], np.expand_dims(matching_reward,1), f"{matching_fn_name} Reward (Sum = {np.sum(matching_reward):.2f})", seq_cmap=seq_cmap, matrix_cmap="Greens", rolcol_size=rolcol_size, vmin=reward_vmin, vmax=reward_vmax)
+        plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq[-3:-1], np.expand_dims(matching_reward,1), f"{matching_fn_name} Return (y={r_discount_factor}): {rl_return:.2f})", seq_cmap=seq_cmap, matrix_cmap="Greens", rolcol_size=rolcol_size, vmin=reward_vmin, vmax=reward_vmax)
     else:
-        plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, np.expand_dims(matching_reward,1), f"{matching_fn_name} Reward (Sum = {np.sum(matching_reward):.2f})", seq_cmap=seq_cmap, matrix_cmap="Greens", rolcol_size=rolcol_size, vmin=reward_vmin, vmax=reward_vmax)
+        plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, np.expand_dims(matching_reward,1), f"{matching_fn_name} Return (y={r_discount_factor}): {rl_return:.2f})", seq_cmap=seq_cmap, matrix_cmap="Greens", rolcol_size=rolcol_size, vmin=reward_vmin, vmax=reward_vmax)
 
     plt.tight_layout()
 

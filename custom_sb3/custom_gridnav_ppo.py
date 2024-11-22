@@ -1,4 +1,5 @@
 from stable_baselines3 import PPO
+from sb3_contrib import RecurrentPPO
 
 import numpy as np
 import torch as th
@@ -7,6 +8,137 @@ from stable_baselines3.common.vec_env import VecEnv
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.buffers import RolloutBuffer
 from stable_baselines3.common.utils import obs_as_tensor
+
+from copy import deepcopy
+from typing import Any, ClassVar, Dict, Optional, Type, TypeVar, Union
+
+from sb3_contrib.common.recurrent.buffers import RecurrentDictRolloutBuffer, RecurrentRolloutBuffer
+
+class CustomRecurrentPPO(RecurrentPPO):
+    """
+    StableBaselines3 PPO with modified collect rollouts to do post-hoc reward calculation
+    """
+    def __init__(self, *args, **kwargs):
+        super(CustomRecurrentPPO, self).__init__(*args, **kwargs)
+
+    def collect_rollouts(
+        self,
+        env: VecEnv,
+        callback: BaseCallback,
+        rollout_buffer: RolloutBuffer,
+        n_rollout_steps: int,
+    ) -> bool:
+        """
+        Collect experiences using the current policy and fill a ``RolloutBuffer``.
+        The term rollout here refers to the model-free notion and should not
+        be used with the concept of rollout used in model-based RL or planning.
+
+        :param env: The training environment
+        :param callback: Callback that will be called at each step
+            (and at the beginning and end of the rollout)
+        :param rollout_buffer: Buffer to fill with rollouts
+        :param n_steps: Number of experiences to collect per environment
+        :return: True if function returned with at least `n_rollout_steps`
+            collected, False if callback terminated rollout prematurely.
+        """
+        assert isinstance(
+            rollout_buffer, (RecurrentRolloutBuffer, RecurrentDictRolloutBuffer)
+        ), f"{rollout_buffer} doesn't support recurrent policy"
+
+        assert self._last_obs is not None, "No previous observation was provided"
+        # Switch to eval mode (this affects batch norm / dropout)
+        self.policy.set_training_mode(False)
+
+        n_steps = 0
+        rollout_buffer.reset()
+        # Sample new weights for the state dependent exploration
+        if self.use_sde:
+            self.policy.reset_noise(env.num_envs)
+
+        callback.on_rollout_start()
+
+        lstm_states = deepcopy(self._last_lstm_states)
+
+        while n_steps < n_rollout_steps:
+            if self.use_sde and self.sde_sample_freq > 0 and n_steps % self.sde_sample_freq == 0:
+                # Sample a new noise matrix
+                self.policy.reset_noise(env.num_envs)
+
+            with th.no_grad():
+                # Convert to pytorch tensor or to TensorDict
+                obs_tensor = obs_as_tensor(self._last_obs, self.device)
+                episode_starts = th.tensor(self._last_episode_starts, dtype=th.float32, device=self.device)
+                actions, values, log_probs, lstm_states = self.policy.forward(obs_tensor, lstm_states, episode_starts)
+
+            actions = actions.cpu().numpy()
+
+            # Rescale and perform action
+            clipped_actions = actions
+            # Clip the actions to avoid out of bound error
+            if isinstance(self.action_space, spaces.Box):
+                clipped_actions = np.clip(actions, self.action_space.low, self.action_space.high)
+
+            new_obs, rewards, dones, infos = env.step(clipped_actions)
+
+            self.num_timesteps += env.num_envs
+
+            # Give access to local variables
+            callback.update_locals(locals())
+            if not callback.on_step():
+                return False
+
+            self._update_info_buffer(infos, dones)
+            n_steps += 1
+
+            if isinstance(self.action_space, spaces.Discrete):
+                # Reshape in case of discrete action
+                actions = actions.reshape(-1, 1)
+
+            # Handle timeout by bootstraping with value function
+            # see GitHub issue #633
+            for idx, done_ in enumerate(dones):
+                if (
+                    done_
+                    and infos[idx].get("terminal_observation") is not None
+                    and infos[idx].get("TimeLimit.truncated", False)
+                ):
+                    terminal_obs = self.policy.obs_to_tensor(infos[idx]["terminal_observation"])[0]
+                    with th.no_grad():
+                        terminal_lstm_state = (
+                            lstm_states.vf[0][:, idx : idx + 1, :].contiguous(),
+                            lstm_states.vf[1][:, idx : idx + 1, :].contiguous(),
+                        )
+                        # terminal_lstm_state = None
+                        episode_starts = th.tensor([False], dtype=th.float32, device=self.device)
+                        terminal_value = self.policy.predict_values(terminal_obs, terminal_lstm_state, episode_starts)[0]
+                    rewards[idx] += self.gamma * terminal_value
+
+            rollout_buffer.add(
+                self._last_obs,
+                actions,
+                rewards,
+                self._last_episode_starts,
+                values,
+                log_probs,
+                lstm_states=self._last_lstm_states,
+            )
+
+            self._last_obs = new_obs
+            self._last_episode_starts = dones
+            self._last_lstm_states = lstm_states
+
+        with th.no_grad():
+            # Compute value for the last timestep
+            episode_starts = th.tensor(dones, dtype=th.float32, device=self.device)
+            values = self.policy.predict_values(obs_as_tensor(new_obs, self.device), lstm_states.vf, episode_starts)
+
+        # TODO: will: hacky way to run callback before computing returns
+        callback.on_rollout_end()
+        
+        rollout_buffer.compute_returns_and_advantage(last_values=values, dones=dones)
+
+        return True
+
 
 class CustomPPO(PPO):
     """
@@ -108,9 +240,8 @@ class CustomPPO(PPO):
             # Compute value for the last timestep
             values = self.policy.predict_values(obs_as_tensor(new_obs, self.device))  # type: ignore[arg-type]
         
-        # TODO (Yuki): a hacky way to do post-hoc reward calculation before returns and advantages are computed
+        # TODO: will/yuki A hacky way to do post-hoc reward calculation before returns and advantages are computed
         callback.on_rollout_end()
-        #callback.on_rollout_end_history()
 
         rollout_buffer.compute_returns_and_advantage(last_values=values, dones=dones)
         
