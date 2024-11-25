@@ -504,7 +504,7 @@ def scale_rewards_by_class(rewards: np.ndarray, classes: np.ndarray) -> np.ndarr
     return scaled_rewards
 
 
-def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, title:str, seq_cmap: str, matrix_cmap: str, rolcol_size: int, vmin=None, vmax=None):
+def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, title:str, seq_cmap: str, matrix_cmap: str, rolcol_size: int, vmin=None, vmax=None, matrix_text_font_size=None):
     """
     Plot the Matrix with obs_seq on the left and ref_seq on top of the heatmap.
     """
@@ -541,7 +541,11 @@ def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, 
 
     # Add text annotations (numbers) on each cell in the heatmap
     # label_text_font_size = max(obs_len, ref_len) / min(matrix.shape[0], matrix.shape[1]) * rolcol_size
-    label_text_font_size = max(obs_len, ref_len) / min(matrix.shape[0], matrix.shape[1]) * rolcol_size * 10   # x10 For generating toy example for workshop paper
+    if matrix_text_font_size is None:
+        label_text_font_size = max(obs_len, ref_len) / min(matrix.shape[0], matrix.shape[1]) * rolcol_size * 10   # x10 For generating toy example for workshop paper
+    else:
+        label_text_font_size = matrix_text_font_size
+
     if label_text_font_size >= 1:
         for i in range(matrix.shape[0]):
             for j in range(matrix.shape[1]):
