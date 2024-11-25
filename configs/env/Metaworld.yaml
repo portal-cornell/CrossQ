@@ -1,4 +1,5 @@
 name: Metaworld
+# The task name either has to end with -goal-observable or -goal-hidden
 task_name: button-press-v2-goal-observable
 episode_length: 200
 # Options for camera name: ['corner', 'corner2', 'corner3', 'topview', 'behindGripper', 'gripperPOV']

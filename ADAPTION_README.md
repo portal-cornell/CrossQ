@@ -69,20 +69,7 @@ Some error like this: "CUDA backend failed to initialize: Found CUDA version 120
 pip install nvidia-cublas-cu12==12.4.2.65 nvidia-cuda-cupti-cu12==12.4.99 nvidia-cuda-nvrtc-cu12==12.4.99 nvidia-cuda-runtime-cu12==12.4.99 nvidia-cudnn-cu12==8.9.7.29 nvidia-cufft-cu12==11.2.0.44 nvidia-cusolver-cu12==11.6.0.99 nvidia-cusparse-cu12==12.3.0.142 nvidia-nccl-cu12==2.20.5
 ```
 
-## Adding Metaworld
-1. If you have just cloned the repo, make sure to run the following command at the root directory ("CrossQ"):
-```
-git submodule update --init
-```
-2. `cd envs/Metaworld` and run `pip install -e .`
-
-3. To make the gym version play well with the rest of the code, you need to reinstall gymnasium
-```
-pip install gymnasium==0.29.1
-```
-
-
-# How to train
+# How to train in HumanoidEnv
 
 ## Training
 ### Hand-engineered reward
@@ -131,3 +118,44 @@ python inference.py 'model_base_path="train_logs/2024-08-14-120406_crossq_envr=b
 When you ctrl-c sometimes, the progress bar might keep appear when you type.
 1. `nvidia-smi` to find the process that is running
 2. `kill -9 <pid>` where pid is the process that you need to kill
+
+
+# Metaworld
+## Installation
+1. If you have just cloned the repo, make sure to run the following command at the root directory ("CrossQ"):
+```
+git submodule update --init
+```
+2. `cd envs/Metaworld` and run `pip install -e .`
+
+3. To make the gym version play well with the rest of the code, you need to reinstall gymnasium
+```
+pip install gymnasium==0.29.1
+```
+
+## Training in Metaworld
+To use Metaworld, you have to either:
+- change the defaults env (in train_config.yaml) to Metaworld
+- or specify the env in the command line
+```bash
+python train.py env=Metaworld ...
+```
+
+### Selecting Tasks
+There are 2 types of tasks:
+- For making the goal observable, the task name should end with `goal-observable` (e.g., `button-press-v2-goal-observable`)
+- For making the goal observable, the task name should end with `goal-hidden` (e.g., `button-press-v2-goal-hidden`)
+
+For example:
+```bash
+python train.py env=Metaworld env.task_name='button-press-v2-goal-observable' ...
+```
+
+### Reward from the environment
+When the reward is hand engineered, you can specify the reward type in the command line
+
+For example:
+```bash
+python train.py env=Metaworld env.task_name='button-press-v2-goal-observable' env.reward_type=hand_engineered env.reward_type.use_sparse_reward=true ...
+```
+
