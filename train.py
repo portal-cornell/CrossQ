@@ -57,7 +57,11 @@ def get_training_envs(cfg: DictConfig):
             from metaworld.envs import (ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE,
                                 ALL_V2_ENVIRONMENTS_GOAL_HIDDEN)
             
-            return Monitor(ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE[cfg.env.task_name](render_mode="rgb_array"))
+            return Monitor(ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE[cfg.env.task_name](render_mode="rgb_array", 
+                                                                                    camera_name=cfg.env.camera_name,
+                                                                                    episode_length=cfg.env.episode_length,
+                                                                                    # Change the dense reward to sparse reward
+                                                                                    use_sparse_reward=cfg.reward_model.use_sparse_reward if cfg.reward_model.name == "hand_engineered" else False))
         vec_env_kwargs = dict(render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3))
 
         training_env = make_vec_env(
