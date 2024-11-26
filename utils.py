@@ -36,8 +36,11 @@ def get_output_path() -> str:
     """
     return hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
 
+def use_sequence_matching_fn_for_reward(cfg: DictConfig) -> bool:
+    return "ot" in cfg.reward_model.name.lower() or "dtw" in cfg.reward_model.name.lower() or "test" in cfg.reward_model.name.lower()
+
 def use_vlm_for_reward(cfg: DictConfig) -> bool:
-    return "hand_engineered" not in cfg.reward_model.name.lower() and "ot" not in cfg.reward_model.name.lower() and "dtw" not in cfg.reward_model.name.lower()
+    return "hand_engineered" not in cfg.reward_model.name.lower() and not use_sequence_matching_fn_for_reward(cfg)
 
 def use_joint_vlm_for_reward(cfg: DictConfig) -> bool:
     return "joint_pred" in cfg.reward_model.name.lower()

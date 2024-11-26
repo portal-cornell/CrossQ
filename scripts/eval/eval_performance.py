@@ -390,7 +390,7 @@ def load_ref(directory: str, seq_name: str = ""):
     use_geom_xpos = True
 
     # Because we want to compare all runs against the same reference sequence, this reference sequence should be key_frames
-    ref = load_reference_seq(task_name=task_name, seq_name=seq_name, use_geom_xpos=use_geom_xpos)[:6]
+    ref = load_reference_seq(task_name=task_name, seq_name=seq_name, use_geom_xpos=use_geom_xpos, env_name="HumanoidSpawnedUpCustom")[:6]
 
     print(f"Loaded reference sequence of shape {ref.shape}")
     return ref

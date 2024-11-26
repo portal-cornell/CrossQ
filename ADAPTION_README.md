@@ -144,7 +144,7 @@ python train.py env=Metaworld ...
 ### Selecting Tasks
 There are 2 types of tasks:
 - For making the goal observable, the task name should end with `goal-observable` (e.g., `button-press-v2-goal-observable`)
-- For making the goal observable, the task name should end with `goal-hidden` (e.g., `button-press-v2-goal-hidden`)
+- For making the goal not observable, the task name should end with `goal-hidden` (e.g., `button-press-v2-goal-hidden`)
 
 For example:
 ```bash
@@ -152,10 +152,71 @@ python train.py env=Metaworld env.task_name='button-press-v2-goal-observable' ..
 ```
 
 ### Reward from the environment
-When the reward is hand engineered, you can specify the reward type in the command line
+There are 3 options:
+- 'dense': based on the reward function defined by Metaworld environment
+- 'sparse': binary, based on the success of the task
+- 'none': always 0
 
 For example:
 ```bash
 python train.py env=Metaworld env.task_name='button-press-v2-goal-observable' env.reward_type=hand_engineered env.reward_type.use_sparse_reward=true ...
 ```
 
+## Sequence Matching Reward in Metaworld
+
+### Setting the sequences
+Similar to the Humanoid env, all the reference sequence are stored in `constants.py` in dictionary `METAWORLD_TASK_SEQ_DICT`
+
+An example entry for a task is (TODO: the path is deprecated)
+```bash
+"button-press-v2":
+    {
+        "task_type": "goal_reaching",
+        "sequences": {
+            "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-11-25-125324_sb3_sac_envt=button-press-v2-goal-hidden_rm=hand_engineered_nt=ep-len=200_sparse/eval/1000000_rollouts_states.npy"
+        }
+    }
+```
+
+### Training with (state-based) sequence matching reward
+To train with a seq-matching reward, you have to specify the reward model. (And we can also set the environment's reward type to none)
+
+```bash
+python train.py env.env_reward_type='none' env.task_name=button-press-v2-goal-hidden reward_model=testing_dist_metric
+```
+
+### Creating your own sequence matching reward function
+These are the steps to create your own sequence matching reward function:
+1. Create a yaml file in `configs/reward_models`. You are required to have the following field
+```yaml
+name: testing_dist_metric # str
+cost_fn: euclidean # str (it has to match the key in the `COST_FN_DICT` in `seq_reward/cost_fns.py`)
+seq_name: rl_expert # str (it has to match the key under "sequences" in `METAWORLD_TASK_SEQ_DICT` in `constants.py`)
+```
+2. Define the reward model function in `seq_reward/` folder. The function must follow these requirements:
+```python
+"""
+Parameters:
+    obs: np.ndarray
+        The observed sequence of joint states
+        size: (train_freq, 22)
+            For OT-based reward, train_freq == episode_length
+            22 is the observation size that we want to calculate
+    ref: np.ndarray
+        The reference sequence of joint states
+        size: (ref_seq_len, 22)
+            22 is the observation size that we want to calculate
+    additional parameters...
+
+Returns:
+    reward: np.ndarray
+        The reward for each frame in the observed sequence
+        size: (train_freq, )
+    info: dict
+        Required to have the following (for downstream visualization)
+            - cost_matrix: np.ndarray (train_freq, ref_seq_len)
+            - assignment_matrix: np.ndarray (train_freq, ref_seq_len)
+"""
+```
+3. In `seq_reward/seq_utils.py` define how the sequence reward function will be loaded in `get_matching_fn()` 
+4. In `utils.py` add the name of the reward model to the `use_sequence_matching_fn_for_reward()` function
