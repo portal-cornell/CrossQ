@@ -10,7 +10,7 @@ from seq_reward.sparse_reward import compute_sparse_reward
 from seq_reward.even_distribution import compute_even_distribution_reward
 from seq_reward.optimal_transport import compute_ot_reward
 from seq_reward.soft_dtw import compute_soft_dtw_reward
-from seq_reward.dtw import compute_dtw_reward, compute_probability_reward, compute_ordered_probability_reward
+from seq_reward.dtw import compute_dtw_reward, compute_probability_reward, compute_ordered_probability_reward, compute_diagonal_probability_reward
 from seq_reward.cost_fns import COST_FN_DICT
 
 from constants import TASK_SEQ_DICT
@@ -134,6 +134,8 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
         fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_sparse_reward(obs_seq, ref_seq, cost_fn, radius, goal_bonus), fn_name
     elif "dtw" in fn_name and "sdtw" not in fn_name and "soft" not in fn_name:
         fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_dtw_reward(obs_seq, ref_seq, cost_fn, scale, inverted_cost=inverted_cost), fn_name
+    elif "prob_diagonal" == fn_name:
+        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_diagonal_probability_reward(obs_seq, ref_seq, cost_fn, max_cost=float(fn_config.get("pos_offset", 0))), fn_name
     elif "prob_reward" == fn_name or "prob_ranked" == fn_name:
         fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_probability_reward(obs_seq, ref_seq, cost_fn, max_cost=float(fn_config.get("pos_offset", 0))), fn_name
     elif "ordered_prob_reward" == fn_name:
@@ -291,6 +293,7 @@ def augment_fn_with_penalize_inversions(original_fn, original_fn_name, rank_weig
         rank_correlation = kendalltau(closest_frames_to_refs, ref_ranking).statistic
         rank_correlation = (1 + rank_correlation) / 2 # kt is in range [-1, 1], but we want [0,1]
         new_reward = (1-rank_weighting) * original_reward + rank_weighting * rank_correlation
+        new_reward = np.nan_to_num(new_reward, nan=0.0)
         return new_reward
 
     def new_fn(*args, **kwargs):

@@ -103,7 +103,7 @@ def train(cfg: DictConfig):
     else:
         grid_class = GridNavigationEnv
 
-    tags =cfg.logging.wandb_tags + [f"ep_{cfg.env.episode_length}", cfg.env.example_name, cfg.seq_reward_model.name, f"disc_{cfg.rl_algo.gamma}", f"ent_{cfg.rl_algo.ent_coef}"] + (["temporal"] if cfg.env.temporal_encoding else [])
+    tags =cfg.logging.wandb_tags + [f"ep_{cfg.env.episode_length}", cfg.env.example_name, cfg.seq_reward_model.name, f"disc_{cfg.rl_algo.gamma}", f"ent_{cfg.rl_algo.ent_coef}"] + (["temporal"] if cfg.env.temporal_encoding else []) + ([f"rank_{cfg.seq_reward_model.rank_weighting}"] if cfg.seq_reward_model.get('rank_weighting') else [])
 
     with wandb.init(
         project=cfg.logging.wandb_project,

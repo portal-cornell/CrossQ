@@ -54,6 +54,7 @@ examples = {
     "lava_easy": lava_easy,
     "lava_easy_longer_ref": lava_easy_longer_ref,
     "lava_nav_bigger": lava_nav_bigger,
+    "periodic_easy": periodic_easy,
 }
 
 def load_observations_from_examples_dict(example_name: str) -> NDArray:

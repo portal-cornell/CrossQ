@@ -316,6 +316,86 @@ lava_nav_no_door = {
     }
 }
 
+
+periodic_easy = {
+    "plot": {
+        "reward_vmin": 0,
+        "reward_vmax": 10,
+    },
+    "starting_pos": np.array([1, 1, 0]),
+    "map_array": np.array([
+        [-1, -1, -1, -1, -1, -1, -1],
+        [-1,  0,  0,  0,  0,  0, -1],
+        [-1, -1, -1, -1, -1, -1, -1],
+    ]),
+    "ref_seq": np.array([
+                        [1, 1, 0],
+                        [3, 1, 0],
+                        [5, 1, 0],
+                        [5, 1, 1],
+                        [5, 1, 2],
+                        [4, 1, 2],
+                        [3, 1, 2],
+                        #[1, 1, 2], #
+                        [1, 1, 0],
+                        [3, 1, 0],
+                        [5, 1, 0],
+                         ]),
+    "obs_seqs": {
+        1: {
+            "descriptions": "Success",
+            "seq": [
+                    np.array([1, 1, 0]),
+                    np.array([2, 1, 0]),
+                    np.array([3, 1, 0]),
+                    np.array([4, 1, 0]),
+                    np.array([5, 1, 0]),
+                    np.array([5, 1, 1]),
+                    np.array([5, 1, 2]),
+                    np.array([4, 1, 2]),
+                    np.array([3, 1, 2]),
+                    np.array([2, 1, 2]),
+                    np.array([1, 1, 2]),
+                    np.array([1, 1, 1]),
+                    np.array([1, 1, 0]),
+                    np.array([2, 1, 0]),
+                    np.array([3, 1, 0]),
+                    np.array([4, 1, 0]),
+                    np.array([5, 1, 0]),
+                    np.array([5, 1, 0]),
+                    np.array([5, 1, 0]),
+                    np.array([5, 1, 0]),
+                ]
+        },
+        2: {
+            "descriptions": "Stuck",
+            "seq": [
+                    np.array([1, 1, 0]),
+                    np.array([2, 1, 0]),
+                    np.array([3, 1, 0]),
+                    np.array([4, 1, 0]),
+                    np.array([5, 1, 0]),
+                    np.array([5, 1, 0]),
+                    np.array([5, 1, 0]),
+                    np.array([5, 1, 0]),
+                    np.array([5, 1, 0]),
+                    np.array([5, 1, 0]),
+                    np.array([5, 1, 0]),
+                    np.array([5, 1, 0]),
+                    np.array([5, 1, 0]),
+                    np.array([5, 1, 0]),
+                    np.array([5, 1, 0]),
+                    np.array([5, 1, 0]),
+                    np.array([5, 1, 0]),
+                    np.array([5, 1, 0]),
+                    np.array([5, 1, 0]),
+                    np.array([5, 1, 0]),
+                ]
+        }
+    }
+}
+
+
 lava_nav = {
     "plot": {
         "reward_vmin": 0,
