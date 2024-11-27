@@ -2,6 +2,7 @@ name: sb3_sac  # Name of the RL algorithm
 
 lr: 1e-3  # Actor and critic learning rate
 
+batch_size: 256
 adam_b1: 0.9 # adam b1 parameter (according to the CrossQ paper appendix)
 critic_activation: relu  # Critic activation function
 crossq_style: False  # Crossq style joint forward pass through critic network

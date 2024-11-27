@@ -390,7 +390,7 @@ def load_ref(directory: str, seq_name: str = ""):
     use_geom_xpos = True
 
     # Because we want to compare all runs against the same reference sequence, this reference sequence should be key_frames
-    ref = load_reference_seq(task_name=task_name, seq_name=seq_name, use_geom_xpos=use_geom_xpos)[:6]
+    ref = load_reference_seq(task_name=task_name, seq_name=seq_name, use_geom_xpos=use_geom_xpos, env_name="HumanoidSpawnedUpCustom")[:6]
 
     print(f"Loaded reference sequence of shape {ref.shape}")
     return ref
@@ -646,13 +646,13 @@ if __name__ == "__main__":
             yaml.dump(last_timestep_performances, file, indent=4)
     elif args.bar_plot:
         # Load the yaml
-        with open(f"./workshop_figs/last_timestep_performances_{'visual' if args.visual_result else 'joint'}.yaml", "r") as file:
+        with open(f"./workshop_figs/last_timestep_performances_{'visual' if args.visual_result else 'joint'}_final.yaml", "r") as file:
             last_timestep_performances = yaml.safe_load(file)
 
         # approaches_to_plot = ["RoboCLIP", "OT", "DTW+", "SDTW+"]
         approaches_to_plot = ["RoboCLIP", "OT", "DTW", "DTW+", "SDTW", "SDTW+"]
 
-        plot_bar_plot(last_timestep_performances, approaches_to_plot, output_file=f"workshop_figs/last_timestep_performances_{'visual' if args.visual_result else 'joint'}.png")
+        plot_bar_plot(last_timestep_performances, approaches_to_plot, output_file=f"workshop_figs/last_timestep_performances_{'visual' if args.visual_result else 'joint'}_final.png")
     else:
         experiment_directories = [
         "/share/portal/hw575/CrossQ/train_logs/2024-10-04-004735_sb3_sac_envr=goal_only_euclidean_geom_xpos-t=right_arm_extend_wave_higher_rm=hand_engineered_nt=None", # training for reference rollout

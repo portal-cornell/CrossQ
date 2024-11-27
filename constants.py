@@ -1,8 +1,25 @@
 WANDB_DIR = "./"
 
+METAWORLD_TASK_SEQ_DICT = {
+    "button-press-v2":
+    {
+        "task_type": "goal_reaching",
+        "sequences": {
+            "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-11-25-125324_sb3_sac_envt=button-press-v2-goal-hidden_rm=hand_engineered_nt=ep-len=200_sparse/eval/1000000_rollouts_states.npy"
+        }
+    },
+    "door-close-v2":
+    {
+        "task_type": "goal_reaching",
+        "sequences": {
+            "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-11-25-124432_sb3_sac_envt=door-close-v2-goal-hidden_rm=hand_engineered_nt=ep-len=200_sparse/eval/1000000_rollouts_states.npy"
+        }
+    },
+}
+
 # Used abosolute path because eval is run in a subdirectory
 # TODO: There's probably a better way to do this
-TASK_SEQ_DICT = {
+HUMANOID_TASK_SEQ_DICT = {
     ################################## Sequence Following Tasks
     ########### 2 Key Poses to Follow (2 Key Frames)
     "right_arm_out_to_both_arms_out": 

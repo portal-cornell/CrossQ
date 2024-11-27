@@ -2,6 +2,7 @@ name: crossq  # Name of the RL algorithm
 
 lr: 1e-3  # Actor and critic learning rate
 
+batch_size: 256
 adam_b1: 0.5  # adam b1 parameter
 bn: True  # Use batch norm layers in the actor and critic networks
 bn_momentum: 0.99  # Batch norm momentum parameter

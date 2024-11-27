@@ -115,7 +115,7 @@ class HumanoidEnvCustom(GymHumanoidEnv):
             # We can do this because both the goal_only_euclidean_geom_xpos and basic_r_geom_xpos use the same reference sequence
             ref_seq_to_load = "key_frames"
             
-            self._ref_joint_states = load_reference_seq(task_name, ref_seq_to_load, use_geom_xpos=self._use_geom_xpos)
+            self._ref_joint_states = load_reference_seq(task_name, ref_seq_to_load, use_geom_xpos=self._use_geom_xpos, env_name="HumanoidSpawnedUpCustom")
 
             logger.info(f"[Env] Loaded reference sequence for {reward_type}. task_name={task_name}. seq_name={ref_seq_to_load}. shape={self._ref_joint_states.shape}")
         else:

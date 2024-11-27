@@ -141,6 +141,7 @@ else:
         "both-arms-out_to_right-arm-out": ["both-arms-out", "right-arm-out"],
         "left-arm-out_to_left-arm-extend-wave-higher": ["left-arm-out", "left-arm-extend-wave-higher"],
         "left-arm-lower_to_left-arm-extend-wave-higher": ["left-arm-lower", "left-arm-extend-wave-higher"],
+        "left-arm-out_to_both-arms-out_to_right-arm-out": ["left-arm-out", "both-arms-out", "right-arm-out"],
     }
 
     assert args.seq_name in seq_name_to_subgoal_list, f"seq_name={args.seq_name} does not match any of the key in seq_name_to_subgoal_list"

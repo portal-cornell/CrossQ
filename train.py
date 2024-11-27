@@ -30,9 +30,65 @@ from loguru import logger
 
 import multiprocess
 from envs.base import get_make_env
+from stable_baselines3.common.monitor import Monitor
 from vlm_reward.reward_models.model_factory import load_reward_model
 from vlm_reward.reward_main import dist_worker_compute_reward
-from callbacks import VideoRecorderCallback, WandbCallback, JointBasedSeqRewardCallback
+from vlm_reward.vlm_buffer import GeomXposReplayBuffer
+from stable_baselines3.common.buffers import ReplayBuffer
+from callbacks import VideoRecorderCallback, WandbCallback, StateBasedSeqRewardCallback
+
+def get_training_envs(cfg: DictConfig):
+    """Create the training environment and the relevant kwargs for creating the inference environment
+
+    Returns:
+        training_env: SubprocVecEnv
+            The training environment (spawned based on the number of CPU workers)
+        make_env_fn: Callable
+            The function to create the inference environment
+        vec_env_kwargs: Dict
+            The kwargs to pass to the inference environment
+    """
+    if cfg.env.name == "HumanoidSpawnedUpCustom":
+        make_env_kwargs = utils.get_make_env_kwargs(cfg)
+        make_env_fn = get_make_env(cfg.env.name, **make_env_kwargs)
+        vec_env_kwargs = dict(render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3))
+        training_env = make_vec_env(
+            make_env_fn,
+            n_envs=cfg.compute.n_cpu_workers,
+            seed=cfg.seed,
+            vec_env_cls=SubprocVecEnv,
+            use_gpu_ids=list(range(cfg.compute.n_gpu_workers)),
+            vec_env_kwargs=vec_env_kwargs,
+        )
+    elif cfg.env.name == "Metaworld":
+        assert cfg.env.task_name, "task_name must be provided for Metaworld environments"
+
+        def make_env_fn():
+            from metaworld.envs import (ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE,
+                                ALL_V2_ENVIRONMENTS_GOAL_HIDDEN)
+            
+            env_cls_to_use = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE if "goal-observable" in cfg.env.task_name else ALL_V2_ENVIRONMENTS_GOAL_HIDDEN
+
+            return Monitor(env_cls_to_use[cfg.env.task_name](render_mode="rgb_array", 
+                                                                                    camera_name=cfg.env.camera_name,
+                                                                                    episode_length=cfg.env.episode_length,
+                                                                                    # Change the dense reward to sparse reward
+                                                                                    env_reward_type=cfg.env.env_reward_type if "env_reward_type" in cfg.env else "dense"))
+        
+        vec_env_kwargs = dict(render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3))
+
+        training_env = make_vec_env(
+            make_env_fn,
+            n_envs=cfg.compute.n_cpu_workers,
+            seed=cfg.seed,
+            vec_env_cls=SubprocVecEnv,
+            use_gpu_ids=list(range(cfg.compute.n_gpu_workers)),
+            vec_env_kwargs=vec_env_kwargs,
+        )
+    else:
+        raise NotImplementedError(f"Environment {cfg.env.name} not implemented")
+
+    return training_env, make_env_fn, vec_env_kwargs
 
 def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] = None):
     """
@@ -50,23 +106,13 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
     use_vlm_for_reward = utils.use_vlm_for_reward(cfg)
     use_joint_vlm_for_reward = utils.use_joint_vlm_for_reward(cfg)
 
-    logger.info(f"using_vlm_for_reward={use_vlm_for_reward}")
-    logger.info(f"using vlm to predict joint pos: {use_joint_vlm_for_reward}")
+    logger.info(f"\nusing_vlm_for_reward={use_vlm_for_reward}\nusing vlm to predict joint pos: {use_joint_vlm_for_reward}\nusing_sequence_matching_fn_for_reward={utils.use_sequence_matching_fn_for_reward(cfg)}")
 
     # Initialize the environment
-    make_env_kwargs = utils.get_make_env_kwargs(cfg)
+    logger.info(f"Creating environment={cfg.env.name} instances with {dict(cfg.env)}")
 
-    logger.info(f"Creating environment={cfg.env.name} instances with {make_env_kwargs=}")
-
-    make_env_fn = get_make_env(cfg.env.name, **make_env_kwargs)
-    training_env = make_vec_env(
-        make_env_fn,
-        n_envs=cfg.compute.n_cpu_workers,
-        seed=cfg.seed,
-        vec_env_cls=SubprocVecEnv,
-        use_gpu_ids=list(range(cfg.compute.n_gpu_workers)),
-        vec_env_kwargs=dict(render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3)),
-    )
+    # Notes: make_env_fn, vec_env_kwargs are used to create the inference environment later
+    training_env, make_env_fn, vec_env_kwargs = get_training_envs(cfg)
 
     logger.info("Creating the learner...")
 
@@ -88,7 +134,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         learning_rate=cfg.rl_algo.lr,
         buffer_size=1_000_000,
         learning_starts=5000,
-        batch_size=256,
+        batch_size=cfg.rl_algo.batch_size,
         tau=cfg.rl_algo.tau,
         gamma=0.99,
         train_freq=(cfg.env.episode_length, "step"),
@@ -102,6 +148,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         }),
         verbose=0,
         seed=cfg.seed,
+        replay_buffer_class=GeomXposReplayBuffer if cfg.env.name == "HumanoidSpawnedUpCustom" else ReplayBuffer, 
         ### VLM_SAC specific reward (SAC will ignore this)
         inference_only=False,
         reward_model_config = OmegaConf.to_container(cfg.reward_model, resolve=True, throw_on_missing=True) if use_vlm_for_reward else None,
@@ -149,9 +196,8 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
                 seed=42,
                 vec_env_cls=SubprocVecEnv,
                 use_gpu_ids=list(range(cfg.compute.n_gpu_workers)),
-                vec_env_kwargs=dict(render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3)),
-            ),
-            # SubprocVecEnv([make_env_fn], render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3)),
+                vec_env_kwargs=vec_env_kwargs,
+            ),  
             rollout_save_path=os.path.join(cfg.logging.run_path, "eval"),
             render_freq=cfg.logging.video_save_freq // cfg.compute.n_cpu_workers,
             render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3),
@@ -159,23 +205,27 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             use_geom_xpos="geom_xpos" in cfg.env.reward_type if "reward_type" in cfg.env else False,
             # This allow us to calculate the unifying reward/metric that all methods are compared against
             #   i.e. it defines "rollout/sum_total_reward_per_epsisode" in wandb
-            task_name=cfg.env.task_name if "task_name" in cfg.env else "",
-            threshold=cfg.env.pose_matching_stage_threshold,
+            env_name = cfg.env.name,
+            task_name=cfg.env.task_name,
+            threshold=cfg.env.pose_matching_stage_threshold if "pose_matching_stage_threshold" in cfg.env else 0.0,
             # For calculating success rate
             success_fn_cfg=dict(cfg.success_eval),
             # For joint based reward (this allow us to visualize the sequence matching reward in a rollout
-            matching_fn_cfg=dict(cfg.reward_model) if cfg.reward_model.name == "ot" or "dtw" in cfg.reward_model.name else {},
+            matching_fn_cfg=dict(cfg.reward_model) if utils.use_sequence_matching_fn_for_reward(cfg) else {},
+            # For VLM based reward (this allow us to visualize the VLM reward in a rollout
             calc_visual_reward=use_vlm_for_reward or use_joint_vlm_for_reward,
         )
 
         callback_list = [wandb_callback, video_callback]
 
-        if cfg.reward_model.name == "ot" or "dtw" in cfg.reward_model.name:
-            # Add the OT reward callback if we are using joint_wasserstein as the reward model
-            callback_list.append(JointBasedSeqRewardCallback(
+        if utils.use_sequence_matching_fn_for_reward(cfg):
+            # Add the sequence matching reward callback
+            callback_list.append(StateBasedSeqRewardCallback(
+                                    env_name = cfg.env.name,
                                     task_name = cfg.env.task_name,
                                     matching_fn_cfg = dict(cfg.reward_model),
-                                    use_geom_xpos = "geom_xpos" in cfg.env.reward_type
+                                    # This is only used for the HumanoidSpawnedUpCustom env
+                                    use_geom_xpos = "geom_xpos" in cfg.env.reward_type if "reward_type" in cfg.env else False,
             ))
 
         model.learn(

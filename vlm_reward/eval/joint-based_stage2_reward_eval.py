@@ -1,3 +1,7 @@
+"""
+Warning: this script is outdated.
+"""
+
 from omegaconf import DictConfig, OmegaConf
 import hydra
 from hydra.core.hydra_config import HydraConfig

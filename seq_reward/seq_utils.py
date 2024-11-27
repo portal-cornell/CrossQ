@@ -11,15 +11,40 @@ from seq_reward.even_distribution import compute_even_distribution_reward
 from seq_reward.optimal_transport import compute_ot_reward
 from seq_reward.soft_dtw import compute_soft_dtw_reward
 from seq_reward.dtw import compute_dtw_reward, compute_probability_reward, compute_ordered_probability_reward, compute_diagonal_probability_reward
+from seq_reward.testing_dist_metric import compute_testing_dist_reward
 from seq_reward.cost_fns import COST_FN_DICT
 
-from constants import TASK_SEQ_DICT
+from constants import HUMANOID_TASK_SEQ_DICT, METAWORLD_TASK_SEQ_DICT
 
 from scipy.stats import kendalltau
 
-def load_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bool = False) -> np.ndarray:
+def load_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bool = False, env_name: str = "HumanoidSpawnedUpCustom") -> np.ndarray:
     """
     Load the reference sequence for the given task name and sequence name from constants.TASK_SEQ_DICT
+
+    Parameters:
+        env_name: str
+            Specifies the environment that we want to load the reference sequence for
+        task_name: str
+            Specifies the specific task that we want to load the reference sequence for
+        seq_name: str
+            Specifies the specific sequence that we want to load the reference sequence for
+            (e.g. "key_frames")
+        use_qpos: bool
+            True then we load path that ends with "joint-state.npy"
+            False then we load path that ends with "geom-xpos.npy"
+    """
+    if env_name == "HumanoidSpawnedUpCustom":
+        return _load_humanoid_reference_seq(task_name, seq_name, use_geom_xpos)
+    elif env_name == "Metaworld":
+        return _load_metaworld_reference_seq(task_name, seq_name)
+    else:
+        raise NotImplementedError(f"Unknown environment: {env_name}")
+    
+
+def _load_humanoid_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bool = False) -> np.ndarray:
+    """
+    For the Humanoid environment, load the reference sequence for the given task name and sequence name from constants.HUMANOID_TASK_SEQ_DICT
 
     Parameters:
         task_name: str
@@ -31,15 +56,15 @@ def load_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bool = False
             True then we load path that ends with "joint-state.npy"
             False then we load path that ends with "geom-xpos.npy"
     """
-    assert task_name in TASK_SEQ_DICT, f"Unknown task name: {task_name}"
+    assert task_name in HUMANOID_TASK_SEQ_DICT, f"Unknown task name for the humanoid environment: {task_name}"
 
-    ref_defined_via_a_list = type(TASK_SEQ_DICT[task_name]["sequences"][seq_name]) == list
+    ref_defined_via_a_list = type(HUMANOID_TASK_SEQ_DICT[task_name]["sequences"][seq_name]) == list
 
     if ref_defined_via_a_list:
         # TODO: We assume that when ref is defined via the list, it doesn't not contain the initial state
         ref_seq = []
 
-        for joint in TASK_SEQ_DICT[task_name]["sequences"][seq_name]:
+        for joint in HUMANOID_TASK_SEQ_DICT[task_name]["sequences"][seq_name]:
             new_fp = joint
             if use_geom_xpos:
                 if "joint-state" in new_fp:
@@ -61,9 +86,9 @@ def load_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bool = False
         
         return np.stack(ref_seq)
     else:
-        assert type(TASK_SEQ_DICT[task_name]["sequences"][seq_name]) == str, f"Unknown type for TASK_SEQ_DICT[{task_name}]['sequences'][{seq_name}]. Has to be either a list or a string, but got {type(TASK_SEQ_DICT[task_name]['sequences'][seq_name])}"
+        assert type(HUMANOID_TASK_SEQ_DICT[task_name]["sequences"][seq_name]) == str, f"Unknown type for TASK_SEQ_DICT[{task_name}]['sequences'][{seq_name}]. Has to be either a list or a string, but got {type(HUMANOID_TASK_SEQ_DICT[task_name]['sequences'][seq_name])}"
         
-        new_fp = TASK_SEQ_DICT[task_name]["sequences"][seq_name]
+        new_fp = HUMANOID_TASK_SEQ_DICT[task_name]["sequences"][seq_name]
         if use_geom_xpos:
             if "joint-state" in new_fp:
                 new_fp = new_fp.replace("joint-state", "geom-xpos")
@@ -82,19 +107,66 @@ def load_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bool = False
 
         # Because of how these sequences are generated, we need to remove the 1st frame (which is the initial state)
         return loaded_joint_states[1:]
-    
 
-def load_images_from_reference_seq(task_name:str, seq_name: str) -> (np.ndarray):
-    assert task_name in TASK_SEQ_DICT, f"Unknown task name: {task_name}"
-    assert seq_name in TASK_SEQ_DICT[task_name]["sequences"], f"Unknown sequence name: {seq_name}."
 
-    if type(TASK_SEQ_DICT[task_name]["sequences"][seq_name]) == str:
-        gif_path = TASK_SEQ_DICT[task_name]["sequences"][seq_name]
+def _load_metaworld_reference_seq(task_name:str, seq_name: str) -> np.ndarray:
+    """
+    For the Metaworld environment, load the reference sequence for the given task name and sequence name from constants.METAWORLD_TASK_SEQ_DICT
+
+    Parameters:
+        task_name: str
+            Specifies the specific task that we want to load the reference sequence for
+        seq_name: str
+            Specifies the specific sequence that we want to load the reference sequence for
+            (e.g. "rl_expert")
+    """
+    task_name_without_goal_info = task_name.split("-goal")[0]
+
+    assert task_name_without_goal_info in METAWORLD_TASK_SEQ_DICT, f"Unknown task name for the metaworld environment: {task_name_without_goal_info}"
+
+    fp = METAWORLD_TASK_SEQ_DICT[task_name_without_goal_info]["sequences"][seq_name]
+
+    loaded_states = np.load(fp)  # shape: (num_frames, n_envs, obs_size)
+
+    # For the metaworld environment, the states is of shape (39,) for each timestep
+    #   First 18 is the current state, next 18 is the previous state, and the last 3 is the goal
+    #   We only care about the current state
+    # We also only care about the first environment
+    loaded_states = loaded_states[:, 0, :18]
+
+    return loaded_states
+
+
+def load_images_from_reference_seq(env_name:str, task_name:str, seq_name: str) -> (np.ndarray):
+    """ Work for both Humanoid and Metaworld environment
+
+    Parameters:
+        env_name: str
+            Specifies the environment that we want to load the reference sequence for
+        task_name: str
+            Specifies the specific task that we want to load the reference sequence for
+        seq_name: str
+            Specifies the specific sequence that we want to load the reference sequence for
+            (e.g. "key_frames")
+    """
+    task_seq_dict = HUMANOID_TASK_SEQ_DICT if env_name == "HumanoidSpawnedUpCustom" else METAWORLD_TASK_SEQ_DICT
+
+    if env_name == "Metaworld":
+        # Because the task_name ends with either "-goal-observable" or "-goal-hidden"
+        task_name = task_name.split("-goal")[0]
+
+    assert task_name in task_seq_dict, f"Unknown task name for env_name={env_name}: {task_name}"
+    assert seq_name in task_seq_dict[task_name]["sequences"], f"Unknown sequence name for env_name={env_name}: {seq_name}."
+
+    if type(task_seq_dict[task_name]["sequences"][seq_name]) == str:
+        gif_path = task_seq_dict[task_name]["sequences"][seq_name]
 
         if "joint-state" in gif_path:
             gif_path = gif_path.replace("_joint-state.npy", ".gif")
         elif "geom-xpos" in gif_path:
             gif_path = gif_path.replace("_geom-xpos.npy", ".gif")
+        elif "_states" in gif_path:
+            gif_path = gif_path.replace("_states.npy", ".gif")
         
         gif_obj = Image.open(gif_path)
         frames = [gif_obj.seek(frame_index) or gif_obj.convert("RGB") for frame_index in range(gif_obj.n_frames)]
@@ -147,6 +219,8 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
         else:
             fn_name = f"{fn_name}_g={gamma}"
         fn = lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale: compute_soft_dtw_reward(obs_seq, ref_seq, cost_fn, gamma, scale,inverted_cost=inverted_cost)
+    elif fn_name == "testing_dist_metric":
+        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn: compute_testing_dist_reward(obs_seq, ref_seq, cost_fn), "test"
     else:
         raise NotImplementedError(f"Unknown sequence matching function: {fn_name}")
     
@@ -722,7 +796,7 @@ def scale_rewards_by_class(rewards: np.ndarray, classes: np.ndarray) -> np.ndarr
     return scaled_rewards
 
 
-def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, title:str, seq_cmap: str, matrix_cmap: str, rolcol_size: int, vmin=None, vmax=None):
+def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, title:str, seq_cmap: str, matrix_cmap: str, rolcol_size: int, vmin=None, vmax=None, matrix_text_font_size=None):
     """
     Plot the Matrix with obs_seq on the left and ref_seq on top of the heatmap.
     """
@@ -758,8 +832,11 @@ def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, 
         mid_val = (np.max(matrix) + np.min(matrix)) / 2
 
     # Add text annotations (numbers) on each cell in the heatmap
-    # label_text_font_size = max(obs_len, ref_len) / min(matrix.shape[0], matrix.shape[1]) * rolcol_size
-    label_text_font_size = max(obs_len, ref_len) / min(matrix.shape[0], matrix.shape[1]) * rolcol_size   # x10 For generating toy example for workshop paper
+    if matrix_text_font_size is None:
+        label_text_font_size = max(obs_len, ref_len) / min(matrix.shape[0], matrix.shape[1]) * rolcol_size * 0.5
+    else:
+        label_text_font_size = matrix_text_font_size
+
     if label_text_font_size >= 1:
         for i in range(matrix.shape[0]):
             for j in range(matrix.shape[1]):
