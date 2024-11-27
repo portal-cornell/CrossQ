@@ -3,4 +3,5 @@
 	url = https://github.com/cxgincsu/SemanticGuidedHumanMatting.git
 [submodule "envs/Metaworld"]
 	path = envs/Metaworld
+	branch = dev
 	url = https://github.com/portal-cornell/Metaworld.git
