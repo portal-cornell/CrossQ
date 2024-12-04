@@ -10,7 +10,8 @@ from seq_reward.sparse_reward import compute_sparse_reward
 from seq_reward.even_distribution import compute_even_distribution_reward
 from seq_reward.optimal_transport import compute_ot_reward
 from seq_reward.soft_dtw import compute_soft_dtw_reward
-from seq_reward.dtw import compute_dtw_reward, compute_probability_reward, compute_ordered_probability_reward, compute_diagonal_probability_reward
+from seq_reward.dtw import compute_dtw_reward
+from seq_reward.prob_based import compute_probability_reward, compute_ordered_probability_reward, compute_diagonal_probability_reward
 from seq_reward.testing_dist_metric import compute_testing_dist_reward
 from seq_reward.cost_fns import COST_FN_DICT
 
@@ -207,11 +208,11 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
     elif "dtw" in fn_name and "sdtw" not in fn_name and "soft" not in fn_name:
         fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_dtw_reward(obs_seq, ref_seq, cost_fn, scale, inverted_cost=inverted_cost), fn_name
     elif "prob_diagonal" == fn_name:
-        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_diagonal_probability_reward(obs_seq, ref_seq, cost_fn, max_cost=float(fn_config.get("pos_offset", 0))), fn_name
+        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_diagonal_probability_reward(obs_seq, ref_seq, cost_fn, max_cost=float(fn_config.get("max_cost", 1))), fn_name
     elif "prob_reward" == fn_name or "prob_ranked" == fn_name:
-        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_probability_reward(obs_seq, ref_seq, cost_fn, max_cost=float(fn_config.get("pos_offset", 0))), fn_name
+        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_probability_reward(obs_seq, ref_seq, cost_fn, max_cost=float(fn_config.get("max_cost", 1))), fn_name
     elif "ordered_prob_reward" == fn_name:
-        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_ordered_probability_reward(obs_seq, ref_seq, cost_fn, max_cost=float(fn_config.get("pos_offset", 0))), fn_name
+        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_ordered_probability_reward(obs_seq, ref_seq, cost_fn, max_cost=float(fn_config.get("max_cost", 1))), fn_name
     elif "soft_dtw" in fn_name or "sdtw" in fn_name:
         gamma = float(fn_config["gamma"])
         if gamma == 10000.0:

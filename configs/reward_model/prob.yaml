@@ -1,7 +1,5 @@
-name: prob_ranked
+name: prob_reward
+cost_fn: cosine
 scale: 1
-max_cost: 17
+max_cost: 1
 add_to_env_rew: false # True to add the environment rewards to the sequence matching rewards 
-rank_weighting: .1
-post_processing_method: 
-    - penalize_inversions

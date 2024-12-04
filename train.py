@@ -167,10 +167,13 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         model.set_parameters(existing_checkpoint_path)
     logger.debug(f"Created the learned and initialized if needed: allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)}")
     
+    default_tags = [cfg.reward_model.name, f"ep_{cfg.env.episode_length}", cfg.env.name, cfg.reward_model.cost_fn]
+    tags = cfg.logging.wandb_tags + default_tags
+
     with wandb.init(
         project=cfg.logging.wandb_project,
         name=cfg.logging.run_name,
-        tags=cfg.logging.wandb_tags,
+        tags=tags,
         sync_tensorboard=True,
         config=OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True),
         mode=cfg.logging.wandb_mode,

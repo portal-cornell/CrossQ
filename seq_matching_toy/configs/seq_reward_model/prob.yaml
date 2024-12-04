@@ -1,4 +1,4 @@
 name: prob_reward
 scale: 1
-pos_offset: 17
+max_cost: 17
 add_to_env_rew: false # True to add the environment rewards to the sequence matching rewards 

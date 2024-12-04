@@ -1,0 +1,11 @@
+name: prob_ranked
+cost_fn: euclidean
+scale: 1
+seq_name: rl_expert_20_frames
+post_processing_method: 
+    - penalize_inversions
+reward_vmin: 0
+reward_vmax: 1
+
+max_cost: 1
+rank_weighting: .1
