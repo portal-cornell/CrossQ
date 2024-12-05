@@ -12,3 +12,7 @@ episode_length: 120
 render_dim: 
   - 480
   - 480
+  
+success_eval:
+  threshold_for_all_pos: 0.50
+  threshold_for_arm_pos: 0.55

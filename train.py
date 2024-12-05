@@ -70,13 +70,14 @@ def get_training_envs(cfg: DictConfig):
             env_cls_to_use = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE if "goal-observable" in cfg.env.task_name else ALL_V2_ENVIRONMENTS_GOAL_HIDDEN
 
             return Monitor(env_cls_to_use[cfg.env.task_name](render_mode="rgb_array", 
-                                                                                    camera_name=cfg.env.camera_name,
-                                                                                    episode_length=cfg.env.episode_length,
-                                                                                    # Change the dense reward to sparse reward
-                                                                                    env_reward_type=cfg.env.env_reward_type if "env_reward_type" in cfg.env else "dense"))
+                                                            camera_name=cfg.env.camera_name,
+                                                            episode_length=cfg.env.episode_length,
+                                                            # Change the dense reward to sparse reward
+                                                            env_reward_type=cfg.env.env_reward_type if "env_reward_type" in cfg.env else "dense",
+                                                            temporal_encoding=cfg.env.temporal_encoding,))
         
         vec_env_kwargs = dict(render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3))
-
+        
         training_env = make_vec_env(
             make_env_fn,
             n_envs=cfg.compute.n_cpu_workers,
@@ -167,7 +168,10 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         model.set_parameters(existing_checkpoint_path)
     logger.debug(f"Created the learned and initialized if needed: allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)}")
     
-    default_tags = [cfg.reward_model.name, f"ep_{cfg.env.episode_length}", cfg.env.name, cfg.reward_model.cost_fn]
+    if "cost_fn" in cfg.reward_model: # custom distance based reward
+        default_tags = [cfg.reward_model.name, f"ep_{cfg.env.episode_length}", cfg.env.name, cfg.reward_model.cost_fn] + (["temporal"] if cfg.env.temporal_encoding else [])
+    else: # default environment reward
+        default_tags = [cfg.env.env_reward_type, f"ep_{cfg.env.episode_length}", cfg.env.name]
     tags = cfg.logging.wandb_tags + default_tags
 
     with wandb.init(
@@ -212,7 +216,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             task_name=cfg.env.task_name,
             threshold=cfg.env.pose_matching_stage_threshold if "pose_matching_stage_threshold" in cfg.env else 0.0,
             # For calculating success rate
-            success_fn_cfg=dict(cfg.success_eval),
+            success_fn_cfg=dict(cfg.env.success_eval),
             # For joint based reward (this allow us to visualize the sequence matching reward in a rollout
             matching_fn_cfg=dict(cfg.reward_model) if utils.use_sequence_matching_fn_for_reward(cfg) else {},
             # For VLM based reward (this allow us to visualize the VLM reward in a rollout

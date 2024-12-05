@@ -1,4 +1,4 @@
-name: soft_dtw
+name: soft_dtw_plus
 cost_fn: euclidean
 gamma: 5
 scale: 1

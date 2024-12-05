@@ -1,4 +1,4 @@
-name: dtw
+name: dtw_plus
 cost_fn: euclidean_arms_only
 scale: 1
 seq_name: null

@@ -162,6 +162,61 @@ For example:
 python train.py env=Metaworld env.env_reward_type='sparse' env.task_name='button-press-v2-goal-observable' ...
 ```
 
+### Modifying the environment
+
+- Main training script defines a make_env_fn, which returns an instantation of an environment class
+- The environment class comes from the task name and the environments defined in metaworld.envs.mujoco.env_dict
+```python
+return Monitor(env_cls_to_use[cfg.env.task_name](render_mode="rgb_array", 
+                                camera_name=cfg.env.camera_name,
+                                episode_length=cfg.env.episode_length,
+                                # Change the dense reward to sparse reward
+                                env_reward_type=cfg.env.env_reward_type if "env_reward_type" in cfg.env else "dense",
+                                temporal_encoding=cfg.env.temporal_encoding,))
+```
+- metaworld.envs.mujoco.env_dict._create_hidden_goal_envs, _create_observable_goal_envs define functions that create env classes, which are then instantiated through make_vec_env (in the main training script)
+    - Any changes to env classes must also appear in initialize()
+    - For example, to add an argument like “temporal_encoding”, it must be added to initialize(), and also added in the super() call (in both hidden and observable, if you plan on using both)
+    
+```python
+def initialize(env, seed=None, render_mode=None, 
+                camera_name="corner", 
+                episode_length=200, 
+                env_reward_type="none",
+                temporal_encoding=False): # IMPORTANT: add new kwarg
+    if seed is not None:
+        st0 = np.random.get_state()
+        np.random.seed(seed)
+
+    super(type(env), env).__init__(temporal_encoding=temporal_encoding) # IMPORTANT: call superclass with kwargs to modify environment
+```
+    
+- super() will call the sawyer environment class (e.g. SawyerButtonPressEnvV2) 
+    - **IMPORTANT: for new envs to use new arguments, must add **kwargs to the environment __init__**
+
+```python
+
+class SawyerButtonPressEnvV2(SawyerXYZEnv):
+    def __init__(
+        self,
+        render_mode: RenderMode | None = None,
+        camera_name: str | None = None,
+        camera_id: int | None = None,
+        **kwargs # IMPORTANT: MUST ADD THIS (does not exist by default)
+    ) -> None:
+		   ...
+	     super().__init__(
+            hand_low=hand_low,
+            hand_high=hand_high,
+            render_mode=render_mode,
+            camera_name=camera_name,
+            camera_id=camera_id,
+            **kwargs # IMPORTANT: must also pass them to the superclass
+        )
+```
+- Sawyer environment class will instantiate superclass, which is SawyerXYZEnv
+- SawyerXYZEnv handles metaworld observation space setup, env steps, resets, default (eg. grasping based) rewards, and specific environment classes (e.g. SawyerButtonPressEnvV2) extend it
+
 ## Sequence Matching Reward in Metaworld
 
 ### Setting the sequences
