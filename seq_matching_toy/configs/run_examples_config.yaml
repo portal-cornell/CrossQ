@@ -1,39 +1,84 @@
-example: criss_cross_0
 
-cost_fn: nav_shortest_path
+cost_fn: manhattan
+
+defaults:
+  - env: minigrid
+  - _self_
+
+rl_algo:
+  gamma: .99
 
 seq_matching_fns:
-  # - name: ot
-  #   gamma: 0
+  - name: prob_reward
+    scale: 1
+    pos_offset: 17
+    add_to_env_rew: false # True to add the environment rewards to the sequence matching rewards 
+  - name: prob_ranked
+    scale: 1
+    pos_offset: 18
+    rank_weighting: .1
+    post_processing_method: 
+    - penalize_inversions
+
+  # - name: dtw
   #   scale: 1
-  #   pos_offset: 2
+  #   pos_offset: 6
   #   post_processing_method: 
-  #     - convert_to_positive_reward
-  - name: dtw
+  #     - p_prev_visited
+    # post_processing_method: 
+    # - convert_to_positive_reward
+  # - name: sparse_reward
+  #   scale: 1
+  #   goal_radius: 1
+  #   goal_bonus: 1
+  # - name: ot_minus
+  #   scale: 1
+  #   gamma: 0
+  #   pos_offset: 6
+  #   post_processing_method: 
+  #     - stage_penalty_based_on_last_state
+  #   stage_penalty: 10
+  - name: even_distribution
     scale: 1
-    pos_offset: 3
+    pos_offset: 6
     post_processing_method: 
-      - convert_to_positive_reward
-  - name: dtw
-    scale: 1
-    pos_offset: 3
-    post_processing_method: 
-      - convert_to_positive_reward
-      - stage_reward_based_on_last_state
-  - name: soft_dtw
-    gamma: 5
-    scale: 1
-    pos_offset: 3
-    post_processing_method: 
-      - convert_to_positive_reward
-  - name: soft_dtw
-    gamma: 5
-    scale: 1
-    stage_bonus: 0
-    pos_offset: 3
-    post_processing_method: 
-      - convert_to_positive_reward
-      - stage_reward_based_on_last_state
+  #       - convert_to_positive_reward
+  # - name: ot
+  #   scale: 1
+  #   gamma: 0
+  #   pos_offset: 6
+  #   post_processing_method: 
+  #   - convert_to_positive_reward
+  # - name: even_distribution
+  #   scale: 1
+  #   pos_offset: 6
+  #   post_processing_method: 
+  #   - convert_to_positive_reward
+  # - name: dtw
+  #   scale: 1
+  #   pos_offset: 6
+  #   post_processing_method: 
+  #   - convert_to_positive_reward
+  # - name: dtw_plus
+  #   gamma: 5
+  #   scale: 1
+  #   pos_offset: 6
+  #   post_processing_method: 
+  #   - convert_to_positive_reward
+  #   - stage_reward_based_on_max
+
+  # - name: dtw
+  #   scale: 1
+  #   pos_offset: 0
+  # - name: soft_dtw
+  #   gamma: 5
+  #   scale: 1
+  #   pos_offset: 0
+  # - name: soft_dtw
+  #   gamma: 5
+  #   scale: 1
+  #   stage_bonus: 0
+  #   pos_offset: 0
   # - name: dtw
   #   scale: 1
   #   pos_offset: 6
@@ -109,5 +154,5 @@ run_notes: null
 
 hydra:
   run:
-    dir: ./seq_matching_toy/toy_examples_logs/${now:%Y-%m-%d-%H%M%S}_ex=${example}_cf=${cost_fn}_nt=${run_notes}
+    dir: ./seq_matching_toy/toy_examples_logs/${now:%Y-%m-%d-%H%M%S}_ex=${env.example_name}_cf=${cost_fn}_nt=${run_notes}
 

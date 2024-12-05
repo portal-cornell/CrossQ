@@ -1,0 +1,4 @@
+example_name: nav_3by3_0
+episode_length: 10
+include_history: false
+minigrid: False

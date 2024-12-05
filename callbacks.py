@@ -24,7 +24,7 @@ from loguru import logger
 from einops import rearrange
 
 from seq_reward.seq_utils import get_matching_fn, load_reference_seq, load_images_from_reference_seq, seq_matching_viz
-from seq_reward.cost_fns import euclidean_distance_advanced, euclidean_distance_advanced_arms_only
+from seq_reward.cost_fns import euclidean_distance_advanced, euclidean_distance_advanced_arms_only, COST_FN_DICT
 
 from vlm_reward.vlm_buffer import GeomXposReplayBuffer
 from constants import HUMANOID_TASK_SEQ_DICT
@@ -144,7 +144,6 @@ class StateBasedSeqRewardCallback(BaseCallback):
         # Get the observation from the replay buffer
         #   size: (train_freq, n_envs, obs_size)
         obs_to_process = self.get_obs_to_process_from_buffer()
-       
         matching_reward_list = []
         # For each environment, calculate the sequence matching reward
         for env_i in range(self.model.env.num_envs):
@@ -239,8 +238,8 @@ class VideoRecorderCallback(BaseCallback):
             env_name: The name of the environment
             task_name: The name of the task in the environment
             use_geom_xpos: Whether to use geom_xpos for the observation (only for HumanoidSpawnedUpCustom)
-            threshold: The threshold to consider a success (only for HumanoidSpawnedUpCustom)
-            success_fn_cfg: The configuration for the success function (only for HumanoidSpawnedUpCustom)
+            threshold: The threshold to consider a success
+            success_fn_cfg: The configuration for the success function
             matching_fn_cfg: The configuration for the matching function
             calc_visual_reward: Whether to calculate the visual reward using the VLM reward model
         """
@@ -268,7 +267,7 @@ class VideoRecorderCallback(BaseCallback):
         if self._env_name == "HumanoidSpawnedUpCustom":
             self._humanoid_env_setup_eval(task_name, success_fn_cfg, use_geom_xpos)
         elif self._env_name == "Metaworld":
-            self._metaworld_env_setup_eval()
+            self._metaworld_env_setup_eval(task_name, success_fn_cfg)
 
     def _on_step(self) -> bool:
         if self.n_calls % self._render_freq == 0:
@@ -335,7 +334,12 @@ class VideoRecorderCallback(BaseCallback):
             
             # Calculate different rewards/metrics (and update what will be plotted on the 0th env's info)
             infos_0th_env = all_infos[0]
-            infos_0th_env = self.calc_and_record_gt_reward(geom_xposes, all_infos, infos_0th_env)
+
+            if self._env_name == "HumanoidSpawnedUpCustom":
+                infos_0th_env = self._calc_and_record_humanoid_gt_reward(geom_xposes, infos_0th_env)
+            elif self._env_name == "Metaworld":
+                self._calc_and_record_metaworld_gt_reward(states, all_infos)
+
             infos_0th_env = self.calc_and_record_visual_reward_for_0th_env(screens, rewards, infos_0th_env)
             infos_0th_env = self.calc_and_record_seq_matching_reward_for_0th_env(states, geom_xposes, raw_screens, infos_0th_env)
 
@@ -370,36 +374,6 @@ class VideoRecorderCallback(BaseCallback):
 
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"""
-
-    def calc_and_record_gt_reward(self, geom_xposes, all_infos, infos_0th_env):
-        """Calculate the ground-truth reward that all methods will be compared against
-
-        For HumanoidSpawnedUpCustom, we calculate
-            - the ground-truth reward which is based on a goal reference sequence (a series of key poses)
-            - the success rate based on the entire body + based on only the arm
-
-        For Metaworld, we get the environments sparse and dense rewards
-
-        Parameters:
-            geom_xposes: np.array
-                The geom_xposes for the n_eval_episodes
-                size: (n_eval_episodes, rollout_length, 18, 3)
-            all_infos: List[List[Dict]]
-                The information for all the environment (later used for plotting)
-            infos_0th_env: List[Dict]
-                The information for the 0th environment (later used for plotting)
-
-        Returns:
-            Modified infos_0th_env
-        """
-        if self._env_name == "HumanoidSpawnedUpCustom":
-            return self._calc_and_record_humanoid_gt_reward(geom_xposes, infos_0th_env)
-        elif self._env_name == "Metaworld":
-            self._calc_and_record_metaworld_gt_reward(all_infos)
-
-            # Because Metaworld already has the environment's reward in the infos, we don't need to modify 0th env's info
-            return infos_0th_env
-        
     def _calc_and_record_humanoid_gt_reward(self, geom_xposes, infos):
         """
         Parameters:
@@ -493,11 +467,12 @@ class VideoRecorderCallback(BaseCallback):
         return infos
     
 
-    def _calc_and_record_metaworld_gt_reward(self, all_infos):
+    def _calc_and_record_metaworld_gt_reward(self, states, all_infos):
         """Record Metaworld's ground-truth reward (sparse and dense) to the logger
 
         Parameters:
-            infos: List[List[Dict]]
+            states: observed states, of shape (episode_length, n_envs, obs_shape)
+            all_infos: List[List[Dict]]
                 The information for all the environment (we will extract environment's sparse and dense rewards)
         
         Effects:
@@ -522,6 +497,37 @@ class VideoRecorderCallback(BaseCallback):
                                     avg_env_dense_reward,
                                     exclude=("stdout", "log", "json", "csv"))
     
+            full_pos_success_rate_list = []
+            full_pos_pct_success_timesteps_list = []
+
+            for env_i in range(self._n_eval_episodes):
+                # Don't need to do anything here, geom_xpos is getting normalized in the grab_screens function
+                states_to_process = states[:, env_i, ...]
+
+                full_pos_success_rate, full_pos_pct_success_timesteps = self._success_fn_based_on_all_pos(states_to_process)
+                full_pos_success_rate_list.append(full_pos_success_rate)
+                full_pos_pct_success_timesteps_list.append(full_pos_pct_success_timesteps)
+
+            full_pos_success_rate_iqm, full_pos_success_rate_std = calc_iqm(full_pos_success_rate_list)
+            full_pos_pct_success_timesteps_iqm, full_pos_pct_success_timesteps_std = calc_iqm(full_pos_pct_success_timesteps_list)
+
+            # Save the success results locally
+            self.add_success_results(self.num_timesteps, {
+                "full_pos_success_rate": full_pos_success_rate_list,
+                "full_pos_success_rate_iqm": float(full_pos_success_rate_iqm),
+                "full_pos_success_rate_std": float(full_pos_success_rate_std),
+                "full_pos_pct_success_timesteps": full_pos_pct_success_timesteps_list,
+                "full_pos_pct_success_timesteps_iqm": float(full_pos_pct_success_timesteps_iqm),
+                "full_pos_pct_success_timesteps_std": float(full_pos_pct_success_timesteps_std)
+            })
+            
+            self.logger.record("eval/full_pos_success", 
+                                full_pos_success_rate_iqm, 
+                                exclude=("stdout", "log", "json", "csv"))
+        
+        return all_infos
+
+
     """+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -724,13 +730,16 @@ class VideoRecorderCallback(BaseCallback):
     Humanoid Environment Setup
 
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"""
-    def _metaworld_env_setup_eval(self):
+    def _metaworld_env_setup_eval(self, task_name, success_fn_cfg):
         """If the environment is Metaworld, set up the evaluation for the environment
 
         Effects:
             - Set the flag _calc_gt_reward to True (It's always True for Metaworld before we get environment reward for free)
         """
         self._calc_gt_reward = True
+        self._set_metaworld_success_fn(success_fn_cfg)
+        self._success_results = {}
+        self._success_json_save_path = os.path.join(self._rollout_save_path, "success_results.json")
 
         logger.info(f"[VideoRecorderCallback] env_name=Metaworld, _calc_gt_reward=True")
 
@@ -811,6 +820,61 @@ class VideoRecorderCallback(BaseCallback):
             
             self._gt_goal_matching_fn = lambda rollout: stage_progress_fn(self._goal_ref_seq, rollout, self._threshold)
 
+    def success_fn(self, obs_seq, ref_seq, threshold):
+        """
+        Calculate the binary success based on the rollout and the reference sequence
+
+        Parameters:
+            rollout: np.array (rollout_length, ...)
+                The rollout sequence to calculate the reward
+
+        Return:
+            pct_stage_completed: float
+                The percentage of stages that are completed
+            pct_timesteps_completing_the_stages: float
+                The percentage of timesteps that are completing the stages
+        """
+        # Calculate reward from the rollout to self.goal_ref_seq
+
+        cost_fn_name = "euclidean"
+        cost_fn = COST_FN_DICT[cost_fn_name]
+
+        reward_matrix = np.exp(-cost_fn(obs_seq, ref_seq))
+
+        # Detect when a stage is completed (the rollout is close to the goal_ref_seq) (under self._threshold)
+        current_stage = 0
+        stage_completed = 0
+        # Track the number of steps where a stage is being completed
+        #   Offset by 1 to play nicely with the stage_completed
+        n_steps_completing_each_stage = [0] * (len(ref_seq) + 1)
+
+        for i in range(len(reward_matrix)):  # Iterate through the timestep
+            if reward_matrix[i][current_stage] > threshold and stage_completed < len(ref_seq):
+                stage_completed += 1
+                current_stage = min(current_stage + 1, len(ref_seq)-1)
+                n_steps_completing_each_stage[stage_completed] += 1
+            elif current_stage == len(ref_seq)-1 and reward_matrix[i][current_stage] > threshold:
+                # We are at the last stage
+                n_steps_completing_each_stage[stage_completed] += 1
+            elif current_stage > 0 and reward_matrix[i][current_stage-1] > threshold:
+                # Once at least 1 stage is counted, if it's still above the threshold for the current stage, we will add to the count
+                n_steps_completing_each_stage[stage_completed] += 1
+
+        pct_stage_completed = stage_completed/len(ref_seq)
+
+        # The last pose is never reached
+        if n_steps_completing_each_stage[-1] == 0:
+            # We don't count any of the previous stage's steps
+            pct_timesteps_completing_the_stages = 0
+        else:
+            pct_timesteps_completing_the_stages = np.sum(n_steps_completing_each_stage)/len(ref_seq)
+
+        return pct_stage_completed, pct_timesteps_completing_the_stages
+    
+
+    def _set_metaworld_success_fn(self, success_fn_cfg):
+        self._success_fn_based_on_all_pos = lambda obs_seq, ref_seq=self._seq_matching_ref_seq, threshold=success_fn_cfg["threshold_for_all_pos"]: self.success_fn(obs_seq[:, :18], ref_seq, threshold)
+        
     def _set_humanoid_success_fn(self, success_fn_cfg):
         """
         Whether the entire body is above an threshold (0.5)
@@ -821,56 +885,9 @@ class VideoRecorderCallback(BaseCallback):
         The percentage of time that it's holding the key pose
             For each key pose, we find the time interval that each key poses hold
         """
-        def success_fn(obs_seq, ref_seq, threshold):
-            """
-            Calculate the binary success based on the rollout and the reference sequence
-
-            Parameters:
-                rollout: np.array (rollout_length, ...)
-                    The rollout sequence to calculate the reward
-
-            Return:
-                pct_stage_completed: float
-                    The percentage of stages that are completed
-                pct_timesteps_completing_the_stages: float
-                    The percentage of timesteps that are completing the stages
-            """
-            # Calculate reward from the rollout to self.goal_ref_seq
-            reward_matrix = np.exp(-euclidean_distance_advanced(obs_seq, ref_seq))
-
-            # Detect when a stage is completed (the rollout is close to the goal_ref_seq) (under self._threshold)
-            current_stage = 0
-            stage_completed = 0
-            # Track the number of steps where a stage is being completed
-            #   Offset by 1 to play nicely with the stage_completed
-            n_steps_completing_each_stage = [0] * (len(ref_seq) + 1)
-
-            for i in range(len(reward_matrix)):  # Iterate through the timestep
-                if reward_matrix[i][current_stage] > threshold and stage_completed < len(ref_seq):
-                    stage_completed += 1
-                    current_stage = min(current_stage + 1, len(ref_seq)-1)
-                    n_steps_completing_each_stage[stage_completed] += 1
-                elif current_stage == len(ref_seq)-1 and reward_matrix[i][current_stage] > threshold:
-                    # We are at the last stage
-                    n_steps_completing_each_stage[stage_completed] += 1
-                elif current_stage > 0 and reward_matrix[i][current_stage-1] > threshold:
-                    # Once at least 1 stage is counted, if it's still above the threshold for the current stage, we will add to the count
-                    n_steps_completing_each_stage[stage_completed] += 1
-
-            pct_stage_completed = stage_completed/len(ref_seq)
-
-            # The last pose is never reached
-            if n_steps_completing_each_stage[-1] == 0:
-                # We don't count any of the previous stage's steps
-                pct_timesteps_completing_the_stages = 0
-            else:
-                pct_timesteps_completing_the_stages = np.sum(n_steps_completing_each_stage)/len(ref_seq)
-
-            return pct_stage_completed, pct_timesteps_completing_the_stages
-        
-        self._success_fn_based_on_all_pos = lambda obs_seq, ref_seq=self._goal_ref_seq, threshold=success_fn_cfg["threshold_for_all_pos"]: success_fn(obs_seq, ref_seq, threshold)
-
-        self._success_fn_based_on_only_arm_pos = lambda obs_seq, ref_seq=self._goal_ref_seq, threshold=success_fn_cfg["threshold_for_arm_pos"]: success_fn(obs_seq[:, 12:], ref_seq[:, 12:], threshold)
+       
+        self._success_fn_based_on_all_pos = lambda obs_seq, ref_seq=self._goal_ref_seq, threshold=success_fn_cfg["threshold_for_all_pos"]: self.success_fn(obs_seq, ref_seq, threshold)
+        self._success_fn_based_on_only_arm_pos = lambda obs_seq, ref_seq=self._goal_ref_seq, threshold=success_fn_cfg["threshold_for_arm_pos"]: self.success_fn(obs_seq[:, 12:], ref_seq[:, 12:], threshold)
 
     def add_success_results(self, curr_timestep, timestep_success_dict):
         """

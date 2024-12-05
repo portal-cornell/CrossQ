@@ -1,9 +1,11 @@
-name: dtw
+name: soft_dtw_plus
 cost_fn: euclidean
+gamma: 5
 scale: 1
 seq_name: null
 post_processing_method:
 - exp_reward
+- stage_reward_based_on_last_state
 reward_vmin: 0
 reward_vmax: 1
 stage_bonus: 0

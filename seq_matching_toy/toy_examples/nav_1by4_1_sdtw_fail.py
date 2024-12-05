@@ -21,8 +21,8 @@ nav_1by4_1_sdtw_fail = {
             "descriptions": "Correct",
             "seq": [
                 np.array([[1, 0, 0, 0]]),
-                np.array([[1, 0, 0, 0]]),
-                np.array([[1, 0, 0, 0]]),
+                np.array([[0, 1, 0, 0]]),
+                np.array([[0, 1, 0, 0]]),
                 np.array([[0, 1, 0, 0]]),
             ]
         },
@@ -48,9 +48,9 @@ nav_1by4_1_sdtw_fail = {
             "descriptions": "Stuck at ref seq frame 1",
             "seq": [
                 np.array([[1, 0, 0, 0]]),
-                np.array([[0, 1, 0, 0]]),
                 np.array([[1, 0, 0, 0]]),
-                np.array([[0, 1, 0, 0]]),
+                np.array([[1, 0, 0, 0]]),
+                np.array([[1, 0, 0, 0]]),
             ]
         }
     }

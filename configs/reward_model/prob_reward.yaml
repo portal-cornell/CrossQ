@@ -1,9 +1,12 @@
-name: dtw
+name: prob_reward
 cost_fn: euclidean
 scale: 1
-seq_name: null
+seq_name: rl_expert_20_frames
 post_processing_method:
 - exp_reward
 reward_vmin: 0
 reward_vmax: 1
-stage_bonus: 0
+
+max_cost: 1
+
+

@@ -10,3 +10,8 @@ camera_name: corner
 render_dim: 
   - 480
   - 480
+
+temporal_encoding: false
+
+success_eval:
+  threshold_for_all_pos: 0.9
