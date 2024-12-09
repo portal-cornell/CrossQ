@@ -11,7 +11,7 @@ from seq_reward.even_distribution import compute_even_distribution_reward
 from seq_reward.optimal_transport import compute_ot_reward
 from seq_reward.soft_dtw import compute_soft_dtw_reward
 from seq_reward.dtw import compute_dtw_reward
-from seq_reward.prob_based import compute_probability_reward, compute_ordered_probability_reward, compute_diagonal_probability_reward
+from seq_reward.prob_based import compute_probability_reward, compute_log_probability_reward, compute_ordered_probability_reward, compute_diagonal_probability_reward
 from seq_reward.testing_dist_metric import compute_testing_dist_reward
 from seq_reward.cost_fns import COST_FN_DICT
 
@@ -211,6 +211,8 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
         fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_diagonal_probability_reward(obs_seq, ref_seq, cost_fn, max_cost=float(fn_config.get("max_cost", 1))), fn_name
     elif "prob_reward" == fn_name or "prob_ranked" == fn_name:
         fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_probability_reward(obs_seq, ref_seq, cost_fn, max_cost=float(fn_config.get("max_cost", 1))), fn_name
+    elif "log_prob_reward" == fn_name or "log_prob_ranked" == fn_name:
+        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_log_probability_reward(obs_seq, ref_seq, cost_fn, tau=float(fn_config.get("tau", 1))), fn_name
     elif "ordered_prob_reward" == fn_name:
         fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_ordered_probability_reward(obs_seq, ref_seq, cost_fn, max_cost=float(fn_config.get("max_cost", 1))), fn_name
     elif "soft_dtw" in fn_name or "sdtw" in fn_name:
@@ -842,7 +844,7 @@ def plot_matrix_as_heatmap_on_ax(ax, fig, obs_seq, ref_seq, matrix: np.ndarray, 
         for i in range(matrix.shape[0]):
             for j in range(matrix.shape[1]):
                 text_color = 'white' if matrix[i, j] > mid_val else 'black'
-                ax_heatmap.text(j, i, f'{matrix[i, j]:.2f}', ha='center', va='center', color=text_color, fontsize=label_text_font_size)
+                ax_heatmap.text(j, i, f'{matrix[i, j]:.4f}', ha='center', va='center', color=text_color, fontsize=label_text_font_size)
 
     ax_colorbar = fig.add_subplot(gs[1:obs_len+1, ref_len + 1])
     cbar = fig.colorbar(im, cax=ax_colorbar, fraction=0.046, pad=0.04)

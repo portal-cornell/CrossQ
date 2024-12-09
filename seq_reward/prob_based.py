@@ -1,6 +1,39 @@
 import numpy as np
 
-def compute_probability_reward(obs, ref, cost_fn, max_cost, scale=100):
+def compute_log_probability_reward(obs, ref, cost_fn, tau=20):
+    """
+    see overleaf
+    hypothesis: tau should be ref seq length
+    """
+    cost_matrix = cost_fn(obs, ref) 
+    
+    # max_probs[i, j] represents the max probability that reference j was reached at any timestep before i
+    # this is a lower bound on the total probability that reference j was reached by timestep i
+    min_cost = np.zeros_like(cost_matrix)
+    min_cost[0, :] = cost_matrix[0, :]
+    min_cost[:, -1] = cost_matrix[:, -1]
+    for i in range(1, min_cost.shape[0]):
+        for j in range(min_cost.shape[1] - 1): # we want current probability of being in the last reference, not max so far (discourage moving out of final state)
+            min_cost[i, j] = min(min_cost[i-1, j], cost_matrix[i, j]) # monotonically increasing probability matrix
+                
+    cumulative_cost = np.zeros_like(min_cost)
+    cumulative_cost[:, 0] = min_cost[:,0]
+    for i in range(min_cost.shape[0]):
+        for j in range(1, min_cost.shape[1]):
+            cumulative_cost[i, j] = min_cost[i,j] + cumulative_cost[i, j-1] 
+
+    # cumulative_cost bounded above by tau (at most 1 for each reference subgoal)
+    final_reward = 1 - (1/tau) * cumulative_cost[:,  -1] 
+    
+    info = dict(
+        assignment=1 - (1/tau) * cumulative_cost, # plot the inverse normalized cumulative cost
+        original_assignment=cumulative_cost,
+        cost_matrix=min_cost,
+        transported_cost=cumulative_cost,
+    )
+    return final_reward, info
+
+def compute_probability_reward(obs, ref, cost_fn, max_cost, scale=1):
     cost_matrix = cost_fn(obs, ref)
     cost_matrix /= max_cost
 
@@ -39,7 +72,7 @@ def compute_probability_reward(obs, ref, cost_fn, max_cost, scale=100):
 
 def compute_diagonal_probability_reward(obs, ref, cost_fn, max_cost):
     cost_matrix = cost_fn(obs, ref)
-    cost_matrix /= max_cost
+    cost_matrix /= max_cost # max cost is sort of like temperature
     probability_matrix = np.exp(-cost_matrix)
     #probability_matrix = (max_cost-cost_matrix) / max_cost
     max_probs = np.zeros((probability_matrix.shape[0], probability_matrix.shape[0], probability_matrix.shape[1], ))

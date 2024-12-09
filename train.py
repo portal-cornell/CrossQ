@@ -169,7 +169,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
     logger.debug(f"Created the learned and initialized if needed: allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)}")
     
     if "cost_fn" in cfg.reward_model: # custom distance based reward
-        default_tags = [cfg.reward_model.name, f"ep_{cfg.env.episode_length}", cfg.env.name, cfg.reward_model.cost_fn] + (["temporal"] if cfg.env.temporal_encoding else [])
+        default_tags = [cfg.reward_model.name, f"ep_{cfg.env.episode_length}", cfg.env.name, cfg.reward_model.cost_fn, cfg.env.task_name.split('-')[0]] + (["temporal"] if cfg.env.temporal_encoding else [])
     else: # default environment reward
         default_tags = [cfg.env.env_reward_type, f"ep_{cfg.env.episode_length}", cfg.env.name]
     tags = cfg.logging.wandb_tags + default_tags

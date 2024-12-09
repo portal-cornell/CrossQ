@@ -27,63 +27,66 @@ def load_reward_model(
     """
     logger.info(model_config_dict)
 
-    if "dino" in model_name.lower():
-        if "wasser" in model_name.lower():
-            reward_model = load_dino_wasserstein_reward_model(
-                                            rank = rank,
-                                            batch_size=worker_actual_batch_size,
-                                            model_name=model_config_dict["vlm_model"],
-                                            image_size=model_config_dict["image_size"],
-                                            human_seg_model_path=model_config_dict["human_seg_model_path"],
-                                            source_mask_thresh=model_config_dict["source_mask_thresh"],
-                                            target_mask_thresh=model_config_dict["target_mask_thresh"])
-            reward_model.cuda(rank)
-            logger.debug(f"Loaded DINO wasserstein reward model. model_name={model_config_dict['vlm_model']}, pos_image={model_config_dict['pos_image_path']}, neg_image={model_config_dict.get('neg_image_path', [])}")
-        elif "pooled" in model_name.lower():
-            reward_model = load_dino_pooled_reward_model(
-                                            rank = rank,
-                                            batch_size=worker_actual_batch_size,
-                                            model_name=model_config_dict["vlm_model"],
-                                            image_size=model_config_dict["image_size"],
-                                            human_seg_model_path=model_config_dict["human_seg_model_path"])
-            reward_model.cuda(rank)
-            logger.debug(f"Loaded DINO pooled reward model. model_name={model_config_dict['vlm_model']}, pos_image={model_config_dict['pos_image_path']}, neg_image={model_config_dict.get('neg_image_path', [])}")
-        else:
-            exception = f"Illegal dino model type {model_name}. Try changing name in your config."
-            raise Exception(exception)
-    elif "lpips" in model_name.lower():
-        reward_model = load_lpips_reward_model()
-        reward_model.cuda(rank)
-        logger.debug(f"Loaded lpips reward model")
-    elif "dreamsim" in model_name.lower():
-        reward_model = load_dreamsim_reward_model()
-        reward_model.cuda(rank)
-        logger.debug(f"Loaded dreamsim reward model")
-    elif "sam2" in model_name.lower():
-        if "mean_feature" in model_name.lower():
-            reward_model = load_sam2_mean_feature_reward_model(
-                                        rank, 
-                                        sam2_model_id=model_config_dict['sam2_model_id'],
-                                        sam2_cfg_path=model_config_dict['sam2_cfg_path'],
-                                        human_seg_model_path=model_config_dict['human_seg_model_path'],
-                                        source_mask_thresh=model_config_dict["source_mask_thresh"],
-                                        target_mask_thresh=model_config_dict["target_mask_thresh"],
-                                        batch_size=worker_actual_batch_size)
-        elif "wasser" in model_name.lower():
-            reward_model = load_sam2_wasserstein_reward_model(
-                            rank, 
-                            sam2_model_id=model_config_dict['sam2_model_id'],
-                            sam2_cfg_path=model_config_dict['sam2_cfg_path'],
-                            human_seg_model_path=model_config_dict['human_seg_model_path'],
-                            source_mask_thresh=model_config_dict["source_mask_thresh"],
-                            target_mask_thresh=model_config_dict["target_mask_thresh"],
-                            batch_size=worker_actual_batch_size)
+    if "resnet" in model_name.lower():
+        reward_model = load_dino_reward_model()
+
+    # if "dino" in model_name.lower():
+    #     if "wasser" in model_name.lower():
+    #         reward_model = load_dino_wasserstein_reward_model(
+    #                                         rank = rank,
+    #                                         batch_size=worker_actual_batch_size,
+    #                                         model_name=model_config_dict["vlm_model"],
+    #                                         image_size=model_config_dict["image_size"],
+    #                                         human_seg_model_path=model_config_dict["human_seg_model_path"],
+    #                                         source_mask_thresh=model_config_dict["source_mask_thresh"],
+    #                                         target_mask_thresh=model_config_dict["target_mask_thresh"])
+    #         reward_model.cuda(rank)
+    #         logger.debug(f"Loaded DINO wasserstein reward model. model_name={model_config_dict['vlm_model']}, pos_image={model_config_dict['pos_image_path']}, neg_image={model_config_dict.get('neg_image_path', [])}")
+    #     elif "pooled" in model_name.lower():
+    #         reward_model = load_dino_pooled_reward_model(
+    #                                         rank = rank,
+    #                                         batch_size=worker_actual_batch_size,
+    #                                         model_name=model_config_dict["vlm_model"],
+    #                                         image_size=model_config_dict["image_size"],
+    #                                         human_seg_model_path=model_config_dict["human_seg_model_path"])
+    #         reward_model.cuda(rank)
+    #         logger.debug(f"Loaded DINO pooled reward model. model_name={model_config_dict['vlm_model']}, pos_image={model_config_dict['pos_image_path']}, neg_image={model_config_dict.get('neg_image_path', [])}")
+    #     else:
+    #         exception = f"Illegal dino model type {model_name}. Try changing name in your config."
+    #         raise Exception(exception)
+    # elif "lpips" in model_name.lower():
+    #     reward_model = load_lpips_reward_model()
+    #     reward_model.cuda(rank)
+    #     logger.debug(f"Loaded lpips reward model")
+    # elif "dreamsim" in model_name.lower():
+    #     reward_model = load_dreamsim_reward_model()
+    #     reward_model.cuda(rank)
+    #     logger.debug(f"Loaded dreamsim reward model")
+    # elif "sam2" in model_name.lower():
+    #     if "mean_feature" in model_name.lower():
+    #         reward_model = load_sam2_mean_feature_reward_model(
+    #                                     rank, 
+    #                                     sam2_model_id=model_config_dict['sam2_model_id'],
+    #                                     sam2_cfg_path=model_config_dict['sam2_cfg_path'],
+    #                                     human_seg_model_path=model_config_dict['human_seg_model_path'],
+    #                                     source_mask_thresh=model_config_dict["source_mask_thresh"],
+    #                                     target_mask_thresh=model_config_dict["target_mask_thresh"],
+    #                                     batch_size=worker_actual_batch_size)
+    #     elif "wasser" in model_name.lower():
+    #         reward_model = load_sam2_wasserstein_reward_model(
+    #                         rank, 
+    #                         sam2_model_id=model_config_dict['sam2_model_id'],
+    #                         sam2_cfg_path=model_config_dict['sam2_cfg_path'],
+    #                         human_seg_model_path=model_config_dict['human_seg_model_path'],
+    #                         source_mask_thresh=model_config_dict["source_mask_thresh"],
+    #                         target_mask_thresh=model_config_dict["target_mask_thresh"],
+    #                         batch_size=worker_actual_batch_size)
         
-    elif "clip" in model_name.lower():
-        raise Exception("Error: CLIP RewardModel interface not yet implemented")
-    else:
-        exception = f"Illegal model name {model_name}. Try changing name in your config."
-        raise Exception(exception)
+    # elif "clip" in model_name.lower():
+    #     raise Exception("Error: CLIP RewardModel interface not yet implemented")
+    # else:
+    #     exception = f"Illegal model name {model_name}. Try changing name in your config."
+    #     raise Exception(exception)
 
     # # Load the target image
     # # All of the currently used models have this transform as their preprocessing step 

@@ -2,8 +2,12 @@ name: prob_reward
 cost_fn: euclidean
 scale: 1
 seq_name: rl_expert_20_frames
-post_processing_method:
-- exp_reward
+
+# IMPORTANT: removing exp reward from post processing
+# post_processing_method:
+# - exp_reward
+
+post_processing_method: []
 reward_vmin: 0
 reward_vmax: 1
 

@@ -1,9 +1,8 @@
 name: even_distribution
 cost_fn: euclidean
 scale: 1
-pos_offset: 6
 seq_name: null
 post_processing_method: 
-    - convert_to_positive_reward
+  - exp_reward
 
 
