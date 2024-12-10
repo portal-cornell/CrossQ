@@ -17,6 +17,19 @@ METAWORLD_TASK_SEQ_DICT = {
             "rl_expert_20_frames": "/share/portal/wph52/CrossQ/ref_seqs/door_close/1000000_rollouts_subsampled_20_states.npy"
         }
     },
+    "door-open-v2":
+    {
+        "task_type": "sequence_following",
+        "sequences": {
+            "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-12-09-212051_sb3_sac_envt=door-open-v2-goal-observable_rm=hand_engineered_nt=dense/eval/1000000_rollouts.gif",
+    },
+    "window-open-v2":
+    {
+        "task_type": "sequence_following",
+        "sequences": {
+            "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-12-09-212409_sb3_sac_envt=window-open-v2-goal-observable_rm=hand_engineered_nt=dense/eval/940000_rollouts.gif", 
+        }
+    }
 }
 
 # Used abosolute path because eval is run in a subdirectory

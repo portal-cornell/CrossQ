@@ -496,34 +496,37 @@ class VideoRecorderCallback(BaseCallback):
             self.logger.record("eval/env_dense_reward",
                                     avg_env_dense_reward,
                                     exclude=("stdout", "log", "json", "csv"))
-    
-            full_pos_success_rate_list = []
-            full_pos_pct_success_timesteps_list = []
 
-            for env_i in range(self._n_eval_episodes):
-                # Don't need to do anything here, geom_xpos is getting normalized in the grab_screens function
-                states_to_process = states[:, env_i, ...]
+            # We can only do the calculation below if we have a ref seq
+            #   (see the _set_metaworld_success_fn function)
+            if self._success_fn_based_on_all_pos:
+                full_pos_success_rate_list = []
+                full_pos_pct_success_timesteps_list = []
 
-                full_pos_success_rate, full_pos_pct_success_timesteps = self._success_fn_based_on_all_pos(states_to_process)
-                full_pos_success_rate_list.append(full_pos_success_rate)
-                full_pos_pct_success_timesteps_list.append(full_pos_pct_success_timesteps)
+                for env_i in range(self._n_eval_episodes):
+                    # Don't need to do anything here, geom_xpos is getting normalized in the grab_screens function
+                    states_to_process = states[:, env_i, ...]
 
-            full_pos_success_rate_iqm, full_pos_success_rate_std = calc_iqm(full_pos_success_rate_list)
-            full_pos_pct_success_timesteps_iqm, full_pos_pct_success_timesteps_std = calc_iqm(full_pos_pct_success_timesteps_list)
+                    full_pos_success_rate, full_pos_pct_success_timesteps = self._success_fn_based_on_all_pos(states_to_process)
+                    full_pos_success_rate_list.append(full_pos_success_rate)
+                    full_pos_pct_success_timesteps_list.append(full_pos_pct_success_timesteps)
 
-            # Save the success results locally
-            self.add_success_results(self.num_timesteps, {
-                "full_pos_success_rate": full_pos_success_rate_list,
-                "full_pos_success_rate_iqm": float(full_pos_success_rate_iqm),
-                "full_pos_success_rate_std": float(full_pos_success_rate_std),
-                "full_pos_pct_success_timesteps": full_pos_pct_success_timesteps_list,
-                "full_pos_pct_success_timesteps_iqm": float(full_pos_pct_success_timesteps_iqm),
-                "full_pos_pct_success_timesteps_std": float(full_pos_pct_success_timesteps_std)
-            })
-            
-            self.logger.record("eval/full_pos_success", 
-                                full_pos_success_rate_iqm, 
-                                exclude=("stdout", "log", "json", "csv"))
+                full_pos_success_rate_iqm, full_pos_success_rate_std = calc_iqm(full_pos_success_rate_list)
+                full_pos_pct_success_timesteps_iqm, full_pos_pct_success_timesteps_std = calc_iqm(full_pos_pct_success_timesteps_list)
+
+                # Save the success results locally
+                self.add_success_results(self.num_timesteps, {
+                    "full_pos_success_rate": full_pos_success_rate_list,
+                    "full_pos_success_rate_iqm": float(full_pos_success_rate_iqm),
+                    "full_pos_success_rate_std": float(full_pos_success_rate_std),
+                    "full_pos_pct_success_timesteps": full_pos_pct_success_timesteps_list,
+                    "full_pos_pct_success_timesteps_iqm": float(full_pos_pct_success_timesteps_iqm),
+                    "full_pos_pct_success_timesteps_std": float(full_pos_pct_success_timesteps_std)
+                })
+                
+                self.logger.record("eval/full_pos_success", 
+                                    full_pos_success_rate_iqm, 
+                                    exclude=("stdout", "log", "json", "csv"))
         
         return all_infos
 
@@ -873,7 +876,13 @@ class VideoRecorderCallback(BaseCallback):
     
 
     def _set_metaworld_success_fn(self, success_fn_cfg):
-        self._success_fn_based_on_all_pos = lambda obs_seq, ref_seq=self._seq_matching_ref_seq, threshold=success_fn_cfg["threshold_for_all_pos"]: self.success_fn(obs_seq[:, :18], ref_seq, threshold)
+        if self._calc_matching_reward:
+            # Because a ref seq is supplied, self._seq_matching_ref_seq is already set
+            self._success_fn_based_on_all_pos = lambda obs_seq, ref_seq=self._seq_matching_ref_seq, threshold=success_fn_cfg["threshold_for_all_pos"]: self.success_fn(obs_seq[:, :18], ref_seq, threshold)
+        else:
+            # Else, we cannot calculate the success wrt the reference sequence
+            #   (e.g., when we are training with environment reward)
+            self._success_fn_based_on_all_pos = None
         
     def _set_humanoid_success_fn(self, success_fn_cfg):
         """
