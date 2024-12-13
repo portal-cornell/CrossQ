@@ -49,6 +49,9 @@ examples = {
     "nav_2by2_1_sdtw_fail": nav_2by2_1_sdtw_fail,
     # Minigrid
     "lava_cycle": lava_cycle,
+    "lava_cycle_reverse": lava_cycle_reverse,
+    "lava_cycle_enforced": lava_cycle_enforced,
+    "lava_cycle_enforced_longer": lava_cycle_enforced_longer,
     "lava_nav": lava_nav,
     "lava_nav_no_door": lava_nav_no_door,
     "lava_easy": lava_easy,

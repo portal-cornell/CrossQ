@@ -7,6 +7,7 @@ import numpy as np
 from loguru import logger
 
 from vlm_reward.reward_models.model_interface import RewardModel
+from vlm_reward.reward_models.resnet import resnet50_backbone
 # TODO: Temporarily commented out to avoid long import times
 # from vlm_reward.reward_models.dino import load_dino_wasserstein_reward_model, load_dino_pooled_reward_model
 # from vlm_reward.reward_models.lpips import load_lpips_reward_model
@@ -28,8 +29,7 @@ def load_reward_model(
     logger.info(model_config_dict)
 
     if "resnet" in model_name.lower():
-        reward_model = load_dino_reward_model()
-
+        reward_model = resnet50_backbone()
     # if "dino" in model_name.lower():
     #     if "wasser" in model_name.lower():
     #         reward_model = load_dino_wasserstein_reward_model(

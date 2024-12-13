@@ -7,6 +7,10 @@ METAWORLD_TASK_SEQ_DICT = {
         "sequences": {
             "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-11-25-125324_sb3_sac_envt=button-press-v2-goal-hidden_rm=hand_engineered_nt=ep-len=200_sparse/eval/1000000_rollouts_states.npy",
             "rl_expert_20_frames": "/share/portal/wph52/CrossQ/ref_seqs/button_press/1000000_rollouts_subsampled_20_states.npy"
+        },
+        "sequence_gifs": {
+            "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-11-25-125324_sb3_sac_envt=button-press-v2-goal-hidden_rm=hand_engineered_nt=ep-len=200_sparse/eval/1000000_rollouts.gif",
+            "rl_expert_20_frames": "/share/portal/wph52/CrossQ/ref_seqs/button_press/1000000_rollouts_subsampled_20.gif"
         }
     },
     "door-close-v2":
@@ -15,8 +19,44 @@ METAWORLD_TASK_SEQ_DICT = {
         "sequences": {
             "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-11-25-124432_sb3_sac_envt=door-close-v2-goal-hidden_rm=hand_engineered_nt=ep-len=200_sparse/eval/1000000_rollouts_states.npy",
             "rl_expert_20_frames": "/share/portal/wph52/CrossQ/ref_seqs/door_close/1000000_rollouts_subsampled_20_states.npy"
+        },
+        "sequence_gifs": {
+            "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-11-25-124432_sb3_sac_envt=door-close-v2-goal-hidden_rm=hand_engineered_nt=ep-len=200_sparse/eval/1000000_rollouts.gif",
+            "rl_expert_20_frames": "/share/portal/wph52/CrossQ/ref_seqs/door_close/1000000_rollouts_subsampled_20.gif"
         }
     },
+    "door-open-v2":
+    {
+        "task_type": "sequence_following",
+        "sequences": {
+            # From RL expert trained with episode length 125, 1M steps, seed=9, dense env reward
+            "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-12-09-212051_sb3_sac_envt=door-open-v2-goal-observable_rm=hand_engineered_nt=dense/eval/1000000_rollouts_states.npy",
+            "rl_expert_20_frames": "/share/portal/wph52/CrossQ/ref_seqs/door_open/1000000_rollouts_subsampled_20_states.npy"
+        },
+        "sequence_gifs": {
+            # From RL expert trained with episode length 125, 1M steps, seed=9, dense env reward
+            "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-12-09-212051_sb3_sac_envt=door-open-v2-goal-observable_rm=hand_engineered_nt=dense/eval/1000000_rollouts.gif",
+            "rl_expert_20_frames": "/share/portal/wph52/CrossQ/ref_seqs/door_open/1000000_rollouts_subsampled_20.gif"
+        },
+    },
+    "window-open-v2":
+    {
+        "task_type": "sequence_following",
+        "sequences": {
+            # From RL expert trained with episode length 125, seed=9, dense env reward (picked an earlier rollout because it looked more efficient)
+            #   1M rollout actually closed the door after opening it
+            "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-12-09-212409_sb3_sac_envt=window-open-v2-goal-observable_rm=hand_engineered_nt=dense/eval/940000_rollouts_states.npy", 
+            "rl_expert_20_frames": "/share/portal/wph52/CrossQ/ref_seqs/window_open/940000_rollouts_subsampled_20_states.npy"
+        },
+        "sequence_gifs": {
+            # From RL expert trained with episode length 125, seed=9, dense env reward (picked an earlier rollout because it looked more efficient)
+            #   1M rollout actually closed the door after opening it
+            "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-12-09-212409_sb3_sac_envt=window-open-v2-goal-observable_rm=hand_engineered_nt=dense/eval/940000_rollouts.gif", 
+            "rl_expert_20_frames": "/share/portal/wph52/CrossQ/ref_seqs/window_open/940000_rollouts_subsampled_20.gif"
+        }
+
+        
+    }
 }
 
 # Used abosolute path because eval is run in a subdirectory
@@ -222,4 +262,38 @@ HUMANOID_TASK_SEQ_DICT = {
     #         "key_frames": ["/share/portal/hw575/CrossQ/create_demo/demos/both-arms-out_geom-xpos.npy"],
     #     }
     # },
+}
+
+METAWORLD_CAMERA = {
+    'hammer-v2': 'corner3',
+    'drawer-close-v2': 'corner',
+    'drawer-open-v2': 'corner',
+    'door-open-v2': 'corner', # 'corner3', # change back to corner3 for temporalOT
+    'door-close-v2': 'corner',
+    'bin-picking-v2': 'corner',
+    'button-press-topdown-v2': 'corner',
+    'button-press-v2': 'corner',
+    'door-unlock-v2': 'corner',
+    'basketball-v3': 'corner',
+    'plate-slide-v2': 'corner',
+    'hand-insert-v2': 'corner',
+    'peg-insert-side-v2': 'corner3',
+    'assembly-v3': 'corner',
+    'soccer-v2': 'corner',
+    'disassemble-v2': 'corner',
+    'pick-place-wall-v3': 'corner3',
+    'pick-place-v2': 'corner3',
+    'push-v2': 'corner3',
+    'push-wall-v2': 'corner',
+    'lever-pull-v2': 'corner4',
+    'stick-pull-v2': 'corner3',
+    'shelf-place-v2': 'corner',
+    'window-close-v2': 'corner3',
+    'window-open-v2': 'corner', #'corner3', # change back to corner3 for temporalOT
+    'reach-v2': 'corner3',
+    'button-press-wall-v2': 'corner',
+    'box-close-v2': 'corner3',
+    'stick-push-v2': 'corner',
+    'handle-pull-v2': 'corner3',
+    'door-lock-v2': 'corner',
 }

@@ -1,0 +1,5 @@
+name: "resnet50"
+encoder_batch_size: 32
+
+# Config to use when there is no visual encoder
+use_image_for_ref: True

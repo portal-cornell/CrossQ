@@ -1,13 +1,31 @@
 import numpy as np
 import heapq
 from scipy.spatial.distance import cdist
+from scipy.ndimage import uniform_filter1d
+
+def smoothed_cosine_distance(x, y, context_window=3):
+    """
+    Compute the cosine distance between x and y, and apply a vertical average smoothing filter of length kernel_length
+    """
+
+    similarity = np.dot(x, y.T) / np.linalg.norm(x, axis=1, keepdims=True) / np.linalg.norm(y.T, axis=0, keepdims=True) # Transpose B to match dimensions
+    similarity_rescaled = (similarity + 1) / 2
+    
+    # Convert cosine similarity to cosine distance
+    distance = 1 - similarity_rescaled
+    
+    # Apply vertical smoothing filter along the rows
+    smoothed_distance = uniform_filter1d(distance, size=context_window, axis=0, mode='nearest')
+
+    return smoothed_distance
+
 
 def cosine_distance(x, y):
-    distance = np.dot(x, y.T) / np.linalg.norm(x, axis=1, keepdims=True) / np.linalg.norm(y.T, axis=0, keepdims=True) # Transpose B to match dimensions
+    similarity = np.dot(x, y.T) / np.linalg.norm(x, axis=1, keepdims=True) / np.linalg.norm(y.T, axis=0, keepdims=True) # Transpose B to match dimensions
 
     # Rescale to be between 0 and 1
-    distance_rescaled = (distance + 1) / 2
-    return 1 - distance_rescaled
+    similarity_rescaled = (similarity + 1) / 2
+    return 1 - similarity_rescaled
 
 def euclidean_distance_advanced(x, y):
     """
@@ -210,6 +228,7 @@ def nav_shortest_path_distance(x, y, invert=False):
 
 
 COST_FN_DICT = {
+    "smoothed_cosine": smoothed_cosine_distance,
     "cosine": cosine_distance,
     "euclidean": euclidean_distance_advanced,
     "euclidean_arms_only": euclidean_distance_advanced_arms_only,

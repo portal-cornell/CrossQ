@@ -1,6 +1,7 @@
 name: even_distribution
 scale: 1
 pos_offset: 6
+tau: 1
 post_processing_method: 
     - convert_to_positive_reward
 add_to_env_rew: false # True to add the environment rewards to the sequence matching rewards 

@@ -62,13 +62,8 @@ class CustomVLMSAC(SAC):
         device: Union[torch.device, str] = "auto",
         _init_setup_model: bool = True,
         ### VLM SAC Custom Parameters ###
-        inference_only: bool = False,
-        reward_model_config: dict = None,
-        n_cpu_workers: int = 1,
-        n_gpu_workers: int = 1,
         episode_length: int = 120,
-        render_dim: Tuple[int, int] = (480, 480),
-        add_to_gt_rewards: bool = True,
+        **kwargs
     ):
         # TODO: Add a parameter to point to the dataset relevant to the task
         # train_freq[0] because we are assuming that the train_freq is a tuple
@@ -104,6 +99,10 @@ class CustomVLMSAC(SAC):
             optimize_memory_usage=optimize_memory_usage,
         )
 
+
+        self.previous_num_timesteps = 0
+        self.previous_num_episodes = 0
+
         self.target_entropy = target_entropy
         self.log_ent_coef = None  # type: Optional[torch.Tensor]
         # Entropy coefficient / Entropy temperature
@@ -113,61 +112,12 @@ class CustomVLMSAC(SAC):
         self.ent_coef_optimizer: Optional[torch.optim.Adam] = None
         
         # VLM SAC Custom Parameters
-        self.reward_model_config = reward_model_config
-        self.n_cpu_workers = n_cpu_workers
-        self.n_gpu_workers = n_gpu_workers
         self.episode_length = episode_length
-        self.render_dim = render_dim
 
         self.ep_vlm_info_buffer = None  # type: Optional[deque]
-        
-        self.inference_only = inference_only
-        if not self.inference_only:
-            self._setup_reward_model()
-            self.previous_num_timesteps = 0
-            self.previous_num_episodes = 0
-
-            if self.reward_model_config["rank0_batch_size_pct"] < 1.0:
-                # Uneven workload split between workers
-                worker_batch_size = int((1 - self.reward_model_config["rank0_batch_size_pct"]) * self.reward_model_config["reward_batch_size"]) // (self.n_gpu_workers - 1)
-            else:
-                worker_batch_size = self.reward_model_config["reward_batch_size"] // self.n_gpu_workers
-            
-            self.worker_frames_tensor = torch.zeros(
-                    (worker_batch_size, self.render_dim[0], self.render_dim[1], 3),
-                    dtype=torch.uint8,
-                ).cuda(0)  # (Batch size per worker, w, h, 3)
-
-        self.filter_rewards = False # whether or not to gaussian filter the rewards after computing
-
-        self._add_to_gt_rewards = add_to_gt_rewards
 
         if _init_setup_model:
             self._setup_model()
-
-    """
-    Added for VLM reward
-    """
-    def _setup_reward_model(self):
-        logger.info(f"Setting up VLM reward model: {self.reward_model_config['vlm_model']}")
-        
-        # This is the actual batch size for rank0 inference worker
-        #   because this batch_size is used to decide how many copies of the reference human image to use
-        if self.reward_model_config["rank0_batch_size_pct"] < 1.0:
-            rank0_worker_batch = int(self.reward_model_config["rank0_batch_size_pct"] * self.reward_model_config["reward_batch_size"])
-        else:
-            rank0_worker_batch = self.reward_model_config["reward_batch_size"] // self.n_gpu_workers
-
-        reward_model = load_reward_model(rank=0,            
-                                        worker_actual_batch_size=rank0_worker_batch,
-                                         model_name=self.reward_model_config["name"],
-                                         model_config_dict=self.reward_model_config)
-        
-        reward_model.eval().cuda(0)
-        
-        self.reward_model = reward_model
-
-        logger.debug(f"Finished loading up VLM reward model: {self.reward_model_config['vlm_model']}")
 
     def _setup_learn(
         self,
@@ -188,124 +138,12 @@ class CustomVLMSAC(SAC):
 
     def collect_rollouts(self, *args, **kwargs):
         rollout = super().collect_rollouts(*args, **kwargs)
-        if not self.inference_only:
-            self._compute_vlm_rewards()
-            self.previous_num_timesteps = self.num_timesteps
-            self.previous_num_episodes = self._episode_num
-
+        self.previous_num_timesteps = self.num_timesteps
+        self.previous_num_episodes = self._episode_num
+        
         return rollout
     
-    def _compute_vlm_rewards(self):
-        """from VLMRewardCallback.on_rollout_end
-        """
-        # Time this function
-        start_time = time.time()
-
-        replay_buffer_pos = self.replay_buffer.pos
-        total_timesteps = self.num_timesteps - self.previous_num_timesteps  # Total number of timesteps that we have collected
-        env_episode_timesteps = total_timesteps // self.env.num_envs  # Number of timesteps that we have collected per environment
-        total_episodes = self.get_episode_num() - self.previous_num_episodes
-        env_episodes = total_episodes // self.env.num_envs
-
-        ### Prepare the frame to be processed
-        frames = torch.from_numpy(np.array(self.replay_buffer.render_arrays))
-
-        print(f"Start calculating rewards: frames.shape={frames.shape}")
-
-        frames = rearrange(frames, "n_steps n_envs ... -> (n_steps n_envs) ...")
- 
-        ### Compute rewards
-        # NOTE: distributed will be off if dist is False
-        rewards = compute_rewards(
-            model=self.reward_model,
-            frames=frames,
-            rank0_batch_size_pct=self.reward_model_config["rank0_batch_size_pct"],
-            batch_size=self.reward_model_config["reward_batch_size"],  # This is the total batch size
-            num_workers=self.n_gpu_workers,
-            worker_frames_tensor=self.worker_frames_tensor
-            )
-
-        # rewards = rearrange(
-        #     rewards,
-        #     "(n_steps n_envs) ... -> (n_envs n_steps) ...",
-        #     n_envs=self.env.num_envs,
-        # )
-
-        # TODO: this assumes 1D (DreamSim). Potentially to adapt for other reward models (using above)
-        rewards = rearrange(
-            rewards,
-            "(n_steps n_envs) -> n_steps n_envs",
-            n_envs=self.env.num_envs,
-        )
-
-        # TODO: Add _filter_rewards for models other than the perceptual ones
-        # # Filter the rewards
-        # if self._filter_rewards:
-        #     print("Filtering rewards")
-        #     rewards = half_gaussian_filter_1d(rewards, sigma=4, smooth_last_N=True) 
-            
-        # Clear the rendered images in the ReplayBuffer
-        self.replay_buffer.clear_render_arrays()
-        rewards_np = rewards.cpu().numpy()
-
-        ### Update the rewards
-        # import pdb; pdb.set_trace()
-        if self._add_to_gt_rewards:
-            print("Adding VLM rewards to GT rewards")
-            # Convert rewards tensor to np array for compatibility with self.replay_buffer.rewards
-            # Add the VLM reward to existing rewards
-            if replay_buffer_pos - env_episode_timesteps >= 0:
-                self.replay_buffer.rewards[
-                    replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
-                ] += rewards_np[:, :]
-            else:
-                # Split reward assignment (circular buffer)
-                self.replay_buffer.rewards[
-                    -(env_episode_timesteps - replay_buffer_pos) :, :
-                ] += rewards_np[: env_episode_timesteps - replay_buffer_pos, :]
-
-                self.replay_buffer.rewards[:replay_buffer_pos, :] += rewards_np[
-                    env_episode_timesteps - replay_buffer_pos :, :
-                ]
-        else:
-            print("Overwriting GT rewards with VLM rewards")
-            # Overwrite the rewards with VLM rewards
-            if replay_buffer_pos - env_episode_timesteps >= 0:
-                self.replay_buffer.rewards[
-                    replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
-                ] = rewards_np[:, :]
-            else:
-                # Split reward assignment (circular buffer)
-                self.replay_buffer.rewards[
-                    -(env_episode_timesteps - replay_buffer_pos) :, :
-                ] = rewards_np[: env_episode_timesteps - replay_buffer_pos, :]
-
-                self.replay_buffer.rewards[:replay_buffer_pos, :] = rewards_np[
-                    env_episode_timesteps - replay_buffer_pos :, :
-                ]
-
-        ### Logging the rewards 
-        # TODO: compatibility with torch vs numpy, for now it assumes rewards is a Tensor
-        rewards = rearrange(rewards, "n_steps n_envs -> n_envs n_steps")
-        if isinstance(rewards, torch.Tensor):
-            rewards_np = rewards.cpu().numpy()
-        for env_idx in range(self.env.num_envs):
-            # Compute sum of rewards per episode
-            rewards_per_episode = np.sum(
-                np.reshape(
-                    rewards_np[env_idx], (env_episodes, self.episode_length)
-                ),
-                axis=1,
-            )
-            self.ep_vlm_info_buffer.extend([rewards_per_episode.tolist()])
-
-        print(f"VLMRewardCallback took {time.time() - start_time} seconds")
-
-    
     def learn(self, *args, **kwargs):
-        self.previous_num_timesteps = 0
-        self.previous_num_episodes = 0
-
         # Call the parent learn function
         return super().learn(*args, **kwargs)
     
@@ -331,14 +169,11 @@ class CustomVLMSAC(SAC):
         cls,
         path,
         env = None,
-        inference_only = True,
         device = "auto",
         custom_objects = None,
         print_system_info: bool = False,
         force_reset: bool = True,
-        reward_model_config: dict = None,
         episode_length: int = 120,
-        render_dim: Tuple[int, int] = (480, 480),
         **kwargs,
     ):
         """
@@ -422,13 +257,11 @@ class CustomVLMSAC(SAC):
         model = cls(
             policy=data["policy_class"],
             env=env,
-            inference_only = inference_only,
             device=device,
             _init_setup_model=False,  # type: ignore[call-arg]
             train_freq=(episode_length, "step"),
-            reward_model_config=reward_model_config,
             episode_length=episode_length,
-            render_dim=render_dim
+            
         )
 
         # load parameters

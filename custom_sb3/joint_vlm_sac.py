@@ -195,114 +195,11 @@ class JointVLMSAC(SAC):
     def collect_rollouts(self, *args, **kwargs):
         rollout = super().collect_rollouts(*args, **kwargs)
         if not self.inference_only:
-            self._compute_vlm_rewards()
             self.previous_num_timesteps = self.num_timesteps
             self.previous_num_episodes = self._episode_num
 
         return rollout
     
-    def _compute_vlm_rewards(self):
-        """from VLMRewardCallback.on_rollout_end
-        """
-        # Time this function
-        start_time = time.time()
-
-        replay_buffer_pos = self.replay_buffer.pos
-        total_timesteps = self.num_timesteps - self.previous_num_timesteps  # Total number of timesteps that we have collected
-        env_episode_timesteps = total_timesteps // self.env.num_envs  # Number of timesteps that we have collected per environment
-        total_episodes = self.get_episode_num() - self.previous_num_episodes
-        env_episodes = total_episodes // self.env.num_envs
-
-        ref_joint_states = self._ref_joint_states # target joint states
-        
-        ### Prepare the frame to be processed
-        frames = torch.from_numpy(np.array(self.replay_buffer.render_arrays)).float().cuda(0 ) / 255.0
-
-        print(f"Start calculating rewards: frames.shape={frames.shape}")
-
-        frames = rearrange(frames, "n_steps n_envs h w c -> (n_steps n_envs) c h w")
- 
-        rewards = (1 - .999**self.get_episode_num()) * self._compute_joint_rewards(
-            model=self.reward_model,
-            transform=self.image_transform,
-            frames=frames,
-            ref_joint_states=ref_joint_states,
-            batch_size=self.reward_model_config["reward_batch_size"],
-            )
-        # TODO: this assumes 1D (DreamSim). Potentially to adapt for other reward models (using above)
-        rewards = rearrange(
-            rewards,
-            "(n_steps n_envs) -> n_steps n_envs",
-            n_envs=self.env.num_envs,
-        )
-        self.replay_buffer.clear_render_arrays()
-        rewards_np = rewards.cpu().numpy()
-
-        cur_height = np.zeros_like(rewards_np)
-        if replay_buffer_pos - env_episode_timesteps >= 0:
-            cur_height = self.replay_buffer.observations[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :, 0] 
-        else:
-            # Split reward assignment (circular buffer)
-            cur_height[: env_episode_timesteps - replay_buffer_pos, :] = self.replay_buffer.observations[
-                -(env_episode_timesteps - replay_buffer_pos) :, :, 0
-            ]
-            cur_height[
-                env_episode_timesteps - replay_buffer_pos :, :
-            ] = self.replay_buffer.observations[:replay_buffer_pos,:, 0]
-
-        rewards_np = rewards_np * (cur_height > 1.1) # only take vlm rewards when the gt rewards are large (so it is standing)
-        ### Update the rewards
-        # import pdb; pdb.set_trace()
-        if self._add_to_gt_rewards:
-            print("Adding VLM rewards to GT rewards")
-            # Convert rewards tensor to np array for compatibility with self.replay_buffer.rewards
-            # Add the VLM reward to existing rewards
-            if replay_buffer_pos - env_episode_timesteps >= 0:
-                self.replay_buffer.rewards[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :] += rewards_np[:, :]
-            else:
-                # Split reward assignment (circular buffer)
-                self.replay_buffer.rewards[
-                    -(env_episode_timesteps - replay_buffer_pos) :, :
-                ] += rewards_np[: env_episode_timesteps - replay_buffer_pos, :]
-
-                self.replay_buffer.rewards[:replay_buffer_pos, :] += rewards_np[
-                    env_episode_timesteps - replay_buffer_pos :, :
-                ]
-        else:
-            print("Overwriting GT rewards with VLM rewards")
-            # Overwrite the rewards with VLM rewards
-            if replay_buffer_pos - env_episode_timesteps >= 0:
-                self.replay_buffer.rewards[
-                    replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :
-                ] = rewards_np[:, :]
-            else:
-                # Split reward assignment (circular buffer)
-                self.replay_buffer.rewards[
-                    -(env_episode_timesteps - replay_buffer_pos) :, :
-                ] = rewards_np[: env_episode_timesteps - replay_buffer_pos, :]
-
-                self.replay_buffer.rewards[:replay_buffer_pos, :] = rewards_np[
-                    env_episode_timesteps - replay_buffer_pos :, :
-                ]
-
-        ### Logging the rewards 
-        # TODO: compatibility with torch vs numpy, for now it assumes rewards is a Tensor
-        rewards = rearrange(rewards, "n_steps n_envs -> n_envs n_steps")
-        if isinstance(rewards, torch.Tensor):
-            rewards_np = rewards.cpu().numpy()
-        for env_idx in range(self.env.num_envs):
-            # Compute sum of rewards per episode
-            rewards_per_episode = np.sum(
-                np.reshape(
-                    rewards_np[env_idx], (env_episodes, self.episode_length)
-                ),
-                axis=1,
-            )
-            self.ep_vlm_info_buffer.extend([rewards_per_episode.tolist()])
-
-        print(f"VLMRewardCallback took {time.time() - start_time} seconds")
-
-
     def get_vram(self):
         free = torch.cuda.mem_get_info()[0] / 1024 ** 3
         total = torch.cuda.mem_get_info()[1] / 1024 ** 3
@@ -311,58 +208,6 @@ class JointVLMSAC(SAC):
         return f'VRAM: {total - free:.2f}/{total:.2f}GB\t VRAM:[' + (
                 total_cubes - free_cubes) * '▮' + free_cubes * '▯' + ']'
                 
-    def _compute_joint_rewards(self, model, transform, frames, ref_joint_states, batch_size):
-        """Only use the goal joint xpos states to calculate the reward
-        - The reward is based on the euclidean distance between the current joint states and the reference joint states
-
-        Final goal: Both arms out
-
-        This task is a goal-reaching task (i.e. doesn't matter how you get to the goal, as long as you get to the goal)
-        """
-        batches = torch.split(frames, batch_size)
-        all_preds = []
-        all_uncertainties = []
-        for i, batch in enumerate(batches):
-
-            batch_transformed = transform(batch)
-
-            #xpos_preds = model(batch_transformed)
-
-            xpos_preds, emb, emb_reco = model(batch_transformed)
-            uncertainty = torch.linalg.vector_norm(emb - emb_reco, dim=1)
-            
-            all_preds.append(xpos_preds)
-            all_uncertainties.append(uncertainty)
-        
-        def gaussian_likelihood(l, mu, std, kappa):
-            return torch.exp(- (l - mu) ** 2 / (2 * (std * kappa) ** 2))
-        curr_geom_xpos = torch.cat(all_preds, dim=0)
-        xpos_uncertainties = torch.cat(all_uncertainties, dim=0)
-        self.uncertainty_stats.update(xpos_uncertainties.mean().item()) # update before calculating confidence for now (problem: how to assign the first values for confidence?)
-
-        mu = self.uncertainty_stats.get_mean()
-        std = self.uncertainty_stats.get_std()
-        scale = 1# - .99 ** self.uncertainty_stats.count 
-        
-        if mu is None:
-            confidence = torch.ones_like(xpos_uncertainties)
-        else:
-            confidence = gaussian_likelihood(xpos_uncertainties, mu, std, self.kappa)
-            confidence[xpos_uncertainties < mu] = 1.0
-        confidence *= scale
-
-        n, d = ref_joint_states.shape # n is the number of joints, d is the dimension of each joint vector
-        curr_geom_xpos = curr_geom_xpos.view(len(frames), n, d)
-        # Normalize the current pose by the torso's position (which is at index 1)
-        # curr_geom_xpos = curr_geom_xpos - curr_geom_xpos[:, 1, :]
-
-        joint_pos_relevant = curr_geom_xpos[:, 12:, :].flatten(start_dim=1)
-        target_joint_pos_relevant = ref_joint_states[None, 12:, :].flatten(start_dim=1)
-
-        pose_matching_reward = confidence * torch.exp(-torch.linalg.vector_norm(target_joint_pos_relevant - joint_pos_relevant, dim=1))
-        
-        return pose_matching_reward
-
     def learn(self, *args, **kwargs):
         self.previous_num_timesteps = 0
         self.previous_num_episodes = 0

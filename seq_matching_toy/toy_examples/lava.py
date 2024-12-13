@@ -1,6 +1,72 @@
 import numpy as np
 
 
+lava_cycle_enforced_longer = {
+    "plot": {
+        "reward_vmin": 0,
+        "reward_vmax": 10,
+    },
+    "starting_pos": np.array([1, 1, 0]),
+    "map_array": np.array([
+        [-1, -1, -1, -1, -1, -1, -1],
+        [-1,  0,  0,  0,  0,  0, -1],
+        [-1,  1, -1, -1, -1,  0, -1],
+        [-1,  0,  0,  0,  0,  0, -1],
+        [-1, -1, -1, -1, -1, -1, -1],
+    ]),
+    "ref_seq": np.array([
+                        [3, 1, 0],
+                        [4, 1, 0],
+                        [4, 3, 2],
+                        [3, 3, 1],
+                        [1, 3, 0],
+                         ]),
+    "obs_seqs": {}
+}
+
+lava_cycle_enforced = {
+    "plot": {
+        "reward_vmin": 0,
+        "reward_vmax": 10,
+    },
+    "starting_pos": np.array([1, 1, 1]),
+    "map_array": np.array([
+        [-1, -1, -1, -1, -1, -1, -1],
+        [-1,  0,  0,  0,  0,  0, -1],
+        [-1,  1, -1, -1, -1,  0, -1],
+        [-1,  0,  0,  0,  0,  0, -1],
+        [-1, -1, -1, -1, -1, -1, -1],
+    ]),
+    "ref_seq": np.array([
+                        [4, 3, 2],
+                        [3, 3, 1],
+                        [1, 3, 0],
+                         ]),
+    "obs_seqs": {}
+}
+
+
+lava_cycle_reverse = {
+    "plot": {
+        "reward_vmin": 0,
+        "reward_vmax": 10,
+    },
+    "starting_pos": np.array([1, 1, 1]),
+    "map_array": np.array([
+        [-1, -1, -1, -1, -1, -1, -1],
+        [-1,  0,  0,  0,  0,  0, -1],
+        [-1,  1,  1,  1,  1,  0, -1],
+        [-1,  0,  0,  0,  0,  0, -1],
+        [-1, -1, -1, -1, -1, -1, -1],
+    ]),
+    "ref_seq": np.array([[5, 1, 3],
+                        [5, 3, 3],
+                        [3, 3, 0],
+                        [1, 3, 1],
+                         ]),
+    "obs_seqs": {}
+}
+
 lava_cycle = {
     "plot": {
         "reward_vmin": 0,
@@ -95,6 +161,33 @@ lava_cycle = {
                     np.array([2, 3, 2]),
                     np.array([1, 3, 2]),
                     np.array([1, 3, 2]),
+                ]
+        },
+        4: {
+            "descriptions": "backwards",
+            "seq": [
+                    np.array([1, 1, 1]),
+                    np.array([1, 2, 1]),
+                    np.array([1, 3, 1]),
+                    np.array([1, 3, 2]),
+                    np.array([1, 3, 1]),
+                    np.array([1, 3, 0]),
+                    np.array([2, 3, 0]),
+                    np.array([3, 3, 0]),
+                    np.array([3, 3, 1]),
+                    np.array([3, 3, 2]),
+                    np.array([3, 3, 3]),
+                    np.array([3, 3, 0]),
+                    np.array([4, 3, 0]),
+                    np.array([5, 3, 0]),
+                    np.array([5, 3, 1]),
+                    np.array([5, 3, 2]),
+                    np.array([5, 3, 3]),
+                    np.array([5, 2, 3]),
+                    np.array([5, 1, 3]),
+                    np.array([5, 1, 2]),
+                    np.array([5, 1, 1]),
+
                 ]
         }
     }

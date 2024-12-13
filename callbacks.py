@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 import imageio
 import gymnasium
 import torch as th
+from torchvision import transforms
 import numpy as np
 from numpy import array
 from stable_baselines3.common.callbacks import BaseCallback
@@ -30,17 +31,30 @@ from vlm_reward.vlm_buffer import GeomXposReplayBuffer
 from constants import HUMANOID_TASK_SEQ_DICT
 from utils import calc_iqm
 
-class StateBasedSeqRewardCallback(BaseCallback):
+from torchvision.utils import save_image
+
+from vlm_reward.reward_models.resnet import load_resnet50_backbone
+
+def run_model_on_batch(frames, model, batch_size):
+    results = []
+
+    for batch in th.split(frames, batch_size):
+        with th.no_grad():
+            result = model(batch).squeeze()
+            if len(result.shape) < 2:
+                results = result[None]
+        results.append(result)
+    return th.cat(results)
+
+class SeqRewardCallback(BaseCallback):
     """
     Custom callback for calculating state based sequence matching rewards after rollouts are collected.
     """
-    def __init__(self, env_name, task_name, matching_fn_cfg, use_geom_xpos, verbose=0):
+    def __init__(self, env_name, matching_fn_cfg, verbose=0, **kwargs):
         """
         Parameters:
             env_name: str
                 The name of the environment
-            task_name: str
-                The name of the task in the environment
             matching_fn_cfg: dict
                 The configuration for the matching function
             use_geom_xpos: bool
@@ -48,69 +62,21 @@ class StateBasedSeqRewardCallback(BaseCallback):
             verbose: int
                 The verbosity level
         """
-        super(StateBasedSeqRewardCallback, self).__init__(verbose)
+        super(SeqRewardCallback, self).__init__(verbose)
 
-        self._ref_seq = load_reference_seq(env_name=env_name, task_name=task_name, seq_name=matching_fn_cfg["seq_name"], use_geom_xpos=use_geom_xpos)
-        logger.info(f"[StateBasedSeqRewardCallback] Loaded reference sequence. env_name={env_name}, task_name={task_name}, seq_name={matching_fn_cfg['seq_name']}, use_geom_xpos={use_geom_xpos}, self._ref_seq.shape={self._ref_seq.shape}")
+        self.matching_fn, self.matching_fn_name = get_matching_fn(matching_fn_cfg, matching_fn_cfg["cost_fn"])
+        logger.info(f"[SeqRewardCallback] Loaded matching fn {self.matching_fn_name} with {matching_fn_cfg}")
 
-        self._scale = matching_fn_cfg.get('scale', 1.0)
-        self._use_geom_xpos = use_geom_xpos
-        self._env_name = env_name
-
-        self._matching_fn, self._matching_fn_name = get_matching_fn(matching_fn_cfg, matching_fn_cfg["cost_fn"])
-
-        logger.info(f"[StateBasedSeqRewardCallback] Loaded matching fn {self._matching_fn_name} with {matching_fn_cfg}")
-
-
-    def get_obs_to_process_from_buffer(self):
-        """Get the observation from the replay buffer
-        
-        Returns:
-            obs_to_process: np.array
-                The observation to process (we will calculate the distance between these observation and the reference sequence)
-                Shape: (train_freq, n_envs, obs_size), where train_freq is the number of timesteps in the episode
-        """
-        replay_buffer_pos = self.model.replay_buffer.pos
-        total_timesteps = self.model.num_timesteps - self.model.previous_num_timesteps  # Total number of timesteps that we have collected
-        env_episode_timesteps = total_timesteps // self.model.env.num_envs  # Number of timesteps that we have collected per environment
-
-        if self._env_name == "HumanoidSpawnedUpCustom":
-            if self._use_geom_xpos:
-                # Because we manually stored geom_xpos in the replay buffer
-                obs_to_process = np.array(self.model.replay_buffer.geom_xpos)
-                # Normalize along the center of mass (index 1)
-                obs_to_process = obs_to_process - obs_to_process[:, :, 1:2, :]
-            else:
-                # TODO: A hard-coded value (22 is matching qpos of the environment)
-                if replay_buffer_pos - env_episode_timesteps >= 0:
-                    obs_to_process = np.array(self.model.replay_buffer.observations[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :22])
-                else:
-                    # Split reward assignment (circular buffer)
-                    obs_to_process = np.concatenate((self.model.replay_buffer.observations[-(env_episode_timesteps - replay_buffer_pos) :, :22], self.model.replay_buffer.observations[:replay_buffer_pos, :22]), axis=0)
-        elif self._env_name == "Metaworld":
-            if replay_buffer_pos - env_episode_timesteps >= 0:
-                obs_to_process = np.array(self.model.replay_buffer.observations[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :])
-            else:
-                # Split reward assignment (circular buffer)
-                obs_to_process = np.concatenate((self.model.replay_buffer.observations[-(env_episode_timesteps - replay_buffer_pos) :, :], self.model.replay_buffer.observations[:replay_buffer_pos, :]), axis=0)
-
-            obs_to_process = obs_to_process[:, :, :18]  # We only want the first 18 features (which corresponds to the current state)
-        else:
-            raise NotImplementedError(f"env_name={self._env_name} is not supported")
-        
-        return obs_to_process
-
-
-    def add_matching_reward_to_buffer(self, seq_matching_rewards):
-        """Add the calculated sequence matching reward to the replay buffer
+    def add_to_buffer_rewards(self, seq_matching_rewards):
+        """add_to the calculated sequence matching reward to the replay buffer
 
         Parameters:
             seq_matching_rewards: np.array
-                The sequence matching reward to add to the replay buffer
+                The sequence matching reward to put in the replay buffer
                 Shape: (train_freq, n_envs)
 
         Effects:
-            The rewards in the replay buffer are modified to add the sequence matching reward
+            The rewards in the replay buffer are modified to be the sequence matching reward
         """
         replay_buffer_pos = self.model.replay_buffer.pos
         total_timesteps = self.model.num_timesteps - self.model.previous_num_timesteps  # Total number of timesteps that we have collected
@@ -129,6 +95,34 @@ class StateBasedSeqRewardCallback(BaseCallback):
             self.model.replay_buffer.rewards[:replay_buffer_pos, :] += seq_matching_rewards[
                 env_episode_timesteps - replay_buffer_pos :, :
             ]
+
+class StateBasedSeqRewardCallback(SeqRewardCallback):
+    """
+    Custom callback for calculating state based sequence matching rewards after rollouts are collected.
+    """
+    def __init__(self, env_name, task_name, matching_fn_cfg, verbose=0, **kwargs):
+        """
+        Parameters:
+            env_name: str
+                The name of the environment
+            task_name: str
+                The name of the task in the environment
+            matching_fn_cfg: dict
+                The configuration for the matching function
+            use_geom_xpos: bool
+                Whether to use geom_xpos for the observation
+            verbose: int
+                The verbosity level
+        """
+        super(StateBasedSeqRewardCallback, self).__init__(env_name, matching_fn_cfg, verbose=0, **kwargs)
+
+        self.task_name = task_name
+        self.env_name = env_name
+        self.env_kwargs = kwargs
+        self.seq_name = matching_fn_cfg["seq_name"]
+
+        self._ref_seq = load_reference_seq(env_name=env_name, task_name=task_name, seq_name=matching_fn_cfg["seq_name"], load_visual=False, use_geom_xpos=kwargs.get('use_geom_xpos', False))
+        logger.info(f"[StateBasedSeqRewardCallback] Loaded reference sequence. env_name={env_name}, task_name={task_name}, seq_name={matching_fn_cfg['seq_name']}, self._ref_seq.shape={self._ref_seq.shape}")
 
     def on_rollout_end(self) -> None:
         """
@@ -149,20 +143,57 @@ class StateBasedSeqRewardCallback(BaseCallback):
         for env_i in range(self.model.env.num_envs):
             obs = obs_to_process[:, env_i]
             
-            matching_reward, _ = self._matching_fn(obs, self._ref_seq)  # size: (train_freq,)
+            matching_reward, _ = self.matching_fn(obs, self._ref_seq)  # size: (train_freq,)
 
             matching_reward_list.append(matching_reward)
 
         rewards = np.stack(matching_reward_list, axis=1)  # size: (train_freq, n_envs)
 
         # Add the sequence matching reward to exisiting rewards
-        self.add_matching_reward_to_buffer(rewards)
+        self.add_to_buffer_rewards(rewards)
 
         if type(self.model.replay_buffer) == GeomXposReplayBuffer:
-            self.replay_buffer.clear_geom_xpos()
+            self.model.replay_buffer.clear_geom_xpos()
 
         print(f"StateBasedSeqRewardCallback took {time.time() - start_time} seconds")
 
+    def get_obs_to_process_from_buffer(self):
+        """Get the observation from the replay buffer
+        
+        Returns:
+            obs_to_process: np.array
+                The observation to process (we will calculate the distance between these observation and the reference sequence)
+                Shape: (train_freq, n_envs, obs_size), where train_freq is the number of timesteps in the episode
+        """
+        replay_buffer_pos = self.model.replay_buffer.pos
+        total_timesteps = self.model.num_timesteps - self.model.previous_num_timesteps  # Total number of timesteps that we have collected
+        env_episode_timesteps = total_timesteps // self.model.env.num_envs  # Number of timesteps that we have collected per environment
+
+        if self.env_name == "HumanoidSpawnedUpCustom":
+            if self.env_kwargs.get('use_geom_xpos'):
+                # Because we manually stored geom_xpos in the replay buffer
+                obs_to_process = np.array(self.model.replay_buffer.geom_xpos)
+                # Normalize along the center of mass (index 1)
+                obs_to_process = obs_to_process - obs_to_process[:, :, 1:2, :]
+            else:
+                # TODO: A hard-coded value (22 is matching qpos of the environment)
+                if replay_buffer_pos - env_episode_timesteps >= 0:
+                    obs_to_process = np.array(self.model.replay_buffer.observations[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :22])
+                else:
+                    # Split reward assignment (circular buffer)
+                    obs_to_process = np.concatenate((self.model.replay_buffer.observations[-(env_episode_timesteps - replay_buffer_pos) :, :22], self.model.replay_buffer.observations[:replay_buffer_pos, :22]), axis=0)
+        elif self.env_name == "Metaworld":
+            if replay_buffer_pos - env_episode_timesteps >= 0:
+                obs_to_process = np.array(self.model.replay_buffer.observations[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, :])
+            else:
+                # Split reward assignment (circular buffer)
+                obs_to_process = np.concatenate((self.model.replay_buffer.observations[-(env_episode_timesteps - replay_buffer_pos) :, :], self.model.replay_buffer.observations[:replay_buffer_pos, :]), axis=0)
+
+            obs_to_process = obs_to_process[:, :, :18]  # We only want the first 18 features (which corresponds to the current state)
+        else:
+            raise NotImplementedError(f"env_name={self.env_name} is not supported")
+        
+        return obs_to_process
 
     def _on_step(self) -> bool:
         """
@@ -172,6 +203,132 @@ class StateBasedSeqRewardCallback(BaseCallback):
             If the callback returns False, training is aborted early.
         """
         return True
+
+
+class VisualSeqRewardCallback(SeqRewardCallback):
+    def __init__(self, env_name, task_name, matching_fn_cfg, verbose=0, device='cuda', encoder_batch_size=32, use_image_for_ref=True, **kwargs):
+        super(VisualSeqRewardCallback, self).__init__(env_name, matching_fn_cfg, verbose, **kwargs)
+        
+        self.task_name = task_name
+        self.env_name = env_name
+        self.env_kwargs = kwargs
+        self.seq_name = matching_fn_cfg["seq_name"]
+        self.matching_fn_cfg = matching_fn_cfg
+        self.device = device
+        self.use_geom_xpos=kwargs.get('use_geom_xpos', False) # Only matters for humanoid environment
+
+        self.matching_fn, self.matching_fn_name = get_matching_fn(matching_fn_cfg, matching_fn_cfg["cost_fn"])
+
+        self.visual_encoder = load_resnet50_backbone(self.device)
+
+        self.encoder_batch_size = encoder_batch_size
+        
+        self.pil_transform = transforms.Compose([
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ])  
+        self.torch_transform = transforms.Compose([
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ])  
+    
+        self.use_image_for_ref = use_image_for_ref
+        
+    def on_training_start(self, *args, **kwargs) -> None:    
+        # Wait to initialize reference until training is starting, in case inference is necessary
+        self.initialize_ref()
+
+    def initialize_ref(self):
+        # Ref may be a sequence of images or states at this point
+        ref = load_reference_seq(env_name=self.env_name, task_name=self.task_name, seq_name=self.seq_name, load_visual=self.use_image_for_ref, use_geom_xpos=self.use_geom_xpos)
+
+        if self.use_image_for_ref:
+            transformed_frames = [self.pil_transform(frame) for frame in ref]
+
+            # Stack the transformed frames into a batch tensor
+            frames = th.stack(transformed_frames).to(self.device)
+            
+            ref_seq = run_model_on_batch(frames, self.visual_encoder, self.encoder_batch_size)
+            self.matching_ref_seq = ref_seq.detach().cpu().numpy()
+                        
+            logger.info(f"[VisualSeqRewardCallback] Loaded reference GIF sequence. env_name={self.env_name}, task_name={self.task_name}, seq_name={self.seq_name}, self._ref_seq.shape={self.matching_ref_seq.shape}")
+        else:
+            self.matching_ref_seq = ref
+            
+            logger.info(f"[VisualSeqRewardCallback] Loaded reference GROUND TRUTH sequence. env_name={self.env_name}, task_name={self.task_name}, seq_name={self.seq_name}, self._ref_seq.shape={self.matching_ref_seq.shape}")  
+
+    def on_rollout_end(self) -> None:
+        start_time = time.time()
+        
+        replay_buffer_pos = self.model.replay_buffer.pos
+        total_timesteps = self.model.num_timesteps - self.model.previous_num_timesteps
+        env_episode_timesteps = total_timesteps // self.model.env.num_envs
+        
+        # Get frames from replay buffer
+        frames = self.get_obs_to_process_from_buffer()
+        
+
+        matching_reward_list = []
+        for env_i in range(self.model.env.num_envs):            
+            # IMPORTANT: we cut off the last frame because it is always the reset frame
+            env_frames = frames[:-1, env_i, ...]
+            env_frames_transformed = self.torch_transform(env_frames) #th.stack([self.torch_transform(frame) for frame in env_frames]).to(self.device)
+            learner_embeddings = run_model_on_batch(env_frames_transformed, self.visual_encoder, self.encoder_batch_size)
+            
+            # Just set the values for the last frame as the same as the second to last frame (because last frame is corrupted)
+            
+            learner_embeddings = th.cat((learner_embeddings, learner_embeddings[-1][None]), dim=0) 
+
+            learner_embeddings = learner_embeddings.detach().cpu().numpy()
+            matching_reward, _ = self.matching_fn(learner_embeddings, self.matching_ref_seq) 
+            matching_reward_list.append(matching_reward)
+        
+        # Clear the render arrays once computations have been run on them
+        self.model.replay_buffer.clear_render_arrays()
+        rewards = np.stack(matching_reward_list, axis=1)
+        self.add_to_buffer_rewards(rewards)
+        
+        logger.debug(f"VisualBasedSeqRewardCallback took {time.time() - start_time} seconds")
+
+    def get_obs_to_process_from_buffer(self):
+        """Get the observation from the replay buffer
+        
+        Returns:
+            obs_to_process: np.array
+                The observation to process (we will calculate the distance between these observation and the reference sequence)
+                Shape: (train_freq, n_envs, obs_size), where train_freq is the number of timesteps in the episode
+        """
+        replay_buffer_pos = self.model.replay_buffer.pos
+        total_timesteps = self.model.num_timesteps - self.model.previous_num_timesteps  # Total number of timesteps that we have collected
+        env_episode_timesteps = total_timesteps // self.model.env.num_envs  # Number of timesteps that we have collected per environment
+
+        # if replay_buffer_pos - env_episode_timesteps >= 0:
+        #     obs = np.array(self.model.replay_buffer.render_arrays[replay_buffer_pos - env_episode_timesteps : replay_buffer_pos, ...])
+        # else:
+        #     # Split reward assignment (circular buffer)
+        #     obs = np.concatenate((self.model.replay_buffer.render_arrays[-(env_episode_timesteps - replay_buffer_pos):, ...], self.model.replay_buffer.render_arrays[:replay_buffer_pos, ...]), axis=0)
+        # torch_obs = th.stack([self.pil_transform(img) for img in obs]).to(self.device)
+        
+        torch_obs = th.from_numpy(np.array(self.model.replay_buffer.render_arrays)).float().to(self.device) / 255.0
+        frames = rearrange(torch_obs, "n_steps n_envs h w c -> n_steps n_envs c h w")
+       
+        if self.env_name.lower() == "metaworld":
+            # metaworld observations are flipped along both axes in the replay buffer
+            frames = th.flip(frames, [3])
+        return frames
+
+    def _on_step(self) -> bool:
+        """
+        Just need to define this method to avoid NotImplementedError
+
+        Return: 
+            If the callback returns False, training is aborted early.
+        """
+        return True
+
 
 
 def plot_info_on_frame(pil_image, info, font_size=20):
@@ -221,7 +378,9 @@ class VideoRecorderCallback(BaseCallback):
         success_fn_cfg: dict = {},
         matching_fn_cfg: dict = {}, 
         calc_visual_reward: bool = False,
-        verbose=0
+        verbose=0,
+        encoder_batch_size=32,
+        device='cuda'
     ):
         """
         Records a video of an agent's trajectory traversing ``eval_env`` and logs it to
@@ -252,22 +411,50 @@ class VideoRecorderCallback(BaseCallback):
 
         self._rollout_save_path = rollout_save_path  # Save the state of the environment
 
-        self._env_name = env_name
-        self._use_geom_xpos = use_geom_xpos
-        self._threshold = threshold
-        self._calc_visual_reward = calc_visual_reward
+        self.matching_fn_cfg = matching_fn_cfg
+        self.success_fn_cfg = success_fn_cfg
 
-        # Effect: 
-        #   self._calc_matching_reward (bool) - Whether to calculate the sequence matching reward
-        #   self._seq_matching_ref_seq (np.array) - The reference sequence that is used to calculate the sequence matching reward
-        #   self._matching_fn (fn) - The function to calculate the sequence matching reward
-        self._setup_seq_matching(env_name, task_name, matching_fn_cfg)
+        self.env_name = env_name
+        self.task_name = task_name
+        self.seq_name = matching_fn_cfg['seq_name']
+        self.calc_visual_reward = calc_visual_reward
+        self.use_geom_xpos = use_geom_xpos
+        self.threshold = threshold
+        self.calc_visual_reward = calc_visual_reward
+
+        if self.calc_visual_reward:
+            self.device=device
+            self.visual_encoder = load_resnet50_backbone(self.device)
+            self.encoder_batch_size = encoder_batch_size
+            
+            self.pil_transform = transforms.Compose([
+                    transforms.Resize(256),
+                    transforms.CenterCrop(224),
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+                ])  
+            self.torch_transform = transforms.Compose([
+                    transforms.Resize(256),
+                    transforms.CenterCrop(224),
+                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+                ])  
+    
+
+
+    def on_training_start(self, *args, **kwargs):
+        """
+        Effect: 
+          self.calc_matching_reward (bool) - Whether to calculate the sequence matching reward
+          self.matching_ref_seq (np.array) - The reference sequence that is used to calculate the sequence matching reward
+          self.matching_fn (fn) - The function to calculate the sequence matching reward
+        """
+        self._setup_seq_matching()
         
         # Set up ground-truth metric that all the models will be compared against
-        if self._env_name == "HumanoidSpawnedUpCustom":
-            self._humanoid_env_setup_eval(task_name, success_fn_cfg, use_geom_xpos)
-        elif self._env_name == "Metaworld":
-            self._metaworld_env_setup_eval(task_name, success_fn_cfg)
+        if self.env_name == "HumanoidSpawnedUpCustom":
+            self._humanoid_env_setup_eval(self.task_name, self.success_fn_cfg, self.use_geom_xpos)
+        elif self.env_name == "Metaworld":
+            self._metaworld_env_setup_eval(self.task_name, self.success_fn_cfg)
 
     def _on_step(self) -> bool:
         if self.n_calls % self._render_freq == 0:
@@ -298,7 +485,7 @@ class VideoRecorderCallback(BaseCallback):
 
                     image_int = np.uint8(screen)[:self._render_dim[0], :self._render_dim[1], :]
 
-                    if self._env_name == "Metaworld":
+                    if self.env_name == "Metaworld":
                         # For some reason, the image is flipped upside down
                         image_int = np.flipud(image_int)
 
@@ -310,7 +497,7 @@ class VideoRecorderCallback(BaseCallback):
                 
                 all_infos[env_i].append(_locals.get('info', {}))
                 
-                if self._use_geom_xpos:
+                if self.use_geom_xpos:
                     geom_xpos = _locals.get('info', {})["geom_xpos"]
 
                     # Normalize the joint states based on the torso (index 1)
@@ -335,13 +522,17 @@ class VideoRecorderCallback(BaseCallback):
             # Calculate different rewards/metrics (and update what will be plotted on the 0th env's info)
             infos_0th_env = all_infos[0]
 
-            if self._env_name == "HumanoidSpawnedUpCustom":
+            if self.env_name == "HumanoidSpawnedUpCustom":
                 infos_0th_env = self._calc_and_record_humanoid_gt_reward(geom_xposes, infos_0th_env)
-            elif self._env_name == "Metaworld":
+            elif self.env_name == "Metaworld":
                 self._calc_and_record_metaworld_gt_reward(states, all_infos)
 
-            infos_0th_env = self.calc_and_record_visual_reward_for_0th_env(screens, rewards, infos_0th_env)
-            infos_0th_env = self.calc_and_record_seq_matching_reward_for_0th_env(states, geom_xposes, raw_screens, infos_0th_env)
+            if self.calc_visual_reward:
+                obs_seq = self.get_obs_embeddings_from_screens(screens)
+            else:
+                obs_seq = self.get_obs_clean_states(states, geom_xposes)
+
+            infos_0th_env = self.calc_and_record_seq_matching_reward_for_0th_env(obs_seq, raw_screens, infos_0th_env)
 
             # Plot info on the frames  
             for i in range(len(screens)):
@@ -361,12 +552,12 @@ class VideoRecorderCallback(BaseCallback):
             with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_rewards.npy"), "wb") as f:
                 np.save(f, np.array(rewards))
 
-            if self._use_geom_xpos:
+            if self.use_geom_xpos:
                 with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_geom_xpos_states.npy"), "wb") as f:
                     np.save(f, np.array(geom_xposes))
 
         return True
-    
+
     """+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -397,7 +588,7 @@ class VideoRecorderCallback(BaseCallback):
         """
         if self._calc_gt_reward:
             # Calculate the goal matching reward
-            if self._use_geom_xpos:            
+            if self.use_geom_xpos:            
                 full_pos_success_rate_list = []
                 full_pos_pct_success_timesteps_list = []
                 arm_pos_success_rate_list = []
@@ -452,7 +643,7 @@ class VideoRecorderCallback(BaseCallback):
                                     arm_pos_pct_success_timesteps_iqm,
                                     exclude=("stdout", "log", "json", "csv"))
             else:
-                raise NotImplementedError(f"Ground truth reward calculation for self._use_geom_xpos={self._use_geom_xpos} is False")
+                raise NotImplementedError(f"Ground truth reward calculation for self.use_geom_xpos={self.use_geom_xpos} is False")
 
             # Plot success rate and reward information for the 0th env's rollout
             reward_matrix = np.exp(-euclidean_distance_advanced(geom_xposes[0], self._goal_ref_seq))
@@ -527,55 +718,6 @@ class VideoRecorderCallback(BaseCallback):
         
         return all_infos
 
-
-    """+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-        Calculate Visual Reward using VLM models for the 0th Environment
-
-    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"""
-
-    def calc_and_record_visual_reward_for_0th_env(self, screens, og_rewards, infos):
-        """Calculate the visual reward using the VLM reward model
-
-        Parameters:
-            screens: List[PIL.Image]
-                The screens (from the 0th environment) to calculate the visual reward
-            og_rewards: np.array
-                The original rewards (from the 0th_environment)
-                size: (rollout_length,))
-            infos: List[Dict]
-                The information for the 0th environment (later used for plotting)
-
-        Returns:
-            infos: List[Dict]
-                Updated information for the 0th environment (later used for plotting)
-                    - added 'vlm_r' to the info
-        """
-        if self._calc_visual_reward:
-            frames = th.from_numpy(np.array(screens)).float().cuda(0).permute(0,3,1,2) / 255.0
-
-            logger.info("Evaluating rollout for recorder callback")
-            self.model.reward_model.requires_grad_(False)
-            vlm_rewards = self.model._compute_joint_rewards(
-                        model=self.model.reward_model,
-                        transform=self.model.image_transform,
-                        frames=frames,
-                        ref_joint_states=self.model._ref_joint_states,
-                        batch_size=self.model.reward_model_config["reward_batch_size"],
-                        ).detach().cpu().numpy()
-
-            # To write the values on the rollout frames
-            for i in range(len(infos)):
-                infos[i]["vlm_r"] = f"{vlm_rewards[i]:.4f}"
-
-            self.logger.record("rollout/avg_vlm_total_reward", 
-                            np.mean(vlm_rewards + og_rewards), 
-                            exclude=("stdout", "log", "json", "csv"))
-            
-        return infos
-    
     """+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -584,7 +726,43 @@ class VideoRecorderCallback(BaseCallback):
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"""
 
-    def calc_and_record_seq_matching_reward_for_0th_env(self, states, geom_xposes, raw_screens, infos):
+    def get_obs_embeddings_from_screens(self, frames):
+        """
+        Get the embeddings to use for sequence matching given the screens
+        """
+        frames = frames[:-1]
+        frames = th.from_numpy(np.array(frames)).float().cuda(0).permute(0,3,1,2) / 255.0
+        frames = self.torch_transform(frames) #th.stack([self.torch_transform(frame) for frame in env_frames]).to(self.device)
+
+        embeddings = run_model_on_batch(frames, self.visual_encoder, self.encoder_batch_size)
+
+        # Just set the values for the last frame as the same as the second to last frame (because last frame is corrupted)
+        embeddings = th.cat((embeddings, embeddings[-1][None]), dim=0) 
+        embeddings = embeddings.detach().cpu().numpy()
+
+        return embeddings
+
+    def get_obs_clean_states(self, states, geom_xposes=None):
+        """
+        Get the correct states to use for sequence matching given the full states
+        only need to define geom_xposes if using humanoid with xpos
+        """
+        if self.env_name == "HumanoidSpawnedUpCustom":
+            if self.use_geom_xpos:
+                # Don't need to do anything here, geom_xpos is getting normalized in the grab_screens function
+                obs_seq_to_process= geom_xposes[0]
+            else:
+                # size: (rollout_length, n_eval_episodes, state_feature_size)
+                #   We want only the first 22 features
+                obs_seq_to_process = np.array(states[:, 0])[:, :22]
+        elif self.env_name == "Metaworld":
+            # size: (rollout_length, n_eval_episodes, state_feature_size)
+            #   We want only the first 18 features (which corresponds to the current state)
+            obs_seq_to_process = np.array(states[:, 0][:, :18])
+        return obs_seq_to_process
+
+
+    def calc_and_record_seq_matching_reward_for_0th_env(self, obs_seq, raw_screens, infos):
         """Calculate the sequence matching reward for the 0th environment
 
         Parameters:
@@ -604,24 +782,13 @@ class VideoRecorderCallback(BaseCallback):
                 Updated information for the 0th environment (later used for plotting
                     - added 'matching_reward' to the info
         """
-        if self._calc_matching_reward:
-            if self._env_name == "HumanoidSpawnedUpCustom":
-                if self._use_geom_xpos:
-                    # Don't need to do anything here, geom_xpos is getting normalized in the grab_screens function
-                    obs_seq_to_process= geom_xposes[0]
-                else:
-                    # size: (rollout_length, n_eval_episodes, state_feature_size)
-                    #   We want only the first 22 features
-                    obs_seq_to_process = np.array(states[:, 0])[:, :22]
-            elif self._env_name == "Metaworld":
-                # size: (rollout_length, n_eval_episodes, state_feature_size)
-                #   We want only the first 18 features (which corresponds to the current state)
-                obs_seq_to_process = np.array(states[:, 0][:, :18])
-
-            matching_reward, matching_reward_info = self._matching_fn(obs_seq_to_process, self._seq_matching_ref_seq)
+        
+        if self.calc_matching_reward:
+            
+            matching_reward, matching_reward_info = self.matching_fn(obs_seq, self.matching_ref_seq)
 
             self.logger.record("eval/avg_matching_reward", 
-                            np.mean(matching_reward)/self._scale, 
+                            np.mean(matching_reward)/self.scale, 
                             exclude=("stdout", "log", "json", "csv"))
 
             # Add the matching_reward to the infos so that we can plot it
@@ -632,9 +799,9 @@ class VideoRecorderCallback(BaseCallback):
             with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_matching_rewards.npy"), "wb") as f:
                 np.save(f, np.array(matching_reward))
 
-            if self._plot_matching_visualization:
+            if self.plot_matching_visualization:
                 # TODO: For now, we can only visualize this when the reference frame is defined via a gif
-                matching_reward_viz_save_path = os.path.join(self._rollout_save_path, f"{self.num_timesteps}_matching_fn_viz.png")
+                matching_reward_viz_save_path = os.path.join(self._rollout_save_path, f"{self.num_timesteps}matching_fn_viz.png")
 
                 # Subsample the frames. Otherwise, the visualization will be too long
                 if len(raw_screens) > 20:
@@ -643,20 +810,20 @@ class VideoRecorderCallback(BaseCallback):
                 else:
                     raw_screens_used_to_plot = np.array(raw_screens)
                     
-                if len(self._seq_matching_ref_seq_frames) > 8:
-                    ref_seq_skip_step = max(int(0.1 * len(self._seq_matching_ref_seq_frames)), 2)
-                    ref_seqs_used_to_plot = np.array([self._seq_matching_ref_seq_frames[i] for i in range(ref_seq_skip_step, len(self._seq_matching_ref_seq_frames), ref_seq_skip_step)])
+                if len(self.matching_ref_seq_frames) > 8:
+                    ref_seq_skip_step = max(int(0.1 * len(self.matching_ref_seq_frames)), 2)
+                    ref_seqs_used_to_plot = np.array([self.matching_ref_seq_frames[i] for i in range(ref_seq_skip_step, len(self.matching_ref_seq_frames), ref_seq_skip_step)])
                 else:
-                    ref_seqs_used_to_plot = self._seq_matching_ref_seq_frames
+                    ref_seqs_used_to_plot = self.matching_ref_seq_frames
                 
                 seq_matching_viz(
-                    matching_fn_name=self._matching_fn_name,
+                    matching_fn_name=self.matching_fn_name,
                     obs_seq=raw_screens_used_to_plot,
                     ref_seq=ref_seqs_used_to_plot,
                     matching_reward=matching_reward,
                     info=matching_reward_info,
-                    reward_vmin=self._reward_vmin,
-                    reward_vmax=self._reward_vmax,
+                    reward_vmin=self.reward_vmin,
+                    reward_vmax=self.reward_vmax,
                     path_to_save_fig=matching_reward_viz_save_path,
                     rolcol_size=2
                 )
@@ -682,7 +849,7 @@ class VideoRecorderCallback(BaseCallback):
     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"""
 
-    def _setup_seq_matching(self, env_name, task_name, matching_fn_cfg):
+    def _setup_seq_matching(self):
         """If needed, set up the sequence matching reward calculation. 
         
         Criteria: matching_fn_cfg != {}
@@ -696,33 +863,55 @@ class VideoRecorderCallback(BaseCallback):
                 The configuration for the sequence matching function
 
         Effects:
-            self._calc_matching_reward (bool) - Whether to calculate the sequence matching reward
-            self._plot_matching_visualization (bool) - Whether to plot the matching visualization
+            self.calc_matching_reward (bool) - Whether to calculate the sequence matching reward
+            self.plot_matching_visualization (bool) - Whether to plot the matching visualization
 
-            self._seq_matching_ref_seq (np.array) - The reference sequence that is used to calculate the sequence matching reward
-            self._seq_matching_ref_seq_frames (np.array) - The reference frames (for plotting)
+            self.matching_ref_seq (np.array) - The reference sequence that is used to calculate the sequence matching reward
+            self.matching_ref_seq_frames (np.array) - The reference frames (for plotting)
 
-            self._matching_fn (fn) - The function to calculate the sequence matching reward
+            self.matching_fn (fn) - The function to calculate the sequence matching reward
         """
-        if matching_fn_cfg != {}:
-            # The reference sequence that is used to calculate the sequence matching reward
-            self._seq_matching_ref_seq = load_reference_seq(env_name=env_name, task_name=task_name, seq_name=matching_fn_cfg["seq_name"], use_geom_xpos=self._use_geom_xpos)
-            # For the frames, we remove the initial frame which matches the initial position
-            self._seq_matching_ref_seq_frames = load_images_from_reference_seq(env_name=env_name, task_name=task_name, seq_name=matching_fn_cfg["seq_name"])[1:]
+        if self.matching_fn_cfg != {}:
+            # The reference sequence that is used to calculate the ground truth sequence matching performance
+            self.gt_ref_seq= load_reference_seq(env_name=self.env_name, task_name=self.task_name, seq_name=self.seq_name, load_visual=False, use_geom_xpos=self.use_geom_xpos)
+
+            if self.calc_visual_reward:
+                # Infer the reference sequence that is used to calculate the predicted sequence matching reward
+                ref_frames = load_reference_seq(env_name=self.env_name, task_name=self.task_name, seq_name=self.seq_name, load_visual=True, use_geom_xpos=self.use_geom_xpos)
+
+                transformed_frames = [self.pil_transform(frame) for frame in ref_frames]
+                
+                # Stack the transformed frames into a batch tensor
+                frames = th.stack(transformed_frames).to(self.device)
+                
+                ref_seq = run_model_on_batch(frames, self.visual_encoder, self.encoder_batch_size)
+                self.matching_ref_seq = ref_seq.detach().cpu().numpy()
+                logger.info(f"[VideoRecorderCallback] Loaded reference GIF embedding sequence. env_name={self.env_name}, task_name={self.task_name}, seq_name={self.seq_name}, self._ref_seq.shape={self.matching_ref_seq.shape}")
+            else:
+                # If not visual reward, use the ground truth states as the reference sequence
+                self.matching_ref_seq = self.gt_ref_seq
+                
+                logger.info(f"[VideoRecorderCallback] Loaded reference GROUND TRUTH sequence. env_name={self.env_name}, task_name={self.task_name}, seq_name={self.seq_name}, self._ref_seq.shape={self.matching_ref_seq.shape}")                                      
+
+            # These are the frames used for plotting (regardless of visual inference). We remove the initial frame which matches the initial position
+            ref_frames_pil = load_reference_seq(env_name=self.env_name, task_name=self.task_name, seq_name=self.seq_name, load_visual=True)[1:]
+            self.matching_ref_seq_frames = np.stack([np.array(frame) for frame in ref_frames_pil])
+
             # TODO: For now, we can only visualize this when the reference frame is defined via a gif
-            self._plot_matching_visualization = len(self._seq_matching_ref_seq_frames) > 0
+            self.plot_matching_visualization = len(self.matching_ref_seq_frames) > 0
 
-            self._calc_matching_reward = True
-            self._scale = matching_fn_cfg.get('scale', 1)
-            self._matching_fn, self._matching_fn_name = get_matching_fn(matching_fn_cfg, matching_fn_cfg["cost_fn"])
+            self.calc_matching_reward = True
+            self.scale = self.matching_fn_cfg.get('scale', 1)
+            self.matching_fn, self.matching_fn_name = get_matching_fn(self.matching_fn_cfg, self.matching_fn_cfg["cost_fn"])
 
-            self._reward_vmin = matching_fn_cfg.get("reward_vmin", -1)
-            self._reward_vmax = matching_fn_cfg.get("reward_vmax", 0)
+            self.reward_vmin = self.matching_fn_cfg.get("reward_vmin", -1)
+            self.reward_vmax = self.matching_fn_cfg.get("reward_vmax", 0)
 
-            logger.info(f"[VideoRecorderCallback] Loaded reference sequence for seq level matching. task_name={task_name}, seq_name={matching_fn_cfg['seq_name']}, use_geom_xpos={self._use_geom_xpos}, shape={self._seq_matching_ref_seq.shape}, image_frames_shape={self._seq_matching_ref_seq_frames.shape}")
+            logger.info(f"[VideoRecorderCallback] Loaded reference sequence for seq level matching. task_name={self.task_name}, seq_name={self.seq_name}, use_geom_xpos={self.use_geom_xpos}, shape={self.matching_ref_seq.shape}, image_frames_shape={self.matching_ref_seq_frames.shape}")
         else:
-            self._calc_matching_reward = False
-            logger.info(f"[VideoRecorderCallback] env_name={env_name}, _calc_matching_reward=False")
+            self.calc_matching_reward = False
+            logger.info(f"[VideoRecorderCallback] env_name={self.env_name}, calc_matching_reward=False")
+
 
 
     """++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -752,8 +941,8 @@ class VideoRecorderCallback(BaseCallback):
         """
         if task_name != "":
             # We are assuming that "key_frames" represent the key point goal reference sequences
-            self._goal_ref_seq = load_reference_seq(env_name=self._env_name, task_name=task_name, seq_name="key_frames", use_geom_xpos=self._use_geom_xpos)
-            logger.info(f"[VideoRecorderCallback] Loaded reference sequence for ground-truth reward calculation. task_name={task_name}, seq_name=key_frames, use_geom_xpos={self._use_geom_xpos}, shape={self._goal_ref_seq.shape}")
+            self._goal_ref_seq = load_reference_seq(env_name=self.env_name, task_name=task_name, seq_name="key_frames", use_geom_xpos=self.use_geom_xpos)
+            logger.info(f"[VideoRecorderCallback] Loaded reference sequence for ground-truth reward calculation. task_name={task_name}, seq_name=key_frames, use_geom_xpos={self.use_geom_xpos}, shape={self._goal_ref_seq.shape}")
 
             self._set_humanoid_ground_truth_reward_fn(task_name, use_geom_xpos)
             self._set_humanoid_success_fn(success_fn_cfg)
@@ -783,7 +972,7 @@ class VideoRecorderCallback(BaseCallback):
             
             axis_to_norm = (1,2) if use_geom_xpos else 1
 
-            self._gt_goal_matching_fn = lambda rollout: np.exp(-np.linalg.norm(rollout - self._goal_ref_seq, axis=axis_to_norm))
+            self._gt_goalmatching_fn = lambda rollout: np.exp(-np.linalg.norm(rollout - self._goal_ref_seq, axis=axis_to_norm))
         else:
             def stage_progress_fn(ref, rollout, threshold):
                 """
@@ -798,7 +987,7 @@ class VideoRecorderCallback(BaseCallback):
                 # Calculate reward from the rollout to self.gogal_ref_seq
                 reward_matrix = np.exp(-euclidean_distance_advanced(rollout, ref))
 
-                # Detect when a stage is completed (the rollout is close to the goal_ref_seq) (under self._threshold)
+                # Detect when a stage is completed (the rollout is close to the goal_ref_seq) (under self.threshold)
                 stage_completed = 0
                 stage_completed_matrix = np.zeros(reward_matrix.shape) # 1 if the stage is completed, 0 otherwise
                 current_stage_matrix = np.zeros(reward_matrix.shape) # 1 if the current stage, 0 otherwise
@@ -818,7 +1007,7 @@ class VideoRecorderCallback(BaseCallback):
 
                 return reward
             
-            self._gt_goal_matching_fn = lambda rollout: stage_progress_fn(self._goal_ref_seq, rollout, self._threshold)
+            self._gt_goalmatching_fn = lambda rollout: stage_progress_fn(self._goal_ref_seq, rollout, self.threshold)
 
     def success_fn(self, obs_seq, ref_seq, threshold):
         """
@@ -841,7 +1030,7 @@ class VideoRecorderCallback(BaseCallback):
 
         reward_matrix = np.exp(-cost_fn(obs_seq, ref_seq))
 
-        # Detect when a stage is completed (the rollout is close to the goal_ref_seq) (under self._threshold)
+        # Detect when a stage is completed (the rollout is close to the goal_ref_seq) (under self.threshold)
         current_stage = 0
         stage_completed = 0
         # Track the number of steps where a stage is being completed
@@ -873,7 +1062,7 @@ class VideoRecorderCallback(BaseCallback):
     
 
     def _set_metaworld_success_fn(self, success_fn_cfg):
-        self._success_fn_based_on_all_pos = lambda obs_seq, ref_seq=self._seq_matching_ref_seq, threshold=success_fn_cfg["threshold_for_all_pos"]: self.success_fn(obs_seq[:, :18], ref_seq, threshold)
+        self._success_fn_based_on_all_pos = lambda obs_seq, ref_seq=self.gt_ref_seq, threshold=success_fn_cfg["threshold_for_all_pos"]: self.success_fn(obs_seq[:, :18], ref_seq, threshold)
         
     def _set_humanoid_success_fn(self, success_fn_cfg):
         """

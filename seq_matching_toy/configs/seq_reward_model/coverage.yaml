@@ -1,4 +1,4 @@
-name: prob_reward
+name: coverage
 scale: 1
-max_cost: 20
+tau: 20
 add_to_env_rew: false # True to add the environment rewards to the sequence matching rewards 

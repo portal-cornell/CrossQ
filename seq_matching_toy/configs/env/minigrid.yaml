@@ -1,4 +1,4 @@
-example_name: lava_nav
+example_name: lava_nav_no_door
 episode_length: 20
 include_history: false
 temporal_encoding: True

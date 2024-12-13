@@ -60,10 +60,10 @@ if __name__=="__main__":
     # input_gif_path = "/share/portal/hw575/CrossQ/train_logs/2024-11-25-124432_sb3_sac_envt=door-close-v2-goal-hidden_rm=hand_engineered_nt=ep-len=200_sparse/eval/1000000_rollouts.gif"
     # output_dir = "ref_seqs/door_close"
 
-    input_gif_path="/share/portal/hw575/CrossQ/train_logs/2024-11-25-125324_sb3_sac_envt=button-press-v2-goal-hidden_rm=hand_engineered_nt=ep-len=200_sparse/eval/1000000_rollouts.gif"
-    output_dir = "ref_seqs/button_press"
+    input_gif_path=  "/share/portal/hw575/CrossQ/train_logs/2024-12-09-212409_sb3_sac_envt=window-open-v2-goal-observable_rm=hand_engineered_nt=dense/eval/940000_rollouts.gif"
+    output_dir = "../../ref_seqs/window_open"
     
     N = 20
-    last_frame = 50
+    last_frame = 60
 
     subsample_gif_and_states(input_gif_path, output_dir, N, last_frame=last_frame)

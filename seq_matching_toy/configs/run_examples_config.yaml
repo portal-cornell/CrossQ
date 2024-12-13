@@ -9,16 +9,18 @@ rl_algo:
   gamma: .99
 
 seq_matching_fns:
-  - name: prob_reward
+  - name: temporal_ot
     scale: 1
-    pos_offset: 17
-    add_to_env_rew: false # True to add the environment rewards to the sequence matching rewards 
-  - name: prob_ranked
+    mask_k: 2
+  - name: coverage
     scale: 1
-    pos_offset: 18
-    rank_weighting: .1
-    post_processing_method: 
-    - penalize_inversions
+  # - name: prob_reward
+  #   scale: 1
+  # - name: prob_reward_ranked
+  #   scale: 1
+  #   rank_weighting: .1
+  #   post_processing_method: 
+  #   - penalize_inversions
 
   # - name: dtw
   #   scale: 1
@@ -38,10 +40,10 @@ seq_matching_fns:
   #   post_processing_method: 
   #     - stage_penalty_based_on_last_state
   #   stage_penalty: 10
-  - name: even_distribution
-    scale: 1
-    pos_offset: 6
-    post_processing_method: 
+  # - name: even_distribution
+  #   scale: 1
+  #   pos_offset: 6
+  #   post_processing_method: 
   #       - convert_to_positive_reward
   # - name: ot
   #   scale: 1

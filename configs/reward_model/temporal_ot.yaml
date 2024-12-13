@@ -1,0 +1,9 @@
+name: temporal_ot
+cost_fn: cosine
+seq_name: rl_expert_20_frames
+mask_k: 2
+scale: 1
+add_to_env_rew: false # True to add the environment rewards to the sequence matching rewards 
+tau: 1
+post_processing_method:
+- exp_reward

@@ -6,7 +6,7 @@ task_name: button-press-v2-goal-observable
 episode_length: 125
 # Options for camera name: ['corner', 'corner2', 'corner3', 'topview', 'behindGripper', 'gripperPOV']
 #   (references: https://github.com/Farama-Foundation/Metaworld/blob/master/docs/rendering/rendering.md)
-camera_name: corner
+
 render_dim: 
   - 480
   - 480

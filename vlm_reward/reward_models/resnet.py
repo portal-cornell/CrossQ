@@ -10,6 +10,7 @@ from torchvision.utils import _log_api_usage_once
 from torchvision.models._api import register_model, Weights, WeightsEnum
 from torchvision.models._meta import _IMAGENET_CATEGORIES
 from torchvision.models._utils import _ovewrite_named_param, handle_legacy_interface
+import torchvision.models as models
 
 
 __all__ = [
@@ -25,6 +26,14 @@ __all__ = [
     "Wide_ResNet50_2_Weights",
     "Wide_ResNet101_2_Weights",
 ]
+
+def load_resnet50_backbone(device='cuda'):
+    resnet = models.resnet50(weights="IMAGENET1K_V2").to(device)
+    backbone = nn.Sequential(*list(resnet.children())[:-1])
+
+    # Set the model to evaluation mode
+    backbone.eval()
+    return backbone
 
 
 def conv3x3(in_planes: int, out_planes: int, stride: int = 1, groups: int = 1, dilation: int = 1) -> nn.Conv2d:
@@ -717,4 +726,3 @@ def resnet50_backbone(*, weights: Optional[ResNet50_Weights] = None, progress: b
     weights = ResNet50_Weights.verify(weights)
 
     return _resnet(Bottleneck, [3, 4, 6, 3], weights, progress, **kwargs)
-

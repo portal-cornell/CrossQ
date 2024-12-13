@@ -166,9 +166,10 @@ python train.py env=Metaworld env.env_reward_type='sparse' env.task_name='button
 
 - Main training script defines a make_env_fn, which returns an instantation of an environment class
 - The environment class comes from the task name and the environments defined in metaworld.envs.mujoco.env_dict
+- The camera perspective is defined by the task type, and is stored in constants.METAWORLD_CAMERA
 ```python
 return Monitor(env_cls_to_use[cfg.env.task_name](render_mode="rgb_array", 
-                                camera_name=cfg.env.camera_name,
+                                camera_name=METAWORLD_CAMERA[task_type],
                                 episode_length=cfg.env.episode_length,
                                 # Change the dense reward to sparse reward
                                 env_reward_type=cfg.env.env_reward_type if "env_reward_type" in cfg.env else "dense",

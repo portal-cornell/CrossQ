@@ -11,7 +11,8 @@ from seq_reward.even_distribution import compute_even_distribution_reward
 from seq_reward.optimal_transport import compute_ot_reward
 from seq_reward.soft_dtw import compute_soft_dtw_reward
 from seq_reward.dtw import compute_dtw_reward
-from seq_reward.prob_based import compute_probability_reward, compute_log_probability_reward, compute_ordered_probability_reward, compute_diagonal_probability_reward
+from seq_reward.prob_based import compute_probability_reward, compute_log_probability_reward, compute_ordered_probability_reward, compute_diagonal_probability_reward, compute_coverage_reward, compute_final_frame_reward
+from seq_reward.temporal_ot import compute_temporal_ot_reward
 from seq_reward.testing_dist_metric import compute_testing_dist_reward
 from seq_reward.cost_fns import COST_FN_DICT
 
@@ -19,7 +20,7 @@ from constants import HUMANOID_TASK_SEQ_DICT, METAWORLD_TASK_SEQ_DICT
 
 from scipy.stats import kendalltau
 
-def load_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bool = False, env_name: str = "HumanoidSpawnedUpCustom") -> np.ndarray:
+def load_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bool = False, load_visual=False, env_name: str = "HumanoidSpawnedUpCustom") -> np.ndarray:
     """
     Load the reference sequence for the given task name and sequence name from constants.TASK_SEQ_DICT
 
@@ -36,13 +37,34 @@ def load_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bool = False
             False then we load path that ends with "geom-xpos.npy"
     """
     if env_name == "HumanoidSpawnedUpCustom":
-        return _load_humanoid_reference_seq(task_name, seq_name, use_geom_xpos)
+        return _load_humanoid_reference_seq(task_name, seq_name, use_geom_xpos) # TODO: load_visual not implemented for humanoid
     elif env_name == "Metaworld":
-        return _load_metaworld_reference_seq(task_name, seq_name)
+        return _load_metaworld_reference_seq(task_name, seq_name, load_visual=load_visual)
     else:
         raise NotImplementedError(f"Unknown environment: {env_name}")
-    
 
+def load_visual_reference_seq(task_name:str,seq_name):
+    """
+    Load the reference sequence for the given task name and sequence name from constants.TASK_SEQ_DICT
+
+    Parameters:
+        task_name: str
+            Specifies the specific task that we want to load the reference sequence for
+        seq_name: str
+            Specifies the specific sequence that we want to load the reference sequence for
+            (e.g. "key_frames")
+        use_geom_xpos: bool
+            True then we load path that ends with "geom-xpos.npy"
+            False then we load path that ends with "joint-state.npy"
+        use_image: bool
+            True when we want to get an image (overrides use_geom_xpos)
+    """
+
+    assert task_name in TASK_SEQ_DICT, f"Unknown task name: {task_name}"
+    
+    assert type(TASK_SEQ_DICT[task_name]["sequences"][seq_name]) == str, f"Unknown type for TASK_SEQ_DICT[{task_name}]['sequences'][{seq_name}]. Has to be either a list or a string, but got {type(TASK_SEQ_DICT[task_name]['sequences'][seq_name])}"
+    
+    
 def _load_humanoid_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bool = False) -> np.ndarray:
     """
     For the Humanoid environment, load the reference sequence for the given task name and sequence name from constants.HUMANOID_TASK_SEQ_DICT
@@ -110,7 +132,7 @@ def _load_humanoid_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bo
         return loaded_joint_states[1:]
 
 
-def _load_metaworld_reference_seq(task_name:str, seq_name: str) -> np.ndarray:
+def _load_metaworld_reference_seq(task_name:str, seq_name: str, load_visual=False) -> np.ndarray:
     """
     For the Metaworld environment, load the reference sequence for the given task name and sequence name from constants.METAWORLD_TASK_SEQ_DICT
 
@@ -120,22 +142,35 @@ def _load_metaworld_reference_seq(task_name:str, seq_name: str) -> np.ndarray:
         seq_name: str
             Specifies the specific sequence that we want to load the reference sequence for
             (e.g. "rl_expert")
+        load_visual: bool
+            True to load the images for the reference sequence, false to load the ground truth states
     """
     task_name_without_goal_info = task_name.split("-goal")[0]
-
     assert task_name_without_goal_info in METAWORLD_TASK_SEQ_DICT, f"Unknown task name for the metaworld environment: {task_name_without_goal_info}"
 
-    fp = METAWORLD_TASK_SEQ_DICT[task_name_without_goal_info]["sequences"][seq_name]
+    if load_visual:
+        gif_path = METAWORLD_TASK_SEQ_DICT[task_name_without_goal_info]["sequence_gifs"][seq_name]
+        gif = Image.open(gif_path)
+        frames = []
+        try:
+            while True:
+                frames.append(gif.copy())
+                gif.seek(gif.tell() + 1)
+        except EOFError:
+            pass  # End of frames
 
-    loaded_states = np.load(fp)  # shape: (num_frames, n_envs, obs_size)
+        frames = [f.convert('RGB') for f in frames]
+        return frames
+    else:
+        fp = METAWORLD_TASK_SEQ_DICT[task_name_without_goal_info]["sequences"][seq_name]
+        loaded_states = np.load(fp)  # shape: (num_frames, n_envs, obs_size)
 
-    # For the metaworld environment, the states is of shape (39,) for each timestep
-    #   First 18 is the current state, next 18 is the previous state, and the last 3 is the goal
-    #   We only care about the current state
-    # We also only care about the first environment
-    loaded_states = loaded_states[:, 0, :18]
-
-    return loaded_states
+        # For the metaworld environment, the states is of shape (39,) for each timestep
+        #   First 18 is the current state, next 18 is the previous state, and the last 3 is the goal
+        #   We only care about the current state
+        # We also only care about the first environment
+        loaded_states = loaded_states[:, 0, :18]
+        return loaded_states
 
 
 def load_images_from_reference_seq(env_name:str, task_name:str, seq_name: str) -> (np.ndarray):
@@ -177,6 +212,14 @@ def load_images_from_reference_seq(env_name:str, task_name:str, seq_name: str) -
         # This is a list of image paths (likely only one image in that list)
         return np.array([])
 
+def get_cost_fn(fn_config, cost_fn_name):
+    cost_fn = COST_FN_DICT[cost_fn_name]
+
+    if cost_fn_name == "cosine_smoothed":
+        cost_fn = lambda obs, ref: cost_fn(obs, ref, context_window=fn_config.get("context_window", 3))
+
+    return cost_fn
+
 def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
     """
     Return
@@ -190,7 +233,8 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
     """
     logger.info(f"Loading the following reward model:\n{fn_config}")
 
-    cost_fn = COST_FN_DICT[cost_fn_name]
+    cost_fn = get_cost_fn(fn_config, cost_fn_name)
+
     scale = float(fn_config.get("scale", 1))
     fn_name = fn_config["name"]
 
@@ -210,11 +254,17 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
     elif "prob_diagonal" == fn_name:
         fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_diagonal_probability_reward(obs_seq, ref_seq, cost_fn, max_cost=float(fn_config.get("max_cost", 1))), fn_name
     elif "prob_reward" == fn_name or "prob_ranked" == fn_name:
-        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_probability_reward(obs_seq, ref_seq, cost_fn, max_cost=float(fn_config.get("max_cost", 1))), fn_name
+        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_probability_reward(obs_seq, ref_seq, cost_fn, tau=float(fn_config.get("tau", 1))), fn_name
     elif "log_prob_reward" == fn_name or "log_prob_ranked" == fn_name:
         fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_log_probability_reward(obs_seq, ref_seq, cost_fn, tau=float(fn_config.get("tau", 1))), fn_name
     elif "ordered_prob_reward" == fn_name:
         fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_ordered_probability_reward(obs_seq, ref_seq, cost_fn, max_cost=float(fn_config.get("max_cost", 1))), fn_name
+    elif "coverage" == fn_name:
+        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_coverage_reward(obs_seq, ref_seq, cost_fn, tau=fn_config.get("tau", 1)), fn_name
+    elif "final_frame" == fn_name:
+        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_final_frame_reward(obs_seq, ref_seq, cost_fn), fn_name
+    elif "temporal_ot" == fn_name:
+        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn: compute_temporal_ot_reward(obs_seq, ref_seq, cost_fn, mask_k=fn_config.get('mask_k', 2)), fn_name
     elif "soft_dtw" in fn_name or "sdtw" in fn_name:
         gamma = float(fn_config["gamma"])
         if gamma == 10000.0:
@@ -236,7 +286,8 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
             if method == "exp_reward":
                 augmented_fn, fn_name = augment_fn_with_exp_reward(
                     original_fn=augmented_fn, 
-                    original_fn_name=fn_name)
+                    original_fn_name=fn_name,
+                    tau=float(fn_config.get("tau", 1)))
             elif method == "stage_reward_based_on_last_state":
                 augmented_fn, fn_name = augment_fn_with_stage_reward_based_on_last_state(
                     original_fn=augmented_fn, 
@@ -288,15 +339,15 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
     else:
         return fn, fn_name
 
-def augment_fn_with_exp_reward(original_fn, original_fn_name):
+def augment_fn_with_exp_reward(original_fn, original_fn_name, tau=1):
     new_fn_name = original_fn_name + "_exp"
 
-    def post_processor(reward):
-        return np.exp(reward)
+    def post_processor(reward, tau=1):
+        return np.exp(reward / tau)
     
     def new_fn(*args, **kwargs):
         reward, info = original_fn(*args, **kwargs)
-        new_reward = post_processor(reward)
+        new_reward = post_processor(reward, tau=tau)
         return new_reward, info
     
     return new_fn, new_fn_name

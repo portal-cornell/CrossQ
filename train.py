@@ -33,9 +33,10 @@ from envs.base import get_make_env
 from stable_baselines3.common.monitor import Monitor
 from vlm_reward.reward_models.model_factory import load_reward_model
 from vlm_reward.reward_main import dist_worker_compute_reward
-from vlm_reward.vlm_buffer import GeomXposReplayBuffer
+from vlm_reward.vlm_buffer import GeomXposReplayBuffer, VLMReplayBuffer
 from stable_baselines3.common.buffers import ReplayBuffer
-from callbacks import VideoRecorderCallback, WandbCallback, StateBasedSeqRewardCallback
+from callbacks import VideoRecorderCallback, WandbCallback, StateBasedSeqRewardCallback, VisualSeqRewardCallback
+from constants import METAWORLD_CAMERA
 
 def get_training_envs(cfg: DictConfig):
     """Create the training environment and the relevant kwargs for creating the inference environment
@@ -68,9 +69,11 @@ def get_training_envs(cfg: DictConfig):
                                 ALL_V2_ENVIRONMENTS_GOAL_HIDDEN)
             
             env_cls_to_use = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE if "goal-observable" in cfg.env.task_name else ALL_V2_ENVIRONMENTS_GOAL_HIDDEN
+            task_type = cfg.env.task_name.split('-goal-hidden')[0].split('-goal-observable')[0]
+            camera_name = METAWORLD_CAMERA[task_type]
 
             return Monitor(env_cls_to_use[cfg.env.task_name](render_mode="rgb_array", 
-                                                            camera_name=cfg.env.camera_name,
+                                                            camera_name=camera_name,
                                                             episode_length=cfg.env.episode_length,
                                                             # Change the dense reward to sparse reward
                                                             env_reward_type=cfg.env.env_reward_type if "env_reward_type" in cfg.env else "dense",
@@ -105,9 +108,8 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
     logger.add(os.path.join(cfg.logging.run_path, "logs.txt"), enqueue=True)
 
     use_vlm_for_reward = utils.use_vlm_for_reward(cfg)
-    use_joint_vlm_for_reward = utils.use_joint_vlm_for_reward(cfg)
 
-    logger.info(f"\nusing_vlm_for_reward={use_vlm_for_reward}\nusing vlm to predict joint pos: {use_joint_vlm_for_reward}\nusing_sequence_matching_fn_for_reward={utils.use_sequence_matching_fn_for_reward(cfg)}")
+    logger.info(f"\nusing_vlm_for_reward={use_vlm_for_reward} \nusing_sequence_matching_fn_for_reward={utils.use_sequence_matching_fn_for_reward(cfg)}")
 
     # Initialize the environment
     logger.info(f"Creating environment={cfg.env.name} instances with {dict(cfg.env)}")
@@ -120,11 +122,11 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
     assert cfg.rl_algo.name == "sb3_sac", "Only StableBaseline3 SAC is supported for now"
     
     # Train a model from scatch
-    ref_joint_states = None
-    if use_joint_vlm_for_reward:
-        sac_class = JOINT_VLM_SAC
-        ref_joint_states = torch.as_tensor(np.load(cfg.reward_model.target_joint_state))
-    elif use_vlm_for_reward:
+    # ref_joint_states = None
+    # if use_joint_vlm_for_reward:
+    #     sac_class = JOINT_VLM_SAC
+    #     ref_joint_states = torch.as_tensor(np.load(cfg.reward_model.target_joint_state))
+    if use_vlm_for_reward:
         sac_class = VLM_SAC
     else:
         sac_class = SAC
@@ -149,16 +151,9 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         }),
         verbose=0,
         seed=cfg.seed,
-        replay_buffer_class=GeomXposReplayBuffer if cfg.env.name == "HumanoidSpawnedUpCustom" else ReplayBuffer, 
+        replay_buffer_class=GeomXposReplayBuffer if cfg.env.name == "HumanoidSpawnedUpCustom" else VLMReplayBuffer, 
         ### VLM_SAC specific reward (SAC will ignore this)
-        inference_only=False,
-        reward_model_config = OmegaConf.to_container(cfg.reward_model, resolve=True, throw_on_missing=True) if use_vlm_for_reward else None,
-        n_cpu_workers = cfg.compute.n_cpu_workers,
-        n_gpu_workers = cfg.compute.n_gpu_workers,
         episode_length = cfg.env.episode_length,
-        render_dim = cfg.env.render_dim,
-        add_to_gt_rewards = cfg.reward_model.add_to_gt_rewards if use_vlm_for_reward else False,
-        ref_joint_states=ref_joint_states
     )
 
     # TODO: Not sure if .load() is better than .set_parameters()
@@ -169,7 +164,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
     logger.debug(f"Created the learned and initialized if needed: allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)}")
     
     if "cost_fn" in cfg.reward_model: # custom distance based reward
-        default_tags = [cfg.reward_model.name, f"ep_{cfg.env.episode_length}", cfg.env.name, cfg.reward_model.cost_fn, cfg.env.task_name.split('-')[0]] + (["temporal"] if cfg.env.temporal_encoding else [])
+        default_tags = [cfg.reward_model.name, cfg.visual_encoder.name, f"ep_{cfg.env.episode_length}", cfg.env.name, cfg.reward_model.cost_fn, "-".join(cfg.env.task_name.split('-')[:2])] + (["temporal"] if cfg.env.temporal_encoding else [])
     else: # default environment reward
         default_tags = [cfg.env.env_reward_type, f"ep_{cfg.env.episode_length}", cfg.env.name]
     tags = cfg.logging.wandb_tags + default_tags
@@ -220,20 +215,32 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             # For joint based reward (this allow us to visualize the sequence matching reward in a rollout
             matching_fn_cfg=dict(cfg.reward_model) if utils.use_sequence_matching_fn_for_reward(cfg) else {},
             # For VLM based reward (this allow us to visualize the VLM reward in a rollout
-            calc_visual_reward=use_vlm_for_reward or use_joint_vlm_for_reward,
+            calc_visual_reward=use_vlm_for_reward, # If using VLM, visualize predicted rewards, not gt rewards
+            encoder_batch_size=cfg.visual_encoder.encoder_batch_size, # TODO: make this use_vlm_for_reward
+            device='cuda'
         )
 
         callback_list = [wandb_callback, video_callback]
 
         if utils.use_sequence_matching_fn_for_reward(cfg):
             # Add the sequence matching reward callback
-            callback_list.append(StateBasedSeqRewardCallback(
+            if use_vlm_for_reward:
+                reward_callback = VisualSeqRewardCallback( 
+                                    env_name = cfg.env.name,
+                                    task_name = cfg.env.task_name,
+                                    matching_fn_cfg = dict(cfg.reward_model),
+                                    device = 'cuda',
+                                    encoder_batch_size=cfg.visual_encoder.encoder_batch_size)
+            else:
+                reward_callback = StateBasedSeqRewardCallback(
                                     env_name = cfg.env.name,
                                     task_name = cfg.env.task_name,
                                     matching_fn_cfg = dict(cfg.reward_model),
                                     # This is only used for the HumanoidSpawnedUpCustom env
                                     use_geom_xpos = "geom_xpos" in cfg.env.reward_type if "reward_type" in cfg.env else False,
-            ))
+                )
+
+            callback_list.append(reward_callback)
 
         model.learn(
             total_timesteps=cfg.total_timesteps, 
@@ -250,108 +257,10 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         logger.info("Done.")
         wandb_run.finish()
 
-def vlm_inference_worker(rank: int, cfg: DictConfig, stop_event: multiprocessing.Event):
-    """
-    Creates a VLM reward model and runs the inference (reward calculation) on the frames sent by the main worker
-
-    Parameters:
-        rank: int
-            The rank of the worker
-        cfg: DictConfig
-            The hydra config object
-        stop_event: multiprocessing.Event
-            The event to signal the workers to stop
-    """
-    # Save logging also into a file
-    logger.add(os.path.join(cfg.logging.run_path, "logs.txt"), enqueue=True)
-
-    logger.info(f"[Worker {rank}] Loading Reward model....")
-
-    if cfg.reward_model.rank0_batch_size_pct < 1.0:
-        worker_batch_size = int((1 - cfg.reward_model.rank0_batch_size_pct) * cfg.reward_model.reward_batch_size) // (cfg.compute.n_gpu_workers - 1)
-    else:
-        worker_batch_size = cfg.reward_model.reward_batch_size // cfg.compute.n_gpu_workers
-    
-    reward_model = load_reward_model(rank, 
-                                        worker_actual_batch_size=worker_batch_size,  # Note that this is different size compared to rank 0's reward model when rank0_batch_size_pct < 1.0
-                                        model_name=cfg.reward_model.name, 
-                                        model_config_dict=OmegaConf.to_container(cfg.reward_model, resolve=True, throw_on_missing=True))
-    
-    reward_model.eval()
-    reward_model.cuda(rank)
-    
-    logger.debug(f"Loaded the reward model at rank={rank}: allocated={round(torch.cuda.memory_allocated(rank)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(rank)/1024**3,1)}")
-
-    worker_frames_tensor = torch.zeros(
-                (worker_batch_size, cfg.env.render_dim[0], cfg.env.render_dim[1], 3),
-                dtype=torch.uint8,
-            ).cuda(rank)
-    while not stop_event.is_set():
-        logger.info(f"[Worker {rank}] Entering wait for compute_embeddings_dist...")
-        dist_worker_compute_reward(
-            rank,
-            rank0_batch_size_pct=cfg.reward_model.rank0_batch_size_pct,
-            reward_model=reward_model,
-            render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3),
-            total_batch_size=cfg.reward_model.reward_batch_size,  # Because this is not rank = 0, this helper doesn't actually use this value
-            num_workers=cfg.compute.n_gpu_workers,
-            worker_frames_tensor=worker_frames_tensor,
-        )
-    logger.info(f"[Worker {rank}] Received stop event. Exiting worker")
-
-
-def init_process(
-    rank: int,
-    stop_event: multiprocessing.Event,
-    /,
-    backend: str,
-    cfg: DictConfig,
-):
-    """Used by multiprocessing to spawn worker
-    """
-    os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = "29500"
-    # if backend == "nccl":
-    # TODO: come back to this after fixing the kube setup
-    # os.environ["NCCL_SHM_DISABLE"] = "1"
-    torch.cuda.set_device(rank)
-
-    dist.init_process_group(backend, rank=rank, world_size=cfg.compute.n_gpu_workers)
-    if rank == 0:
-        primary_worker(cfg, stop_event)
-    else:
-        vlm_inference_worker(rank, cfg, stop_event)
-
-
 @hydra.main(version_base=None, config_path="configs", config_name="train_config")
 def main(cfg: DictConfig):
     utils.validate_and_preprocess_cfg(cfg)
-
-    logger.info(f"Started run with run_name={cfg.logging.run_path}")
-
-    @logger.catch
-    def _train():
-        use_vlm_for_reward = utils.use_vlm_for_reward(cfg)
-        if use_vlm_for_reward:
-            logger.info("Running VLM-rewarded RL. Spawning workers.")
-            args_with_multiprocessing = ("nccl", cfg)
-            multiprocess.spawn(
-                fn=init_process,
-                args=args_with_multiprocessing,
-                nprocs=cfg.compute.n_gpu_workers,
-                join=True,
-                daemon=False,
-                start_method="spawn",
-            )
-        else:
-            logger.info("Running RL for ground truth.")
-            primary_worker(cfg)
-
-    if cfg.compute.n_gpu_workers > 1:
-        _train()
-    else: # If only 1 worker, no need to spawn process on each worker 
-        primary_worker(cfg)
-
+    primary_worker(cfg)
 
 if __name__ == "__main__":
     utils.set_os_vars()

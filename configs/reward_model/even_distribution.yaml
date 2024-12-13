@@ -5,4 +5,5 @@ seq_name: null
 post_processing_method: 
   - exp_reward
 
+tau: 1
 

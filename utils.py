@@ -37,12 +37,12 @@ def get_output_path() -> str:
     return hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
 
 def use_sequence_matching_fn_for_reward(cfg: DictConfig) -> bool:
-    valid_fixes = ["ot", "dtw", "even", "prob", "test"] # valid names for models
+    valid_fixes = ["ot", "dtw", "even", "prob", "coverage", "final", "test"] # valid names for models
 
     return any([fix in cfg.reward_model.name.lower() for fix in valid_fixes])
 
 def use_vlm_for_reward(cfg: DictConfig) -> bool:
-    return "hand_engineered" not in cfg.reward_model.name.lower() and not use_sequence_matching_fn_for_reward(cfg)
+    return "state_based" not in cfg.visual_encoder.name.lower()
 
 def use_joint_vlm_for_reward(cfg: DictConfig) -> bool:
     return "joint_pred" in cfg.reward_model.name.lower()
@@ -70,7 +70,7 @@ def validate_and_preprocess_cfg(cfg: DictConfig):
         - Sets the logging.run_name to the name of the folder that holds all the logs/outputs for the current run
         - Sets the logging.run_path to the absolute path to the folder that holds all the logs/outputs for the current run
     """
-    if use_vlm_for_reward(cfg):
+    if use_vlm_for_reward(cfg) and cfg.compute.distributed:
         assert cfg.reward_model.reward_batch_size % cfg.compute.n_gpu_workers == 0, f"({cfg.reward_model.reward_batch_size=}) corresponds to the total size of the batch do be distributed among workers and therefore must be divisible by ({cfg.compute.n_gpu_workers=})"
 
         assert (cfg.compute.n_cpu_workers * cfg.env.episode_length) % cfg.reward_model.reward_batch_size == 0, f"({cfg.compute.n_cpu_workers=}) * ({cfg.episode_length=}) must be divisible by ({cfg.reward_model.reward_batch_size=}) so that all batches are of the same size."

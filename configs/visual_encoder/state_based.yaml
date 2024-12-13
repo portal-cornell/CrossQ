@@ -1,0 +1,6 @@
+# Config to use when there is no visual encoder
+name: "state_based"
+use_image_for_ref: False
+
+# Default values (not used for this)
+encoder_batch_size: 1

@@ -1,0 +1,6 @@
+name: final_frame
+cost_fn: euclidean
+scale: 1
+seq_name: null
+post_processing_method:
+- exp_reward

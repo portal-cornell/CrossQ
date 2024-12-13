@@ -1,4 +1,7 @@
-name: prob_reward
+name: temporal_ot
+mask_k: 2
 scale: 1
-max_cost: 20
 add_to_env_rew: false # True to add the environment rewards to the sequence matching rewards 
+pos_offset: 6
+post_processing_method: 
+    - convert_to_positive_reward

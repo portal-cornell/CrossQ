@@ -1,12 +1,7 @@
-name: prob_reward
+name: coverage
 cost_fn: euclidean
 scale: 1
 seq_name: rl_expert_20_frames
-
-# IMPORTANT: removing exp reward from post processing
-# post_processing_method:
-# - exp_reward
-
 post_processing_method: []
 reward_vmin: 0
 reward_vmax: 1
