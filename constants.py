@@ -23,6 +23,8 @@ METAWORLD_TASK_SEQ_DICT = {
         "sequences": {
             # From RL expert trained with episode length 125, 1M steps, seed=9, dense env reward
             "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-12-09-212051_sb3_sac_envt=door-open-v2-goal-observable_rm=hand_engineered_nt=dense/eval/1000000_rollouts.gif",
+            "rl_expert_corner3": "/share/portal/hw575/CrossQ/train_logs/2024-12-15-183942_sb3_sac_envt=door-open-v2-goal-observable_rm=hand_engineered_nt=dense_corner3/eval/1000000_rollouts.gif"
+        },
     },
     "window-open-v2":
     {
@@ -31,6 +33,7 @@ METAWORLD_TASK_SEQ_DICT = {
             # From RL expert trained with episode length 125, seed=9, dense env reward (picked an earlier rollout because it looked more efficient)
             #   1M rollout actually closed the door after opening it
             "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-12-09-212409_sb3_sac_envt=window-open-v2-goal-observable_rm=hand_engineered_nt=dense/eval/940000_rollouts.gif", 
+            "rl_expert_corner3": "/share/portal/hw575/CrossQ/train_logs/2024-12-15-181003_sb3_sac_envt=window-open-v2-goal-observable_rm=hand_engineered_nt=dense_corner3/eval/1000000_rollouts.gif"
         }
     }
 }
