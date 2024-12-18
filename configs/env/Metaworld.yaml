@@ -3,10 +3,10 @@ name: Metaworld
 env_reward_type: sparse
 # The task name either has to end with -goal-observable or -goal-hidden
 task_name: button-press-v2-goal-observable
-episode_length: 200
+episode_length: null
 # Options for camera name: ['corner', 'corner2', 'corner3', 'topview', 'behindGripper', 'gripperPOV']
 #   (references: https://github.com/Farama-Foundation/Metaworld/blob/master/docs/rendering/rendering.md)
-camera_name: corner
+camera_name: null
 render_dim: 
   - 480
   - 480

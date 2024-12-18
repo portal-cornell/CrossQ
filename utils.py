@@ -2,13 +2,14 @@ import datetime
 import secrets
 import os
 import numpy as np
+import re
 
 from omegaconf import DictConfig
 from loguru import logger
 
 import hydra
 
-from constants import WANDB_DIR
+from constants import WANDB_DIR, METAWORLD_EPISODE_LENGTH
 
 def get_run_hash() -> str:
     return f'{datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_', f"{secrets.token_hex(4)}"
@@ -86,6 +87,34 @@ def validate_and_preprocess_cfg(cfg: DictConfig):
 
     cfg.logging.run_name = get_output_folder_name()
     cfg.logging.run_path = get_output_path()
+
+    # If the user didn't manually set the episode length/camera name, we can automatically set i
+    if cfg.env.name == "Metaworld":
+        edit_msg = ""
+
+        # Remove the goal tag
+        task_name = cfg.env.task_name.replace("-goal-observable", "").replace("-goal-hidden", "")
+
+        # A automatic way to make the episode length apply to the environment
+        if cfg.env.episode_length is None and task_name in METAWORLD_EPISODE_LENGTH:
+            edit_msg += f"[Hit Enter to Continue]\n- Automatically setting the episode length to {METAWORLD_EPISODE_LENGTH[task_name]} for the task {task_name} instead of the original {cfg.env.episode_length}.\n"
+            cfg.env.episode_length = METAWORLD_EPISODE_LENGTH[task_name]
+
+        # A eautomatic way to make the camera angle apply to the environment
+        if cfg.env.camera_name is None and "seq_name" in cfg.reward_model:
+            # Extract the reference camera angle from the sequence name
+            #   For now, we only handle "_corner", "_corner2", "_corner3", "_corner4"
+            if "_corner" in cfg.reward_model.seq_name:
+                corner_name = re.search(r"(corner\d*)", cfg.reward_model.seq_name).group(1)
+
+                # Confirm that we are automatically setting the camera angle
+                edit_msg += f"[Hit Enter to Continue]\n- Automatically setting the camera angle from '{cfg.env.camera_name}' to '{corner_name}' for based on the reference sequence '{cfg.reward_model.seq_name}'." 
+
+                cfg.env.camera_name = corner_name
+
+        if edit_msg:
+            # Warn the user about automatically setting the episode length and/or camera angle
+            input(edit_msg)
 
     os.makedirs(os.path.join(cfg.logging.run_path, "eval"), exist_ok=True)
 

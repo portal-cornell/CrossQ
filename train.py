@@ -213,6 +213,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             # This allow us to calculate the unifying reward/metric that all methods are compared against
             #   i.e. it defines "rollout/sum_total_reward_per_epsisode" in wandb
             env_name = cfg.env.name,
+            camera_name = cfg.env.get("camera_name", ""),  # Only used for Metaworld
             task_name=cfg.env.task_name,
             threshold=cfg.env.pose_matching_stage_threshold if "pose_matching_stage_threshold" in cfg.env else 0.0,
             # For calculating success rate

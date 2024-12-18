@@ -215,6 +215,7 @@ class VideoRecorderCallback(BaseCallback):
         n_eval_episodes: int = 1,
         deterministic: bool = True,
         env_name: str = "",
+        camera_name: str = "",
         task_name: str = "",
         use_geom_xpos: bool = True,
         threshold: float = 0.5,
@@ -236,6 +237,7 @@ class VideoRecorderCallback(BaseCallback):
             n_eval_episodes: Number of episodes to render
             deterministic: Whether to use deterministic or stochastic policy
             env_name: The name of the environment
+            camera_name: For Metaworld only, the name of the camera affects the transform for the image.
             task_name: The name of the task in the environment
             use_geom_xpos: Whether to use geom_xpos for the observation (only for HumanoidSpawnedUpCustom)
             threshold: The threshold to consider a success
@@ -253,6 +255,7 @@ class VideoRecorderCallback(BaseCallback):
         self._rollout_save_path = rollout_save_path  # Save the state of the environment
 
         self._env_name = env_name
+        self._camera_name = camera_name
         self._use_geom_xpos = use_geom_xpos
         self._threshold = threshold
         self._calc_visual_reward = calc_visual_reward
@@ -299,8 +302,12 @@ class VideoRecorderCallback(BaseCallback):
                     image_int = np.uint8(screen)[:self._render_dim[0], :self._render_dim[1], :]
 
                     if self._env_name == "Metaworld":
-                        # For some reason, the image is flipped upside down
-                        image_int = np.flipud(image_int)
+                        if self._camera_name == "corner" or self._camera_name == "corner2" or self._camera_name == "corner3":
+                            # For some reason, the image is flipped upside down
+                            image_int = np.flipud(image_int)
+                        elif self._camera_name == "corner4":
+                            # For some reason, the image is flipped left-right
+                            image_int = np.fliplr(image_int)
 
                     raw_screens.append(Image.fromarray(image_int))
                     screens.append(Image.fromarray(image_int))  # The frames here will get plotted with info later
