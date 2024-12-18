@@ -375,6 +375,7 @@ class VideoRecorderCallback(BaseCallback):
         n_eval_episodes: int = 1,
         deterministic: bool = True,
         env_name: str = "",
+        camera_name: str = "",
         task_name: str = "",
         use_geom_xpos: bool = True,
         threshold: float = 0.5,
@@ -399,6 +400,7 @@ class VideoRecorderCallback(BaseCallback):
             n_eval_episodes: Number of episodes to render
             deterministic: Whether to use deterministic or stochastic policy
             env_name: The name of the environment
+            camera_name: For Metaworld only, the name of the camera affects the transform for the image.
             task_name: The name of the task in the environment
             use_geom_xpos: Whether to use geom_xpos for the observation (only for HumanoidSpawnedUpCustom)
             threshold: The threshold to consider a success
@@ -426,6 +428,7 @@ class VideoRecorderCallback(BaseCallback):
         self.threshold = threshold
         self.calc_visual_reward = calc_visual_reward
         self.discount_factor = discount_factor
+        self.camera_name = camera_name
 
         if self.calc_visual_reward:
             self.device=device
@@ -444,8 +447,6 @@ class VideoRecorderCallback(BaseCallback):
                     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
                 ])  
     
-
-
     def on_training_start(self, *args, **kwargs):
         """
         Effect: 
@@ -490,12 +491,13 @@ class VideoRecorderCallback(BaseCallback):
 
                     image_int = np.uint8(screen)[:self._render_dim[0], :self._render_dim[1], :]
 
-                    if self.env_name == "Metaworld":
-                        # For some reason, the image is flipped upside down
-                        if self._eval_env.camera_name == 'corner4':
-                            image_int = np.fliplr(image_int)
-                        elif self._eval_env.camera_name in ['corner1', 'corner2', 'corner3']:
+                    if self._env_name == "Metaworld":
+                        if self._camera_name == "corner" or self._camera_name == "corner2" or self._camera_name == "corner3":
+                            # For some reason, the image is flipped upside down
                             image_int = np.flipud(image_int)
+                        elif self._camera_name == "corner4":
+                            # For some reason, the image is flipped left-right
+                            image_int = np.fliplr(image_int)
 
                     raw_screens.append(Image.fromarray(image_int))
                     screens.append(Image.fromarray(image_int))  # The frames here will get plotted with info later
@@ -695,34 +697,37 @@ class VideoRecorderCallback(BaseCallback):
             self.logger.record("eval/env_dense_reward",
                                     avg_env_dense_reward,
                                     exclude=("stdout", "log", "json", "csv"))
-    
-            full_pos_success_rate_list = []
-            full_pos_pct_success_timesteps_list = []
 
-            for env_i in range(self._n_eval_episodes):
-                # Don't need to do anything here, geom_xpos is getting normalized in the grab_screens function
-                states_to_process = states[:, env_i, ...]
+            # We can only do the calculation below if we have a ref seq
+            #   (see the _set_metaworld_success_fn function)
+            if self._success_fn_based_on_all_pos:
+                full_pos_success_rate_list = []
+                full_pos_pct_success_timesteps_list = []
 
-                full_pos_success_rate, full_pos_pct_success_timesteps = self._success_fn_based_on_all_pos(states_to_process)
-                full_pos_success_rate_list.append(full_pos_success_rate)
-                full_pos_pct_success_timesteps_list.append(full_pos_pct_success_timesteps)
+                for env_i in range(self._n_eval_episodes):
+                    # Don't need to do anything here, geom_xpos is getting normalized in the grab_screens function
+                    states_to_process = states[:, env_i, ...]
 
-            full_pos_success_rate_iqm, full_pos_success_rate_std = calc_iqm(full_pos_success_rate_list)
-            full_pos_pct_success_timesteps_iqm, full_pos_pct_success_timesteps_std = calc_iqm(full_pos_pct_success_timesteps_list)
+                    full_pos_success_rate, full_pos_pct_success_timesteps = self._success_fn_based_on_all_pos(states_to_process)
+                    full_pos_success_rate_list.append(full_pos_success_rate)
+                    full_pos_pct_success_timesteps_list.append(full_pos_pct_success_timesteps)
 
-            # Save the success results locally
-            self.add_success_results(self.num_timesteps, {
-                "full_pos_success_rate": full_pos_success_rate_list,
-                "full_pos_success_rate_iqm": float(full_pos_success_rate_iqm),
-                "full_pos_success_rate_std": float(full_pos_success_rate_std),
-                "full_pos_pct_success_timesteps": full_pos_pct_success_timesteps_list,
-                "full_pos_pct_success_timesteps_iqm": float(full_pos_pct_success_timesteps_iqm),
-                "full_pos_pct_success_timesteps_std": float(full_pos_pct_success_timesteps_std)
-            })
-            
-            self.logger.record("eval/full_pos_success", 
-                                full_pos_success_rate_iqm, 
-                                exclude=("stdout", "log", "json", "csv"))
+                full_pos_success_rate_iqm, full_pos_success_rate_std = calc_iqm(full_pos_success_rate_list)
+                full_pos_pct_success_timesteps_iqm, full_pos_pct_success_timesteps_std = calc_iqm(full_pos_pct_success_timesteps_list)
+
+                # Save the success results locally
+                self.add_success_results(self.num_timesteps, {
+                    "full_pos_success_rate": full_pos_success_rate_list,
+                    "full_pos_success_rate_iqm": float(full_pos_success_rate_iqm),
+                    "full_pos_success_rate_std": float(full_pos_success_rate_std),
+                    "full_pos_pct_success_timesteps": full_pos_pct_success_timesteps_list,
+                    "full_pos_pct_success_timesteps_iqm": float(full_pos_pct_success_timesteps_iqm),
+                    "full_pos_pct_success_timesteps_std": float(full_pos_pct_success_timesteps_std)
+                })
+                
+                self.logger.record("eval/full_pos_success", 
+                                    full_pos_success_rate_iqm, 
+                                    exclude=("stdout", "log", "json", "csv"))
         
         return all_infos
 
@@ -1071,7 +1076,13 @@ class VideoRecorderCallback(BaseCallback):
     
 
     def _set_metaworld_success_fn(self, success_fn_cfg):
-        self._success_fn_based_on_all_pos = lambda obs_seq, ref_seq=self.gt_ref_seq, threshold=success_fn_cfg["threshold_for_all_pos"]: self.success_fn(obs_seq[:, :18], ref_seq, threshold)
+        if self.calc_matching_reward:
+            # Because a ref seq is supplied, self._seq_matching_ref_seq is already set
+            self._success_fn_based_on_all_pos = lambda obs_seq, ref_seq=self._seq_matching_ref_seq, threshold=success_fn_cfg["threshold_for_all_pos"]: self.success_fn(obs_seq[:, :18], ref_seq, threshold)
+        else:
+            # Else, we cannot calculate the success wrt the reference sequence
+            #   (e.g., when we are training with environment reward)
+            self._success_fn_based_on_all_pos = None
         
     def _set_humanoid_success_fn(self, success_fn_cfg):
         """
