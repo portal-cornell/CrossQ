@@ -7,7 +7,8 @@ METAWORLD_TASK_SEQ_DICT = {
         "task_type": "sequence_following",
         "sequences": {
             "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-11-25-125324_sb3_sac_envt=button-press-v2-goal-hidden_rm=hand_engineered_nt=ep-len=200_sparse/eval/1000000_rollouts_states.npy",
-            "rl_expert_20_frames": "/share/portal/wph52/CrossQ/ref_seqs/button_press/1000000_rollouts_subsampled_20_states.npy"
+            "rl_expert_20_frames": "/share/portal/wph52/CrossQ/ref_seqs/button_press/1000000_rollouts_subsampled_20_states.npy",
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/button-press-v2/button-press-v2_corner_0_states.npy"
         }
     },
     "door-close-v2":
@@ -15,7 +16,8 @@ METAWORLD_TASK_SEQ_DICT = {
         "task_type": "sequence_following",
         "sequences": {
             "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-11-25-124432_sb3_sac_envt=door-close-v2-goal-hidden_rm=hand_engineered_nt=ep-len=200_sparse/eval/1000000_rollouts_states.npy",
-            "rl_expert_20_frames": "/share/portal/wph52/CrossQ/ref_seqs/door_close/1000000_rollouts_subsampled_20_states.npy"
+            "rl_expert_20_frames": "/share/portal/wph52/CrossQ/ref_seqs/door_close/1000000_rollouts_subsampled_20_states.npy",
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/door-close-v2/door-close-v2_corner_0_states.npy"
         }
     },
     # ==================== Medium Tasks ====================
@@ -25,7 +27,8 @@ METAWORLD_TASK_SEQ_DICT = {
         "sequences": {
             # From RL expert trained with episode length 125, 1M steps, seed=9, dense env reward
             "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-12-09-212051_sb3_sac_envt=door-open-v2-goal-observable_rm=hand_engineered_nt=dense/eval/1000000_rollouts_states.npy",
-            "rl_expert_corner3": "/share/portal/hw575/CrossQ/train_logs/2024-12-15-183942_sb3_sac_envt=door-open-v2-goal-observable_rm=hand_engineered_nt=dense_corner3/eval/1000000_rollouts_states.npy"
+            "rl_expert_corner3": "/share/portal/hw575/CrossQ/train_logs/2024-12-15-183942_sb3_sac_envt=door-open-v2-goal-observable_rm=hand_engineered_nt=dense_corner3/eval/1000000_rollouts_states.npy",
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/door-open-v2/door-open-v2_corner3_0_states.npy",
         },
     },
     "window-open-v2":
@@ -35,7 +38,8 @@ METAWORLD_TASK_SEQ_DICT = {
             # From RL expert trained with episode length 125, seed=9, dense env reward (picked an earlier rollout because it looked more efficient)
             #   1M rollout actually closed the door after opening it
             "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-12-09-212409_sb3_sac_envt=window-open-v2-goal-observable_rm=hand_engineered_nt=dense/eval/940000_rollouts_states.npy", 
-            "rl_expert_corner3": "/share/portal/hw575/CrossQ/train_logs/2024-12-15-181003_sb3_sac_envt=window-open-v2-goal-observable_rm=hand_engineered_nt=dense_corner3/eval/1000000_rollouts_states.npy"
+            "rl_expert_corner3": "/share/portal/hw575/CrossQ/train_logs/2024-12-15-181003_sb3_sac_envt=window-open-v2-goal-observable_rm=hand_engineered_nt=dense_corner3/eval/1000000_rollouts_states.npy",
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/window-open-v2/window-open-v2_corner3_0_states.npy",
         }
     },
     "lever-pull-v2":
