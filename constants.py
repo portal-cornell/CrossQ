@@ -1,6 +1,7 @@
 WANDB_DIR = "./"
 
 METAWORLD_TASK_SEQ_DICT = {
+    # ==================== Easy Tasks ====================
     "button-press-v2":
     {
         "task_type": "sequence_following",
@@ -17,13 +18,14 @@ METAWORLD_TASK_SEQ_DICT = {
             "rl_expert_20_frames": "/share/portal/wph52/CrossQ/ref_seqs/door_close/1000000_rollouts_subsampled_20_states.npy"
         }
     },
+    # ==================== Medium Tasks ====================
     "door-open-v2":
     {
         "task_type": "sequence_following",
         "sequences": {
             # From RL expert trained with episode length 125, 1M steps, seed=9, dense env reward
-            "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-12-09-212051_sb3_sac_envt=door-open-v2-goal-observable_rm=hand_engineered_nt=dense/eval/1000000_rollouts.gif",
-            "rl_expert_corner3": "/share/portal/hw575/CrossQ/train_logs/2024-12-15-183942_sb3_sac_envt=door-open-v2-goal-observable_rm=hand_engineered_nt=dense_corner3/eval/1000000_rollouts.gif"
+            "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-12-09-212051_sb3_sac_envt=door-open-v2-goal-observable_rm=hand_engineered_nt=dense/eval/1000000_rollouts_states.npy",
+            "rl_expert_corner3": "/share/portal/hw575/CrossQ/train_logs/2024-12-15-183942_sb3_sac_envt=door-open-v2-goal-observable_rm=hand_engineered_nt=dense_corner3/eval/1000000_rollouts_states.npy"
         },
     },
     "window-open-v2":
@@ -32,10 +34,63 @@ METAWORLD_TASK_SEQ_DICT = {
         "sequences": {
             # From RL expert trained with episode length 125, seed=9, dense env reward (picked an earlier rollout because it looked more efficient)
             #   1M rollout actually closed the door after opening it
-            "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-12-09-212409_sb3_sac_envt=window-open-v2-goal-observable_rm=hand_engineered_nt=dense/eval/940000_rollouts.gif", 
-            "rl_expert_corner3": "/share/portal/hw575/CrossQ/train_logs/2024-12-15-181003_sb3_sac_envt=window-open-v2-goal-observable_rm=hand_engineered_nt=dense_corner3/eval/1000000_rollouts.gif"
+            "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-12-09-212409_sb3_sac_envt=window-open-v2-goal-observable_rm=hand_engineered_nt=dense/eval/940000_rollouts_states.npy", 
+            "rl_expert_corner3": "/share/portal/hw575/CrossQ/train_logs/2024-12-15-181003_sb3_sac_envt=window-open-v2-goal-observable_rm=hand_engineered_nt=dense_corner3/eval/1000000_rollouts_states.npy"
         }
-    }
+    },
+    "lever-pull-v2":
+    {
+        "task_type": "sequence_following",
+        "sequences": {
+            # Hand-engineered policy
+            #   corner2 has the best view of the lever
+            "hand_engineered_corner2": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/lever-pull-v2/lever-pull-v2_corner2_0_states.npy",
+            # However, TemporalOT used corner4
+            "hand_engineered_corner4": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/lever-pull-v2/lever-pull-v2_corner4_0_states.npy",
+        }
+    },
+    "hand-insert-v2":
+    {
+        "task_type": "sequence_following",
+        "sequences": {
+            # Hand-engineered policy
+            #   corner3 has the best view of the hole
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/hand-insert-v2/hand-insert-v2_corner_0_states.npy",
+            # However, TemporalOT used corner
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/hand-insert-v2/hand-insert-v2_corner_0_states.npy",
+        }
+    },
+    # ==================== Hard Tasks ====================
+    "basketball-v2":
+    {
+        "task_type": "sequence_following",
+        "sequences": {
+            # Hand-engineered policy
+            #   corner has the best view of the basketball AND TemporalOT also uses this viewpoint
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/basketball-v2/basketball-v2_corner_0_states.npy",
+        }
+    },
+    "push-v2":
+    {
+        "task_type": "sequence_following",
+        "sequences": {
+            # Hand-engineered policy
+            #   corner3 has the best view of the puck AND TemporalOT also uses this viewpoint
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/push-v2/push-v2_corner3_0_states.npy",
+        }
+    },
+    "stick-push-v2":
+    {
+        "task_type": "sequence_following",
+        "sequences": {
+            # Hand-engineered policy
+            #   corner4 has the best view of the stick
+            "hand_engineered_corner4": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/stick-push-v2/stick-push-v2_corner4_0_states.npy",
+            # However, TemporalOT used corner
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/stick-push-v2/stick-push-v2_corner_0_states.npy",
+        }
+    },
+
 }
 
 # Used abosolute path because eval is run in a subdirectory
@@ -241,4 +296,38 @@ HUMANOID_TASK_SEQ_DICT = {
     #         "key_frames": ["/share/portal/hw575/CrossQ/create_demo/demos/both-arms-out_geom-xpos.npy"],
     #     }
     # },
+}
+
+
+METAWORLD_EPISODE_LENGTH = {
+    'hammer-v2': 125,
+    'drawer-close-v2': 125,
+    'drawer-open-v2': 125,
+    'door-open-v2': 125,
+    'bin-picking-v2': 175,
+    'button-press-topdown-v2': 125,
+    'door-unlock-v2': 125,
+    'basketball-v2': 175,
+    'plate-slide-v2': 125,
+    'hand-insert-v2': 125,
+    'peg-insert-side-v2': 150,
+    'assembly-v3': 175,
+    'push-wall-v2': 175,
+    'soccer-v2': 125,
+    'disassemble-v2': 125,
+    'pick-place-wall-v3': 175,
+    'pick-place-v2': 125,
+    'push-v2': 125,
+    'push-wall-v2': 175,
+    'lever-pull-v2': 175,
+    'stick-pull-v2': 175,
+    'shelf-place-v2': 175,
+    'window-close-v2': 125,
+    'window-open-v2': 125,
+    'reach-v2': 125,
+    'button-press-wall-v2': 125,
+    'box-close-v2': 175,
+    'stick-push-v2': 125,
+    'handle-pull-v2': 175,
+    'door-lock-v2': 125,
 }
