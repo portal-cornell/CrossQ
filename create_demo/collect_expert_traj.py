@@ -34,6 +34,8 @@ from utils import set_os_vars
 set_os_vars()  # To work for G2
 
 POLICY = {
+    'button-press-v2': policies.SawyerButtonPressV2Policy, # Added by us
+    'door-close-v2': policies.SawyerDoorCloseV2Policy,  # Added by us
     'hammer-v2': policies.SawyerHammerV2Policy,
     'drawer-close-v2': policies.SawyerDrawerCloseV2Policy,
     'drawer-open-v2': policies.SawyerDrawerOpenV2Policy,
@@ -45,9 +47,9 @@ POLICY = {
     'plate-slide-v2': policies.SawyerPlateSlideV2Policy,
     "hand-insert-v2": policies.SawyerHandInsertV2Policy,  
     "peg-insert-side-v2": policies.SawyerPegInsertionSideV2Policy,  
-    'assembly-v3': policies.SawyerAssemblyV2Policy,
     'push-wall-v2': policies.SawyerPushWallV2Policy,
     'soccer-v2': policies.SawyerSoccerV2Policy,
+    'assembly-v2': policies.SawyerAssemblyV2Policy,
     'disassemble-v2': policies.SawyerDisassembleV2Policy,
     'pick-place-wall-v3': policies.SawyerPickPlaceWallV2Policy,
     'pick-place-v2': policies.SawyerPickPlaceV2Policy,
@@ -68,6 +70,8 @@ POLICY = {
 
 
 CAMERA = {
+    'button-press-v2': 'corner', # Added by us
+    'door-close-v2': 'corner', # Added by us
     'hammer-v2': 'corner3',
     'drawer-close-v2': 'corner',
     'drawer-open-v2': 'corner',
@@ -79,9 +83,9 @@ CAMERA = {
     'plate-slide-v2': 'corner',
     'hand-insert-v2': 'corner',
     'peg-insert-side-v2': 'corner3',
-    'assembly-v3': 'corner',
     'push-wall-v2': 'corner',
     'soccer-v2': 'corner',
+    'assembly-v2': 'corner', # Added by us
     'disassemble-v2': 'corner',
     'pick-place-wall-v3': 'corner3',
     'pick-place-v2': 'corner3',
@@ -102,6 +106,8 @@ CAMERA = {
 
 
 MAX_PATH_LENGTH = {
+    'door-close-v2': 125, # Added by us
+    'button-press-v2': 125, # Added by us
     'hammer-v2': 125,
     'drawer-close-v2': 125,
     'drawer-open-v2': 125,
@@ -113,9 +119,9 @@ MAX_PATH_LENGTH = {
     'plate-slide-v2': 125,
     'hand-insert-v2': 125,
     'peg-insert-side-v2': 150,
-    'assembly-v3': 175,
     'push-wall-v2': 175,
     'soccer-v2': 125,
+    'assembly-v2': 175, # Added by us
     'disassemble-v2': 125,
     'pick-place-wall-v3': 175,
     'pick-place-v2': 125,
@@ -195,18 +201,6 @@ while episode < num_demos:
     
     num_steps = MAX_PATH_LENGTH[env_name]
     for step in range(num_steps):
-        # Get frames
-        screen = env.render()
-        image_int = np.uint8(screen)[:env._render_dim[0], :env._render_dim[1], :]
-        if camera_name == "corner" or camera_name == "corner2" or camera_name == "corner3":
-            # These 3 cameras are upside down
-            image_int = np.flipud(image_int)
-        elif camera_name == "corner4":
-            # This camera is left-right flipped
-            image_int = np.fliplr(image_int)
-            
-        large_images.append(Image.fromarray(image_int))
-
         # Get action
         if stop and goal_achieved:
             # If we want to do nothing after the goal is achieved
@@ -225,6 +219,18 @@ while episode < num_demos:
         rewards.append(reward)
         successes.append(int(info['success']))
         goal_achieved = max(int(info['success']), goal_achieved)
+
+        # Get frames
+        screen = env.render()
+        image_int = np.uint8(screen)[:env._render_dim[0], :env._render_dim[1], :]
+        if camera_name == "corner" or camera_name == "corner2" or camera_name == "corner3":
+            # These 3 cameras are upside down
+            image_int = np.flipud(image_int)
+        elif camera_name == "corner4":
+            # This camera is left-right flipped
+            image_int = np.fliplr(image_int)
+            
+        large_images.append(Image.fromarray(image_int))
 
         print(f"Ep {episode}, Step {step}, reward: {reward:.2f}, goal_achieved/success: {goal_achieved}")
 
