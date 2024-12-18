@@ -132,6 +132,30 @@ def _load_humanoid_reference_seq(task_name:str, seq_name: str, use_geom_xpos: bo
         return loaded_joint_states[1:]
 
 
+    if input_states_path is None: # infer from gif path
+        input_states_path =  os.path.splitext(input_gif_path)[0] + "_states.npy"
+
+    assert input_gif_path.endswith(".gif"), "error: reference seq not a gif"
+    base_name = os.path.splitext(os.path.basename(input_gif_path))[0]
+    
+    # Load GIF and states
+    gif = Image.open(input_gif_path)
+    states = np.load(input_states_path)
+
+    # Verify that the number of frames matches the states
+    frames = []
+    try:
+        while True:
+            frames.append(gif.copy())
+            gif.seek(gif.tell() + 1)
+    except EOFError:
+        pass  # End of GIF frames
+
+    num_frames = len(frames)
+    if num_frames != states.shape[0]:
+        raise ValueError(f"Mismatch between GIF frames ({num_frames}) and states ({states.shape[0]}) in {base_name}")
+
+
 def _load_metaworld_reference_seq(task_name:str, seq_name: str, load_visual=False) -> np.ndarray:
     """
     For the Metaworld environment, load the reference sequence for the given task name and sequence name from constants.METAWORLD_TASK_SEQ_DICT
@@ -148,6 +172,9 @@ def _load_metaworld_reference_seq(task_name:str, seq_name: str, load_visual=Fals
     task_name_without_goal_info = task_name.split("-goal")[0]
     assert task_name_without_goal_info in METAWORLD_TASK_SEQ_DICT, f"Unknown task name for the metaworld environment: {task_name_without_goal_info}"
 
+    last_frame = METAWORLD_TASK_SEQ_DICT[task_name_without_goal_info].get("last_frame", None)
+    num_frames = METAWORLD_TASK_SEQ_DICT[task_name_without_goal_info].get("num_frames", None)
+
     if load_visual:
         gif_path = METAWORLD_TASK_SEQ_DICT[task_name_without_goal_info]["sequence_gifs"][seq_name]
         gif = Image.open(gif_path)
@@ -160,7 +187,9 @@ def _load_metaworld_reference_seq(task_name:str, seq_name: str, load_visual=Fals
             pass  # End of frames
 
         frames = [f.convert('RGB') for f in frames]
-        return frames
+        subsampled_frames = subsample_frames(frames, last_frame, num_frames)
+
+        return subsampled_frames
     else:
         fp = METAWORLD_TASK_SEQ_DICT[task_name_without_goal_info]["sequences"][seq_name]
         loaded_states = np.load(fp)  # shape: (num_frames, n_envs, obs_size)
@@ -170,8 +199,21 @@ def _load_metaworld_reference_seq(task_name:str, seq_name: str, load_visual=Fals
         #   We only care about the current state
         # We also only care about the first environment
         loaded_states = loaded_states[:, 0, :18]
-        return loaded_states
 
+        subsampled_states = np.stack(subsample_frames(loaded_states, last_frame, num_frames))
+        return subsampled_states
+
+def subsample_frames(frames, last_frame=None, num_frames=None):
+    """
+    Take num_frames spread evenly over frames[:last_frame]
+    """
+    if last_frame is not None:
+        frames = frames[:last_frame]
+    if num_frames is not None:
+        step = len(frames) // num_frames
+        selected_indices = list(range(0, len(frames), step))[:num_frames]
+        frames = [frames[i] for i in selected_indices]
+    return frames
 
 def load_images_from_reference_seq(env_name:str, task_name:str, seq_name: str) -> (np.ndarray):
     """ Work for both Humanoid and Metaworld environment

@@ -100,7 +100,7 @@ class StateBasedSeqRewardCallback(SeqRewardCallback):
     """
     Custom callback for calculating state based sequence matching rewards after rollouts are collected.
     """
-    def __init__(self, env_name, task_name, matching_fn_cfg, verbose=0, **kwargs):
+    def __init__(self, env_name, task_name, seq_name, matching_fn_cfg, verbose=0, **kwargs):
         """
         Parameters:
             env_name: str
@@ -119,10 +119,10 @@ class StateBasedSeqRewardCallback(SeqRewardCallback):
         self.task_name = task_name
         self.env_name = env_name
         self.env_kwargs = kwargs
-        self.seq_name = matching_fn_cfg["seq_name"]
+        self.seq_name = seq_name
 
-        self._ref_seq = load_reference_seq(env_name=env_name, task_name=task_name, seq_name=matching_fn_cfg["seq_name"], load_visual=False, use_geom_xpos=kwargs.get('use_geom_xpos', False))
-        logger.info(f"[StateBasedSeqRewardCallback] Loaded reference sequence. env_name={env_name}, task_name={task_name}, seq_name={matching_fn_cfg['seq_name']}, self._ref_seq.shape={self._ref_seq.shape}")
+        self._ref_seq = load_reference_seq(env_name=env_name, task_name=task_name, seq_name=seq_name, load_visual=False, use_geom_xpos=kwargs.get('use_geom_xpos', False))
+        logger.info(f"[StateBasedSeqRewardCallback] Loaded reference sequence. env_name={env_name}, task_name={task_name}, seq_name={seq_name}, self._ref_seq.shape={self._ref_seq.shape}")
 
     def on_rollout_end(self) -> None:
         """
@@ -206,13 +206,14 @@ class StateBasedSeqRewardCallback(SeqRewardCallback):
 
 
 class VisualSeqRewardCallback(SeqRewardCallback):
-    def __init__(self, env_name, task_name, matching_fn_cfg, verbose=0, device='cuda', encoder_batch_size=32, use_image_for_ref=True, **kwargs):
+    def __init__(self, env_name, task_name,seq_name, camera_name, matching_fn_cfg, verbose=0, device='cuda', encoder_batch_size=32, use_image_for_ref=True, **kwargs):
         super(VisualSeqRewardCallback, self).__init__(env_name, matching_fn_cfg, verbose, **kwargs)
         
         self.task_name = task_name
         self.env_name = env_name
+        self.seq_name = seq_name
+        self.camera_name = camera_name    
         self.env_kwargs = kwargs
-        self.seq_name = matching_fn_cfg["seq_name"]
         self.matching_fn_cfg = matching_fn_cfg
         self.device = device
         self.use_geom_xpos=kwargs.get('use_geom_xpos', False) # Only matters for humanoid environment
@@ -314,12 +315,11 @@ class VisualSeqRewardCallback(SeqRewardCallback):
         
         torch_obs = th.from_numpy(np.array(self.model.replay_buffer.render_arrays)).float().to(self.device) / 255.0
         frames = rearrange(torch_obs, "n_steps n_envs h w c -> n_steps n_envs c h w")
-       
         if self.env_name.lower() == "metaworld":
             # metaworld observations are flipped depending on camera angle
-            if self.model.env.camera_name == 'corner4':
+            if self.camera_name == 'corner4':
                 frames = th.flip(frames, [4]) # flip along horizontal
-            elif self.model.env.camera_name in ['corner1', 'corner2', 'corner3']:
+            elif self.camera_name in ['corner1', 'corner2', 'corner3']:
                 frames = th.flip(frames, [3]) # flip along vertical
         return frames
 
@@ -375,8 +375,9 @@ class VideoRecorderCallback(BaseCallback):
         n_eval_episodes: int = 1,
         deterministic: bool = True,
         env_name: str = "",
-        camera_name: str = "",
+        seq_name: str = "",
         task_name: str = "",
+        camera_name: str = "",
         use_geom_xpos: bool = True,
         threshold: float = 0.5,
         success_fn_cfg: dict = {},
@@ -422,7 +423,7 @@ class VideoRecorderCallback(BaseCallback):
 
         self.env_name = env_name
         self.task_name = task_name
-        self.seq_name = matching_fn_cfg['seq_name']
+        self.seq_name = seq_name
         self.calc_visual_reward = calc_visual_reward
         self.use_geom_xpos = use_geom_xpos
         self.threshold = threshold
@@ -491,11 +492,11 @@ class VideoRecorderCallback(BaseCallback):
 
                     image_int = np.uint8(screen)[:self._render_dim[0], :self._render_dim[1], :]
 
-                    if self._env_name == "Metaworld":
-                        if self._camera_name == "corner" or self._camera_name == "corner2" or self._camera_name == "corner3":
+                    if self.env_name == "Metaworld":
+                        if self.camera_name == "corner" or self.camera_name == "corner2" or self.camera_name == "corner3":
                             # For some reason, the image is flipped upside down
                             image_int = np.flipud(image_int)
-                        elif self._camera_name == "corner4":
+                        elif self.camera_name == "corner4":
                             # For some reason, the image is flipped left-right
                             image_int = np.fliplr(image_int)
 
@@ -1077,8 +1078,7 @@ class VideoRecorderCallback(BaseCallback):
 
     def _set_metaworld_success_fn(self, success_fn_cfg):
         if self.calc_matching_reward:
-            # Because a ref seq is supplied, self._seq_matching_ref_seq is already set
-            self._success_fn_based_on_all_pos = lambda obs_seq, ref_seq=self._seq_matching_ref_seq, threshold=success_fn_cfg["threshold_for_all_pos"]: self.success_fn(obs_seq[:, :18], ref_seq, threshold)
+            self._success_fn_based_on_all_pos = lambda obs_seq, ref_seq=self.gt_ref_seq, threshold=success_fn_cfg["threshold_for_all_pos"]: self.success_fn(obs_seq[:, :18], ref_seq, threshold)
         else:
             # Else, we cannot calculate the success wrt the reference sequence
             #   (e.g., when we are training with environment reward)

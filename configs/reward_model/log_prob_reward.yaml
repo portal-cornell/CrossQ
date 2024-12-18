@@ -1,7 +1,7 @@
 name: log_prob_reward
 cost_fn: cosine
 scale: 1
-seq_name: rl_expert_20_frames
+seq_name: null
 post_processing_method: []
 reward_vmin: 0
 reward_vmax: 1

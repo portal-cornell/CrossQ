@@ -94,7 +94,6 @@ def validate_and_preprocess_cfg(cfg: DictConfig):
 
         # Remove the goal tag
         task_name = cfg.env.task_name.replace("-goal-observable", "").replace("-goal-hidden", "")
-
         # A automatic way to make the episode length apply to the environment
         if cfg.env.episode_length is None and task_name in METAWORLD_EPISODE_LENGTH:
             edit_msg += f"[Hit Enter to Continue]\n- Automatically setting the episode length from {cfg.env.episode_length} to {METAWORLD_EPISODE_LENGTH[task_name]} for the task {task_name}.\n"
@@ -102,7 +101,7 @@ def validate_and_preprocess_cfg(cfg: DictConfig):
 
         # A eautomatic way to make the camera angle apply to the environment
         if cfg.env.camera_name is None:
-            if "seq_name" in cfg.reward_model:
+            if cfg.reward_model.seq_name is not None:
                 # Extract the reference camera angle from the sequence name
                 #   For now, we only handle "_corner", "_corner2", "_corner3", "_corner4"
                 if "_corner" in cfg.reward_model.seq_name:
@@ -118,9 +117,7 @@ def validate_and_preprocess_cfg(cfg: DictConfig):
 
                 cfg.env.camera_name = METAWORLD_DEFAULT_CAMERA[task_name]
 
-        if edit_msg:
-            # Warn the user about automatically setting the episode length and/or camera angle
-            input(edit_msg)
+        logger.warning(edit_msg)
 
         assert cfg.env.episode_length is not None, f"Please set the episode length for the environment {cfg.env.name} in command line or add the task name to METAWORLD_EPISODE_LENGTH in constants.py."
         assert cfg.env.camera_name is not None, f"Please set the camera name for the environment {cfg.env.name} in command line or add the task name to METAWORLD_DEFAULT_CAMERA in constants.py or specifiy a reference sequence that contain camera name."

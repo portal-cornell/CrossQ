@@ -36,7 +36,7 @@ from vlm_reward.reward_main import dist_worker_compute_reward
 from vlm_reward.vlm_buffer import GeomXposReplayBuffer, VLMReplayBuffer
 from stable_baselines3.common.buffers import ReplayBuffer
 from callbacks import VideoRecorderCallback, WandbCallback, StateBasedSeqRewardCallback, VisualSeqRewardCallback
-from constants import METAWORLD_CAMERA
+from constants import METAWORLD_DEFAULT_CAMERA
 
 def get_training_envs(cfg: DictConfig):
     """Create the training environment and the relevant kwargs for creating the inference environment
@@ -70,7 +70,7 @@ def get_training_envs(cfg: DictConfig):
             
             env_cls_to_use = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE if "goal-observable" in cfg.env.task_name else ALL_V2_ENVIRONMENTS_GOAL_HIDDEN
             task_type = cfg.env.task_name.split('-goal-hidden')[0].split('-goal-observable')[0]
-            camera_name = METAWORLD_CAMERA[task_type]
+            camera_name = METAWORLD_DEFAULT_CAMERA[task_type]
 
             return Monitor(env_cls_to_use[cfg.env.task_name](render_mode="rgb_array", 
                                                             camera_name=camera_name,
@@ -131,6 +131,12 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
     else:
         sac_class = SAC
 
+    if cfg.reward_model.seq_name is not None:
+        seq_name = cfg.reward_model.seq_name
+    else:
+        task_name_only = cfg.env.task_name.replace("-goal-observable", "").replace("-goal-hidden", "")
+        seq_name = f"hand_engineered_{METAWORLD_DEFAULT_CAMERA[task_name_only]}"
+
     model = sac_class(
         MultiInputPolicy if isinstance(training_env.observation_space, gym.spaces.Dict) else "MlpPolicy",
         training_env,
@@ -180,7 +186,8 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
     ) as wandb_run:
         # Make an alias for the wandb in the run_path
         if cfg.logging.wandb_mode != "disabled":
-            os.symlink(os.path.abspath(wandb_run.dir), os.path.join(cfg.logging.run_path, "wandb"), target_is_directory=True)
+            target_path = os.path.join(cfg.logging.run_path, "wandb")
+            os.symlink(os.path.abspath(wandb_run.dir), target_path, target_is_directory=True)
 
         checkpoint_dir = os.path.join(cfg.logging.run_path, "checkpoint")
 
@@ -208,6 +215,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             # This allow us to calculate the unifying reward/metric that all methods are compared against
             #   i.e. it defines "rollout/sum_total_reward_per_epsisode" in wandb
             env_name = cfg.env.name,
+            seq_name = seq_name,
             camera_name = cfg.env.get("camera_name", ""),  # Only used for Metaworld
             task_name=cfg.env.task_name,
             threshold=cfg.env.pose_matching_stage_threshold if "pose_matching_stage_threshold" in cfg.env else 0.0,
@@ -230,13 +238,16 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
                 reward_callback = VisualSeqRewardCallback( 
                                     env_name = cfg.env.name,
                                     task_name = cfg.env.task_name,
+                                    seq_name = seq_name,
                                     matching_fn_cfg = dict(cfg.reward_model),
                                     device = 'cuda',
+                                    camera_name = cfg.env.get("camera_name", ""),  # Only used for Metaworld
                                     encoder_batch_size=cfg.visual_encoder.encoder_batch_size)
             else:
                 reward_callback = StateBasedSeqRewardCallback(
                                     env_name = cfg.env.name,
                                     task_name = cfg.env.task_name,
+                                    seq_name = seq_name,
                                     matching_fn_cfg = dict(cfg.reward_model),
                                     # This is only used for the HumanoidSpawnedUpCustom env
                                     use_geom_xpos = "geom_xpos" in cfg.env.reward_type if "reward_type" in cfg.env else False,

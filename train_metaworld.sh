@@ -60,7 +60,7 @@
 # python train.py env=Metaworld env.env_reward_type='none' env.task_name='button-press-v2-goal-observable' env.temporal_encoding=true reward_model='soft_dtw_plus' visual_encoder='resnet50' reward_model.seq_name='rl_expert_20_frames' reward_model.cost_fn='cosine' logging.wandb_mode='online' 
 
 # python train.py env=Metaworld env.env_reward_type='none' env.task_name='button-press-v2-goal-observable' env.temporal_encoding=true reward_model='even_distribution' visual_encoder='resnet50' reward_model.seq_name='rl_expert_20_frames' reward_model.cost_fn='cosine' logging.wandb_mode='online' 
-python train.py env=Metaworld env.env_reward_type='none' env.task_name='window-open-v2-goal-observable' env.temporal_encoding=true reward_model='temporal_ot' visual_encoder='resnet50' reward_model.seq_name='rl_expert_20_frames' reward_model.cost_fn='diagonal_cosine' logging.wandb_mode='disabled' reward_model.tau=0.1
+python train.py env=Metaworld env.env_reward_type='none' env.task_name='bin-picking-v2-goal-observable' env.temporal_encoding=true reward_model='temporal_ot' visual_encoder='resnet50' reward_model.cost_fn='diagonal_cosine' logging.wandb_mode='online' reward_model.tau=0.1
 
 # python train.py env=Metaworld env.env_reward_type='none' env.task_name='button-press-v2-goal-observable' env.temporal_encoding=true reward_model='log_prob_reward' visual_encoder='resnet50' reward_model.seq_name='rl_expert_20_frames' reward_model.cost_fn='diagonal_cosine' logging.wandb_mode='online' reward_model.tau=1
 

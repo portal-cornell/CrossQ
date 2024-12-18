@@ -13,9 +13,8 @@ compute:
   n_cpu_workers: 8  # One gym env per cpu
 
 logging:
-  log_freq: 300  # How many times to log during training
-  video_save_freq: 20000 # Frequency to save the video
-  model_save_freq: 200000  # Frequency to save the model
+  video_save_freq: 10000 # Save a video every video_save_freq steps (more of a period)
+  model_save_freq: 200000  # Save a model every model_save_freq steps (more of a period)
 
   wandb_project: crossQ
   wandb_mode: online

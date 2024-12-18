@@ -10,7 +10,6 @@ compute:
   n_cpu_workers: 8  # One gym env per cpu
 
 logging:
-  log_freq: 300  # How many times to log during training
   video_save_freq: 5000 # Frequency to save the video
   model_save_freq: 50000  # Frequency to save the model
 

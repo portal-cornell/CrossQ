@@ -1,7 +1,7 @@
 name: prob_ranked
 cost_fn: euclidean
 scale: 1
-seq_name: rl_expert_20_frames
+seq_name: null
 post_processing_method: 
     - penalize_inversions
 reward_vmin: 0

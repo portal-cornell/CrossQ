@@ -1,0 +1,11 @@
+- env=Metaworld
+- env.env_reward_type=none
+- env.task_name=window-open-v2-goal-observable
+- env.temporal_encoding=true
+- reward_model=coverage
+- visual_encoder=resnet50
+- reward_model.cost_fn=diagonal_cosine
+- logging.wandb_mode=online
+- logging.video_save_freq=50000
+- reward_model.tau=1
+- rl_algo.discount_factor=0.9

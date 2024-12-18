@@ -4,179 +4,239 @@ METAWORLD_TASK_SEQ_DICT = {
     # ==================== Easy Tasks ====================
     "button-press-v2":
     {
+        "num_frames": 20,
+        "last_frame": 90,
         "task_type": "sequence_following",
         "sequences": {
             "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-11-25-125324_sb3_sac_envt=button-press-v2-goal-hidden_rm=hand_engineered_nt=ep-len=200_sparse/eval/1000000_rollouts_states.npy",
             "rl_expert_20_frames": "/share/portal/wph52/CrossQ/ref_seqs/button_press/1000000_rollouts_subsampled_20_states.npy",
             "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/button-press-v2/button-press-v2_corner_0_states.npy"
+        },
+        "sequence_gifs": {
+            "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-11-25-125324_sb3_sac_envt=button-press-v2-goal-hidden_rm=hand_engineered_nt=ep-len=200_sparse/eval/1000000_rollouts.gif",
+            "rl_expert_20_frames": "/share/portal/wph52/CrossQ/ref_seqs/button_press/1000000_rollouts_subsampled_20.gif",
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/button-press-v2/button-press-v2_corner_0.gif"
         }
     },
     "door-close-v2":
     {
+        "num_frames": 20,
+        "last_frame": 76,
         "task_type": "sequence_following",
         "sequences": {
             "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-11-25-124432_sb3_sac_envt=door-close-v2-goal-hidden_rm=hand_engineered_nt=ep-len=200_sparse/eval/1000000_rollouts_states.npy",
             "rl_expert_20_frames": "/share/portal/wph52/CrossQ/ref_seqs/door_close/1000000_rollouts_subsampled_20_states.npy",
             "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/door-close-v2/door-close-v2_corner_0_states.npy"
+        },
+        "sequence_gifs": {
+            "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-11-25-124432_sb3_sac_envt=door-close-v2-goal-hidden_rm=hand_engineered_nt=ep-len=200_sparse/eval/1000000_rollouts.gif",
+            "rl_expert_20_frames": "/share/portal/wph52/CrossQ/ref_seqs/door_close/1000000_rollouts_subsampled_20.gif",
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/door-close-v2/door-close-v2_corner_0.gif"
         }
     },
     # ==================== Medium Tasks ====================
     "door-open-v2":
     {
+        "num_frames": 20,
+        "last_frame": 100,
         "task_type": "sequence_following",
         "sequences": {
-            # From RL expert trained with episode length 125, 1M steps, seed=9, dense env reward
             "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-12-09-212051_sb3_sac_envt=door-open-v2-goal-observable_rm=hand_engineered_nt=dense/eval/1000000_rollouts_states.npy",
             "rl_expert_corner3": "/share/portal/hw575/CrossQ/train_logs/2024-12-15-183942_sb3_sac_envt=door-open-v2-goal-observable_rm=hand_engineered_nt=dense_corner3/eval/1000000_rollouts_states.npy",
-            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/door-open-v2/door-open-v2_corner3_0_states.npy",
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/door-open-v2/door-open-v2_corner3_0_states.npy"
         },
+        "sequence_gifs": {
+            "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-12-09-212051_sb3_sac_envt=door-open-v2-goal-observable_rm=hand_engineered_nt=dense/eval/1000000_rollouts.gif",
+            "rl_expert_corner3": "/share/portal/hw575/CrossQ/train_logs/2024-12-15-183942_sb3_sac_envt=door-open-v2-goal-observable_rm=hand_engineered_nt=dense_corner3/eval/1000000_rollouts.gif",
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/door-open-v2/door-open-v2_corner3_0.gif"
+        }
     },
     "window-open-v2":
     {
+        "num_frames": 20,
+        "last_frame": 94,
         "task_type": "sequence_following",
         "sequences": {
-            # From RL expert trained with episode length 125, seed=9, dense env reward (picked an earlier rollout because it looked more efficient)
-            #   1M rollout actually closed the door after opening it
-            "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-12-09-212409_sb3_sac_envt=window-open-v2-goal-observable_rm=hand_engineered_nt=dense/eval/940000_rollouts_states.npy", 
+            "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-12-09-212409_sb3_sac_envt=window-open-v2-goal-observable_rm=hand_engineered_nt=dense/eval/940000_rollouts_states.npy",
             "rl_expert_corner3": "/share/portal/hw575/CrossQ/train_logs/2024-12-15-181003_sb3_sac_envt=window-open-v2-goal-observable_rm=hand_engineered_nt=dense_corner3/eval/1000000_rollouts_states.npy",
-            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/window-open-v2/window-open-v2_corner3_0_states.npy",
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/window-open-v2/window-open-v2_corner3_0_states.npy"
+        },
+        "sequence_gifs": {
+            "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-12-09-212409_sb3_sac_envt=window-open-v2-goal-observable_rm=hand_engineered_nt=dense/eval/940000_rollouts.gif",
+            "rl_expert_corner3": "/share/portal/hw575/CrossQ/train_logs/2024-12-15-181003_sb3_sac_envt=window-open-v2-goal-observable_rm=hand_engineered_nt=dense_corner3/eval/1000000_rollouts.gif",
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/window-open-v2/window-open-v2_corner3_0.gif"
         }
     },
     "lever-pull-v2":
     {
+        
+        "num_frames": 20,
+        "last_frame": 111, 
         "task_type": "sequence_following",
         "sequences": {
-            # Hand-engineered policy
-            #   corner2 has the best view of the lever
+            # best view
             "hand_engineered_corner2": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/lever-pull-v2/lever-pull-v2_corner2_0_states.npy",
-            # However, TemporalOT used corner4
-            "hand_engineered_corner4": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/lever-pull-v2/lever-pull-v2_corner4_0_states.npy",
+            # temporalOT
+            "hand_engineered_corner4": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/lever-pull-v2/lever-pull-v2_corner4_0_states.npy"
+        },
+        "sequence_gifs": {
+            "hand_engineered_corner2": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/lever-pull-v2/lever-pull-v2_corner2_0.gif",
+            "hand_engineered_corner4": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/lever-pull-v2/lever-pull-v2_corner4_0.gif"
         }
     },
     "hand-insert-v2":
     {
+        "num_frames": 20,
+        "last_frame": 78, 
         "task_type": "sequence_following",
         "sequences": {
-            # Hand-engineered policy
-            #   corner3 has the best view of the hole
+            # best view
             "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/hand-insert-v2/hand-insert-v2_corner_0_states.npy",
-            # However, TemporalOT used corner
-            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/hand-insert-v2/hand-insert-v2_corner_0_states.npy",
+            # temporalOT
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/hand-insert-v2/hand-insert-v2_corner_0_states.npy"
+        },
+        "sequence_gifs": {
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/hand-insert-v2/hand-insert-v2_corner_0.gif",
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/hand-insert-v2/hand-insert-v2_corner_0.gif"
         }
     },
-    "push-v2":
-    {
+    "push-v2": {
+        "num_frames": 20,
+        "last_frame": 93,
         "task_type": "sequence_following",
         "sequences": {
-            # Hand-engineered policy
-            #   corner3 has the best view of the puck AND TemporalOT also uses this viewpoint
-            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/push-v2/push-v2_corner3_0_states.npy",
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/push-v2/push-v2_corner3_0_states.npy"
+        },
+        "sequence_gifs": {
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/push-v2/push-v2_corner3_0.gif"
         }
     },
-    # ==================== Hard Tasks ====================
-    "basketball-v2":
-    {
+    "basketball-v2": {
+        "num_frames": 20,
+        "last_frame": 110,
         "task_type": "sequence_following",
         "sequences": {
-            # Hand-engineered policy
-            #   corner has the best view of the basketball AND TemporalOT also uses this viewpoint
-            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/basketball-v2/basketball-v2_corner_0_states.npy",
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/basketball-v2/basketball-v2_corner_0_states.npy"
+        },
+        "sequence_gifs": {
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/basketball-v2/basketball-v2_corner_0.gif"
         }
     },
-    "stick-push-v2":
-    {
+    "stick-push-v2": {
+        "num_frames": 20,
+        "last_frame": 92,
         "task_type": "sequence_following",
         "sequences": {
-            # Hand-engineered policy
-            #   corner4 has the best view of the stick
+            # best view
             "hand_engineered_corner4": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/stick-push-v2/stick-push-v2_corner4_0_states.npy",
-            # However, TemporalOT used corner
-            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/stick-push-v2/stick-push-v2_corner_0_states.npy",
+            # temporalOT
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/stick-push-v2/stick-push-v2_corner_0_states.npy"
+        },
+        "sequence_gifs": {
+            "hand_engineered_corner4": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/stick-push-v2/stick-push-v2_corner4_0.gif",
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/stick-push-v2/stick-push-v2_corner_0.gif"
         }
     },
-    "door-lock-v2":
-    {
+    "door-lock-v2": {
+        "num_frames": 20,
+        "last_frame": 85,
         "task_type": "sequence_following",
         "sequences": {
-            # Hand-engineered policy
-            #  TemporalOT used corner
-            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/door-lock-v2/door-lock-v2_corner_0_states.npy",
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/door-lock-v2/door-lock-v2_corner_0_states.npy"
+        },
+        "sequence_gifs": {
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/door-lock-v2/door-lock-v2_corner_0.gif"
         }
     },
-    # ==================== Additional Medium Tasks ====================
-    "bin-picking-v2":
-    {
+    "bin-picking-v2": {
+        "num_frames": 20,
+        "last_frame": 114,
         "task_type": "sequence_following",
         "sequences": {
-            # Hand-engineered policy
-            #   TemporalOT used corner
-            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/bin-picking-v2/bin-picking-v2_corner_0_states.npy",
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/bin-picking-v2/bin-picking-v2_corner_0_states.npy"
+        },
+        "sequence_gifs": {
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/bin-picking-v2/bin-picking-v2_corner_0.gif"
         }
     },
-    "box-close-v2":
-    {
+    "box-close-v2": {
+        "num_frames": 20,
+        "last_frame": 109,
         "task_type": "sequence_following",
         "sequences": {
-            # Hand-engineered policy
-            #   TemporalOT used corner3
-            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/box-close-v2/box-close-v2_corner3_0_states.npy",
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/box-close-v2/box-close-v2_corner3_0_states.npy"
+        },
+        "sequence_gifs": {
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/box-close-v2/box-close-v2_corner3_0.gif"
         }
     },
-    "pick-place-v2":
-    {
+    "pick-place-v2": {
+        "num_frames": 20,
+        "last_frame": 75,
         "task_type": "sequence_following",
         "sequences": {
-            # Hand-engineered policy
-            #   TemporalOT used corner3
-            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/pick-place-v2/pick-place-v2_corner3_0_states.npy",
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/pick-place-v2/pick-place-v2_corner3_0_states.npy"
+        },
+        "sequence_gifs": {
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/pick-place-v2/pick-place-v2_corner3_0.gif"
         }
     },
-    # ==================== Additional Hard Tasks ====================
-    "assembly-v2":
-    {
+    "assembly-v2": {
+        "num_frames": 20,
+        "last_frame": 110,
         "task_type": "sequence_following",
         "sequences": {
-            # Hand-engineered policy
-            #   TemporalOT used corner
-            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/assembly-v2/assembly-v2_corner_0_states.npy",
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/assembly-v2/assembly-v2_corner_0_states.npy"
+        },
+        "sequence_gifs": {
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/assembly-v2/assembly-v2_corner_0.gif"
         }
     },
-    "disassemble-v2":
-    {
+    "disassemble-v2": {
+        "num_frames": 20,
+        "last_frame": 108,
         "task_type": "sequence_following",
         "sequences": {
-            # Hand-engineered policy
-            #   TemporalOT used corner
-            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/disassemble-v2/disassemble-v2_corner_0_states.npy",
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/disassemble-v2/disassemble-v2_corner_0_states.npy"
+        },
+        "sequence_gifs": {
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/disassemble-v2/disassemble-v2_corner_0.gif"
         }
     },
-    "hammer-v2":
-    {
+    "hammer-v2": {
+        "num_frames": 20,
+        "last_frame": 81,
         "task_type": "sequence_following",
         "sequences": {
-            # Hand-engineered policy
-            #   TemporalOT used corner3
-            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/hammer-v2/hammer-v2_corner3_0_states.npy",
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/hammer-v2/hammer-v2_corner3_0_states.npy"
+        },
+        "sequence_gifs": {
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/hammer-v2/hammer-v2_corner3_0.gif"
         }
     },
-    "peg-insert-side-v2":
-    {
+    "peg-insert-side-v2": {
+        "num_frames": 20,
+        "last_frame": 102,
         "task_type": "sequence_following",
         "sequences": {
-            # Hand-engineered policy
-            #   TemporalOT used corner3
-            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/peg-insert-side-v2/peg-insert-side-v2_corner3_0_states.npy",
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/peg-insert-side-v2/peg-insert-side-v2_corner3_0_states.npy"
+        },
+        "sequence_gifs": {
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/peg-insert-side-v2/peg-insert-side-v2_corner3_0.gif"
         }
     },
-    "door-unlock-v2":
-    {
+    "door-unlock-v2": {
+        "num_frames": 20,
+        "last_frame": 59,
         "task_type": "sequence_following",
         "sequences": {
-            # Hand-engineered policy
-            #   TemporalOT used corner
-            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/door-unlock-v2/door-unlock-v2_corner_0_states.npy",
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/door-unlock-v2/door-unlock-v2_corner_0_states.npy"
+        },
+        "sequence_gifs": {
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/door-unlock-v2/door-unlock-v2_corner_0.gif"
         }
     }
+
 }
 
 # Used abosolute path because eval is run in a subdirectory

@@ -1,0 +1,67 @@
+env:
+  name: Metaworld
+  env_reward_type: none
+  task_name: window-open-v2-goal-observable
+  seq_name: null
+  episode_length: null
+  camera_name: null
+  render_dim:
+  - 480
+  - 480
+  temporal_encoding: true
+  success_eval:
+    threshold_for_all_pos: 0.9
+reward_model:
+  name: coverage
+  cost_fn: diagonal_cosine
+  scale: 1
+  seq_name: null
+  post_processing_method: []
+  reward_vmin: 0
+  reward_vmax: 1
+  tau: 1
+  modification:
+    method: nothing
+rl_algo:
+  name: sb3_sac
+  lr: 0.001
+  discount_factor: 0.9
+  batch_size: 256
+  adam_b1: 0.9
+  critic_activation: relu
+  crossq_style: false
+  dropout: false
+  dropout_rate: null
+  ln: Fase
+  n_critics: 2
+  policy_delay: 1
+  tau: 0.005
+  bnstats_live_net: false
+  net_arch:
+    pi:
+    - 256
+    - 256
+    qf:
+    - 256
+    - 256
+visual_encoder:
+  name: resnet50
+  encoder_batch_size: 32
+  use_image_for_ref: true
+seed: 9
+total_timesteps: 1000000
+run_notes: null
+model_base_path: null
+model_checkpoint: null
+compute:
+  distributed: false
+  n_gpu_workers: 1
+  n_cpu_workers: 8
+logging:
+  video_save_freq: 50000
+  model_save_freq: 200000
+  wandb_project: crossQ
+  wandb_mode: online
+  wandb_tags: []
+  run_name: null
+  run_path: null
