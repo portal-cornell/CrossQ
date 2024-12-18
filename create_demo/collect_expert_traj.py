@@ -1,5 +1,15 @@
 """
 Adapted from https://github.com/fuyw/TemporalOT/blob/main/collect_expert_traj.py
+
+Usage:
+- If you just want to use the default camera (assuming that it's in the dictionary), you can run:
+    python create_demo/collect_expert_traj.py -e hammer-v2 -c d
+- If you want to use a specific camera, you can run:
+    python create_demo/collect_expert_traj.py -e hammer-v2 -c corner3
+
+    The options are: corner, corner2, corner3, corner4
+
+It is helpful to double check the gif generated and the rewards/successes printed in the terminal to make sure that we are getting good demos!
 """
 
 # An example of generating expert demos by MetaWorld's scripted policies.
@@ -138,14 +148,14 @@ def record_video(fname, large_images):
 parser = argparse.ArgumentParser()
 parser.add_argument("-e", "--env_name", type=str, default="hammer-v2")
 parser.add_argument("-n", "--num_demos", type=int, default=1)
-parser.add_argument("-c", "--camera_name", type=str, default="", choices=["", "d", "corner", "corner2", "corner3", "corner4"])
+parser.add_argument("-c", "--camera_name", type=str, default="d", choices=["d", "corner", "corner2", "corner3", "corner4"])
 args = parser.parse_args()
 
 num_demos = args.num_demos
 env_name = args.env_name
 
 # "d" is a placeholder for the default camera
-if args.camera_name and args.camera_name != "d":
+if args.camera_name != "d":
     camera_name = args.camera_name
 else:
     camera_name = CAMERA[env_name]

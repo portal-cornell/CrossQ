@@ -162,6 +162,20 @@ For example:
 python train.py env=Metaworld env.env_reward_type='sparse' env.task_name='button-press-v2-goal-observable' ...
 ```
 
+### (New! 12/17) Automatically setting episode length and camera angle
+To automate matching our experiments with recent work ([TemporalOT](https://openreview.net/forum?id=LEed5Is4oi)), we now have the option to 
+- set the episode length based on the task name (`env.task_name`)
+    - The mapping is defined in `constants.py` in the dictionary `METAWORLD_EPISODE_LENGTH`
+- set the camera angle
+    - Based on the reference sequence (`reward_model.seq_name`) if the `reward_model.seq_name` is defined. Currently, we only handle the camera angle that has `'corner`' in the `reward_model.seq_name` (e.g. `hand_engineered_corner3`).
+    - If reference sequence doesn't exist, it will try to set the camera angle based on the task name. The mapping is defined in `constants.py` in the dictionary `METAWORLD_DEFAULT_CAMERA`
+
+#### Manually setting these parameters
+You can do so in the command line! For example:
+```bash
+python train.py env=Metaworld env.task_name='button-press-v2-goal-observable' env.episode_length=125 env.camera_name='corner' ...
+```
+
 ### Modifying the environment
 
 - Main training script defines a make_env_fn, which returns an instantation of an environment class
@@ -219,10 +233,26 @@ class SawyerButtonPressEnvV2(SawyerXYZEnv):
 
 ## Sequence Matching Reward in Metaworld
 
+### (New! 12/17) Generating demos (from Metaworld's hand-engineered policy)
+Generated reference sequences are stored in `create_demo/metaworld_demos`. 
+
+Usage:
+- If you just want to use the default camera (assuming that it's in the dictionary), you can run:
+```bash
+python create_demo/collect_expert_traj.py -e hammer-v2 -c d
+```
+- If you want to use a specific camera (the options are: corner, corner2, corner3, corner4), you can run:
+```bash
+python create_demo/collect_expert_traj.py -e hammer-v2 -c corner3
+```
+    
+It is helpful to double check the gif generated and the rewards/successes printed in the terminal to make sure that we are getting good demos!
+
+
 ### Setting the sequences
 Similar to the Humanoid env, all the reference sequence are stored in `constants.py` in dictionary `METAWORLD_TASK_SEQ_DICT`
 
-An example entry for a task is (TODO: the path is deprecated)
+An example entry for a task is
 ```bash
 "button-press-v2":
     {
