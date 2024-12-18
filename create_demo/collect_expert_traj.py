@@ -85,7 +85,7 @@ CAMERA = {
     'peg-insert-side-v2': 'corner3',
     'push-wall-v2': 'corner',
     'soccer-v2': 'corner',
-    'assembly-v2': 'corner', # Added by us
+    'assembly-v2': 'corner',
     'disassemble-v2': 'corner',
     'pick-place-wall-v3': 'corner3',
     'pick-place-v2': 'corner3',
@@ -121,7 +121,7 @@ MAX_PATH_LENGTH = {
     'peg-insert-side-v2': 150,
     'push-wall-v2': 175,
     'soccer-v2': 125,
-    'assembly-v2': 175, # Added by us
+    'assembly-v2': 175,
     'disassemble-v2': 125,
     'pick-place-wall-v3': 175,
     'pick-place-v2': 125,

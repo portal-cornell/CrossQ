@@ -60,6 +60,15 @@ METAWORLD_TASK_SEQ_DICT = {
             "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/hand-insert-v2/hand-insert-v2_corner_0_states.npy",
         }
     },
+    "push-v2":
+    {
+        "task_type": "sequence_following",
+        "sequences": {
+            # Hand-engineered policy
+            #   corner3 has the best view of the puck AND TemporalOT also uses this viewpoint
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/push-v2/push-v2_corner3_0_states.npy",
+        }
+    },
     # ==================== Hard Tasks ====================
     "basketball-v2":
     {
@@ -68,15 +77,6 @@ METAWORLD_TASK_SEQ_DICT = {
             # Hand-engineered policy
             #   corner has the best view of the basketball AND TemporalOT also uses this viewpoint
             "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/basketball-v2/basketball-v2_corner_0_states.npy",
-        }
-    },
-    "push-v2":
-    {
-        "task_type": "sequence_following",
-        "sequences": {
-            # Hand-engineered policy
-            #   corner3 has the best view of the puck AND TemporalOT also uses this viewpoint
-            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/push-v2/push-v2_corner3_0_states.npy",
         }
     },
     "stick-push-v2":
@@ -90,7 +90,89 @@ METAWORLD_TASK_SEQ_DICT = {
             "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/stick-push-v2/stick-push-v2_corner_0_states.npy",
         }
     },
-
+    "door-lock-v2":
+    {
+        "task_type": "sequence_following",
+        "sequences": {
+            # Hand-engineered policy
+            #  TemporalOT used corner
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/door-lock-v2/door-lock-v2_corner_0_states.npy",
+        }
+    },
+    # ==================== Additional Medium Tasks ====================
+    "bin-picking-v2":
+    {
+        "task_type": "sequence_following",
+        "sequences": {
+            # Hand-engineered policy
+            #   TemporalOT used corner
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/bin-picking-v2/bin-picking-v2_corner_0_states.npy",
+        }
+    },
+    "box-close-v2":
+    {
+        "task_type": "sequence_following",
+        "sequences": {
+            # Hand-engineered policy
+            #   TemporalOT used corner3
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/box-close-v2/box-close-v2_corner3_0_states.npy",
+        }
+    },
+    "pick-place-v2":
+    {
+        "task_type": "sequence_following",
+        "sequences": {
+            # Hand-engineered policy
+            #   TemporalOT used corner3
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/pick-place-v2/pick-place-v2_corner3_0_states.npy",
+        }
+    },
+    # ==================== Additional Hard Tasks ====================
+    "assembly-v2":
+    {
+        "task_type": "sequence_following",
+        "sequences": {
+            # Hand-engineered policy
+            #   TemporalOT used corner
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/assembly-v2/assembly-v2_corner_0_states.npy",
+        }
+    },
+    "disassemble-v2":
+    {
+        "task_type": "sequence_following",
+        "sequences": {
+            # Hand-engineered policy
+            #   TemporalOT used corner
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/disassemble-v2/disassemble-v2_corner_0_states.npy",
+        }
+    },
+    "hammer-v2":
+    {
+        "task_type": "sequence_following",
+        "sequences": {
+            # Hand-engineered policy
+            #   TemporalOT used corner3
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/hammer-v2/hammer-v2_corner3_0_states.npy",
+        }
+    },
+    "peg-insert-side-v2":
+    {
+        "task_type": "sequence_following",
+        "sequences": {
+            # Hand-engineered policy
+            #   TemporalOT used corner3
+            "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/peg-insert-side-v2/peg-insert-side-v2_corner3_0_states.npy",
+        }
+    },
+    "door-unlock-v2":
+    {
+        "task_type": "sequence_following",
+        "sequences": {
+            # Hand-engineered policy
+            #   TemporalOT used corner
+            "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/door-unlock-v2/door-unlock-v2_corner_0_states.npy",
+        }
+    }
 }
 
 # Used abosolute path because eval is run in a subdirectory
@@ -300,6 +382,8 @@ HUMANOID_TASK_SEQ_DICT = {
 
 
 METAWORLD_EPISODE_LENGTH = {
+    'door-close-v2': 125, # Added by us
+    'button-press-v2': 125, # Added by us
     'hammer-v2': 125,
     'drawer-close-v2': 125,
     'drawer-open-v2': 125,
@@ -311,9 +395,9 @@ METAWORLD_EPISODE_LENGTH = {
     'plate-slide-v2': 125,
     'hand-insert-v2': 125,
     'peg-insert-side-v2': 150,
-    'assembly-v3': 175,
     'push-wall-v2': 175,
     'soccer-v2': 125,
+    'assembly-v2': 175,
     'disassemble-v2': 125,
     'pick-place-wall-v3': 175,
     'pick-place-v2': 125,
@@ -334,6 +418,8 @@ METAWORLD_EPISODE_LENGTH = {
 
 
 METAWORLD_DEFAULT_CAMERA = {
+    'button-press-v2': 'corner', # Added by us
+    'door-close-v2': 'corner', # Added by us
     'hammer-v2': 'corner3',
     'drawer-close-v2': 'corner',
     'drawer-open-v2': 'corner',
@@ -345,9 +431,9 @@ METAWORLD_DEFAULT_CAMERA = {
     'plate-slide-v2': 'corner',
     'hand-insert-v2': 'corner',
     'peg-insert-side-v2': 'corner3',
-    'assembly-v3': 'corner',
     'push-wall-v2': 'corner',
     'soccer-v2': 'corner',
+    'assembly-v2': 'corner',
     'disassemble-v2': 'corner',
     'pick-place-wall-v3': 'corner3',
     'pick-place-v2': 'corner3',
