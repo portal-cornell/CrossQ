@@ -316,8 +316,11 @@ class VisualSeqRewardCallback(SeqRewardCallback):
         frames = rearrange(torch_obs, "n_steps n_envs h w c -> n_steps n_envs c h w")
        
         if self.env_name.lower() == "metaworld":
-            # metaworld observations are flipped along both axes in the replay buffer
-            frames = th.flip(frames, [3])
+            # metaworld observations are flipped depending on camera angle
+            if self.model.env.camera_name == 'corner4':
+                frames = th.flip(frames, [4]) # flip along horizontal
+            elif self.model.env.camera_name in ['corner1', 'corner2', 'corner3']:
+                frames = th.flip(frames, [3]) # flip along vertical
         return frames
 
     def _on_step(self) -> bool:
@@ -380,6 +383,7 @@ class VideoRecorderCallback(BaseCallback):
         calc_visual_reward: bool = False,
         verbose=0,
         encoder_batch_size=32,
+        discount_factor=.99,
         device='cuda'
     ):
         """
@@ -421,6 +425,7 @@ class VideoRecorderCallback(BaseCallback):
         self.use_geom_xpos = use_geom_xpos
         self.threshold = threshold
         self.calc_visual_reward = calc_visual_reward
+        self.discount_factor = discount_factor
 
         if self.calc_visual_reward:
             self.device=device
@@ -487,7 +492,10 @@ class VideoRecorderCallback(BaseCallback):
 
                     if self.env_name == "Metaworld":
                         # For some reason, the image is flipped upside down
-                        image_int = np.flipud(image_int)
+                        if self._eval_env.camera_name == 'corner4':
+                            image_int = np.fliplr(image_int)
+                        elif self._eval_env.camera_name in ['corner1', 'corner2', 'corner3']:
+                            image_int = np.flipud(image_int)
 
                     raw_screens.append(Image.fromarray(image_int))
                     screens.append(Image.fromarray(image_int))  # The frames here will get plotted with info later
@@ -825,6 +833,7 @@ class VideoRecorderCallback(BaseCallback):
                     reward_vmin=self.reward_vmin,
                     reward_vmax=self.reward_vmax,
                     path_to_save_fig=matching_reward_viz_save_path,
+                    r_discount_factor=self.discount_factor,
                     rolcol_size=2
                 )
 

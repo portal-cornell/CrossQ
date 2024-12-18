@@ -60,8 +60,12 @@
 # python train.py env=Metaworld env.env_reward_type='none' env.task_name='button-press-v2-goal-observable' env.temporal_encoding=true reward_model='soft_dtw_plus' visual_encoder='resnet50' reward_model.seq_name='rl_expert_20_frames' reward_model.cost_fn='cosine' logging.wandb_mode='online' 
 
 # python train.py env=Metaworld env.env_reward_type='none' env.task_name='button-press-v2-goal-observable' env.temporal_encoding=true reward_model='even_distribution' visual_encoder='resnet50' reward_model.seq_name='rl_expert_20_frames' reward_model.cost_fn='cosine' logging.wandb_mode='online' 
+python train.py env=Metaworld env.env_reward_type='none' env.task_name='window-open-v2-goal-observable' env.temporal_encoding=true reward_model='temporal_ot' visual_encoder='resnet50' reward_model.seq_name='rl_expert_20_frames' reward_model.cost_fn='diagonal_cosine' logging.wandb_mode='disabled' reward_model.tau=0.1
 
-python train.py env=Metaworld env.env_reward_type='none' env.task_name='button-press-v2-goal-observable' env.temporal_encoding=true reward_model='coverage' visual_encoder='resnet50' reward_model.seq_name='rl_expert_20_frames' reward_model.cost_fn='cosine' logging.wandb_mode='online' 
+# python train.py env=Metaworld env.env_reward_type='none' env.task_name='button-press-v2-goal-observable' env.temporal_encoding=true reward_model='log_prob_reward' visual_encoder='resnet50' reward_model.seq_name='rl_expert_20_frames' reward_model.cost_fn='diagonal_cosine' logging.wandb_mode='online' reward_model.tau=1
+
+# python train.py env=Metaworld env.env_reward_type='none' env.task_name='button-press-v2-goal-observable' env.temporal_encoding=true reward_model='coverage' visual_encoder='resnet50' reward_model.seq_name='rl_expert_20_frames' reward_model.cost_fn='smoothed_cosine' +reward_model.context_window=8 logging.wandb_mode='online' 
+
 
 # python train.py env=Metaworld env.env_reward_type='none' env.task_name='button-press-v2-goal-observable' env.temporal_encoding=true reward_model='prob_reward' visual_encoder='resnet50' reward_model.tau=1 reward_model.seq_name='rl_expert_20_frames' reward_model.cost_fn='cosine' logging.wandb_mode='online' 'logging.wandb_tags=[ "no_exp", "tau_1"]' 
 

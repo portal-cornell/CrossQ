@@ -3,9 +3,76 @@ import heapq
 from scipy.spatial.distance import cdist
 from scipy.ndimage import uniform_filter1d
 
-def smoothed_cosine_distance(x, y, context_window=3):
+def diagonal_uniform_smoothing(A, N):
     """
-    Compute the cosine distance between x and y, and apply a vertical average smoothing filter of length kernel_length
+    Perform diagonal uniform smoothing over a context window in a matrix.
+
+    Parameters:
+    A (numpy.ndarray): Input 2D matrix.
+    N (int): Context window size for smoothing.
+
+    Returns:
+    numpy.ndarray: Smoothed matrix with the same dimensions as A.
+    """
+    if not isinstance(A, np.ndarray) or A.ndim != 2:
+        raise ValueError("Input A must be a 2D numpy array")
+
+    rows, cols = A.shape
+    N = min(N, rows - 1, cols - 1)  # Clip N to fit within matrix dimensions
+    A_smooth = np.zeros_like(A, dtype=float)
+
+    # Iterate through each element of the matrix
+    for i in range(rows):
+        for j in range(cols):
+            # Define the diagonal context window boundaries
+            
+            window_values = []
+            for k in range(N + 1):
+                row = np.clip(i+k, 0, rows - 1)
+                col = np.clip(j+k, 0, cols - 1)
+
+                window_values.append(A[row, col])
+            
+            A_smooth[i, j] = np.mean(window_values)
+
+    return A_smooth
+
+def weighted_temperature_cosine_distance(x, y):
+    x_to_y = cosine_distance(x, y)
+    y_to_y = cosine_distance(y, y)
+    distance_per_y = y_to_y.sum(axis=0, keepdims=True)
+    scaled_distance = x_to_y / distance_per_y
+    return scaled_distance
+
+
+def weighted_temperature_manhattan_distance(x, y):
+    x_to_y = manhattan_distance(x, y)
+    y_to_y = manhattan_distance(y, y)
+    distance_per_y = y_to_y.sum(axis=0, keepdims=True)
+    scaled_distance = x_to_y / distance_per_y
+    return scaled_distance
+
+
+def diagonal_smoothed_cosine_distance(x, y, context_window=3):
+    """
+    Compute the cosine distance between x and y, and apply a diagonal average smoothing filter of length context_window
+    """
+
+    similarity = np.dot(x, y.T) / np.linalg.norm(x, axis=1, keepdims=True) / np.linalg.norm(y.T, axis=0, keepdims=True) # Transpose B to match dimensions
+    similarity_rescaled = (similarity + 1) / 2
+    
+    # Convert cosine similarity to cosine distance
+    distance = 1 - similarity_rescaled
+    
+    # Apply vertical smoothing filter along the rows
+    smoothed_distance = diagonal_uniform_smoothing(distance, context_window)
+
+    return smoothed_distance
+
+
+def smoothed_cosine_distance(x, y, context_window=5):
+    """
+    Compute the cosine distance between x and y, and apply a vertical average smoothing filter of length context_window
     """
 
     similarity = np.dot(x, y.T) / np.linalg.norm(x, axis=1, keepdims=True) / np.linalg.norm(y.T, axis=0, keepdims=True) # Transpose B to match dimensions
@@ -178,6 +245,8 @@ def a_star_shortest_path(matrix, start, goal):
 
     return float('inf')  # If there's no valid path to the goal
 
+
+
 def manhattan_distance(x, y):
     """
     Manhattan distance matrix between two sequences of coordinates
@@ -228,7 +297,9 @@ def nav_shortest_path_distance(x, y, invert=False):
 
 
 COST_FN_DICT = {
+    "diagonal_cosine": diagonal_smoothed_cosine_distance,
     "smoothed_cosine": smoothed_cosine_distance,
+    "weighted_temp_cosine": weighted_temperature_cosine_distance,
     "cosine": cosine_distance,
     "euclidean": euclidean_distance_advanced,
     "euclidean_arms_only": euclidean_distance_advanced_arms_only,
@@ -239,5 +310,6 @@ COST_FN_DICT = {
     "nav_manhattan": nav_manhantan_distance,
     "nav_shortest_path": nav_shortest_path_distance,
     "manhattan": manhattan_distance,
+    "weighted_temp_manhattan": weighted_temperature_manhattan_distance,
    #"p_prev_visited_manhattan": p_prev_visited_manhattan
 }

@@ -268,7 +268,7 @@ METAWORLD_CAMERA = {
     'hammer-v2': 'corner3',
     'drawer-close-v2': 'corner',
     'drawer-open-v2': 'corner',
-    'door-open-v2': 'corner', # 'corner3', # change back to corner3 for temporalOT
+    'door-open-v2': 'corner3',
     'door-close-v2': 'corner',
     'bin-picking-v2': 'corner',
     'button-press-topdown-v2': 'corner',
@@ -289,7 +289,7 @@ METAWORLD_CAMERA = {
     'stick-pull-v2': 'corner3',
     'shelf-place-v2': 'corner',
     'window-close-v2': 'corner3',
-    'window-open-v2': 'corner', #'corner3', # change back to corner3 for temporalOT
+    'window-open-v2': 'corner3',
     'reach-v2': 'corner3',
     'button-press-wall-v2': 'corner',
     'box-close-v2': 'corner3',

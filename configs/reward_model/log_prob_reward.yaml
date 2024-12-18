@@ -1,5 +1,5 @@
 name: log_prob_reward
-cost_fn: euclidean
+cost_fn: cosine
 scale: 1
 seq_name: rl_expert_20_frames
 post_processing_method: []

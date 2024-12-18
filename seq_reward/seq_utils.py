@@ -214,9 +214,9 @@ def load_images_from_reference_seq(env_name:str, task_name:str, seq_name: str) -
 
 def get_cost_fn(fn_config, cost_fn_name):
     cost_fn = COST_FN_DICT[cost_fn_name]
-
-    if cost_fn_name == "cosine_smoothed":
-        cost_fn = lambda obs, ref: cost_fn(obs, ref, context_window=fn_config.get("context_window", 3))
+    
+    # if cost_fn_name == "smoothed_cosine":
+    #     cost_fn = lambda obs, ref: cost_fn(obs, ref, context_window=fn_config.get("context_window", 3))
 
     return cost_fn
 

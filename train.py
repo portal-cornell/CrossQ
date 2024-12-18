@@ -139,7 +139,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         learning_starts=5000,
         batch_size=cfg.rl_algo.batch_size,
         tau=cfg.rl_algo.tau,
-        gamma=0.99,
+        gamma=cfg.rl_algo.discount_factor,
         train_freq=(cfg.env.episode_length, "step"),
         gradient_steps=cfg.env.episode_length,
         stats_window_size=1,  # don't smooth the episode return stats over time
@@ -217,6 +217,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             # For VLM based reward (this allow us to visualize the VLM reward in a rollout
             calc_visual_reward=use_vlm_for_reward, # If using VLM, visualize predicted rewards, not gt rewards
             encoder_batch_size=cfg.visual_encoder.encoder_batch_size, # TODO: make this use_vlm_for_reward
+            discount_factor=cfg.rl_algo.discount_factor,
             device='cuda'
         )
 

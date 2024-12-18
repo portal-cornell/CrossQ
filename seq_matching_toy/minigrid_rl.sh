@@ -1,13 +1,13 @@
 
 # python rl_with_seq_matching.py "env=minigrid" "env.example_name=lava_cycle" "env.temporal_encoding=True" "cost_fn=manhattan" "rl_algo.ent_coef=0" "env.episode_length=20" "seq_reward_model=optimal_transport"
 
-python rl_with_seq_matching.py "env=minigrid" "env.example_name=lava_nav_no_door" "env.temporal_encoding=True" "cost_fn=manhattan" "rl_algo.ent_coef=0" "env.episode_length=40" "seq_reward_model=temporal_ot"
+# python rl_with_seq_matching.py "env=minigrid" "env.example_name=lava_nav_no_door" "env.temporal_encoding=True" "cost_fn=manhattan" "rl_algo.ent_coef=0" "env.episode_length=40" "seq_reward_model=temporal_ot"
 
-python rl_with_seq_matching.py "env=minigrid" "env.example_name=lava_nav_bigger" "env.temporal_encoding=True" "cost_fn=manhattan" "rl_algo.ent_coef=0" "env.episode_length=40" "seq_reward_model=temporal_ot"
+# python rl_with_seq_matching.py "env=minigrid" "env.example_name=lava_nav_bigger" "env.temporal_encoding=True" "cost_fn=manhattan" "rl_algo.ent_coef=0" "env.episode_length=40" "seq_reward_model=temporal_ot"
 
-python rl_with_seq_matching.py "env=minigrid" "env.example_name=lava_cycle" "env.temporal_encoding=True" "cost_fn=manhattan" "rl_algo.ent_coef=0" "env.episode_length=40" "seq_reward_model=temporal_ot"
+# python rl_with_seq_matching.py "env=minigrid" "env.example_name=lava_cycle" "env.temporal_encoding=True" "cost_fn=manhattan" "rl_algo.ent_coef=0" "env.episode_length=40" "seq_reward_model=temporal_ot"
 
-python rl_with_seq_matching.py "env=minigrid" "env.example_name=periodic_easy" "env.temporal_encoding=True" "cost_fn=manhattan" "rl_algo.ent_coef=0" "env.episode_length=40" "seq_reward_model=temporal_ot"
+# python rl_with_seq_matching.py "env=minigrid" "env.example_name=periodic_easy" "env.temporal_encoding=True" "cost_fn=manhattan" "rl_algo.ent_coef=0" "env.episode_length=40" "seq_reward_model=temporal_ot"
 
 
 # python rl_with_seq_matching.py "env=minigrid" "env.example_name=lava_easy_longer_ref" "env.temporal_encoding=False" "cost_fn=manhattan" "rl_algo.ent_coef=0" "env.episode_length=20" "seq_reward_model=optimal_transport"
@@ -53,7 +53,9 @@ python rl_with_seq_matching.py "env=minigrid" "env.example_name=periodic_easy" "
 # python rl_with_seq_matching.py "env=minigrid" "env.example_name=lava_cycle" "env.temporal_encoding=True" "cost_fn=manhattan" "rl_algo.ent_coef=0.1" "env.episode_length=40" "seq_reward_model=even_distribution" "seed=40"
 
 
-# python rl_with_seq_matching.py "env=minigrid" "env.example_name=lava_cycle" "env.temporal_encoding=True" "cost_fn=manhattan" "rl_algo.ent_coef=0.1" "env.episode_length=40" "seq_reward_model=prob_ranked" "seq_reward_model.rank_weighting=.1" "seed=123"
+python rl_with_seq_matching.py "env=minigrid" "env.example_name=lava_cycle_enforced_longer" "env.temporal_encoding=True" "cost_fn=weighted_temp_manhattan" "rl_algo.ent_coef=0.1" "env.episode_length=40" "seq_reward_model=coverage" "seed=123" "logging.wandb_mode=online" "seq_reward_model.tau=1"
+
+# python rl_with_seq_matching.py "env=minigrid" "env.example_name=lava_cycle_enforced_longer" "env.temporal_encoding=True" "cost_fn=weighted_temp_manhattan" "rl_algo.ent_coef=0.1" "env.episode_length=40" "seq_reward_model=log_prob" "seed=123"
 
 
 # ############################### Prob, SDTW, DTW, SDTW+ with different seeds ############################
