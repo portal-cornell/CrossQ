@@ -13,7 +13,8 @@ compute:
   n_cpu_workers: 8  # One gym env per cpu
 
 logging:
-  video_save_freq: 10000 # Save a video every video_save_freq steps (more of a period)
+  video_save_freq: 50000 # Save a video every video_save_freq steps (more of a period)
+  eval_freq: 10000
   model_save_freq: 200000  # Save a model every model_save_freq steps (more of a period)
 
   wandb_project: crossQ

@@ -371,6 +371,7 @@ class VideoRecorderCallback(BaseCallback):
         eval_env: gymnasium.Env,
         rollout_save_path: str,
         render_freq: int,
+        eval_freq: int,
         render_dim: tuple = (480, 480, 3),
         n_eval_episodes: int = 1,
         deterministic: bool = True,
@@ -412,6 +413,7 @@ class VideoRecorderCallback(BaseCallback):
         super().__init__(verbose)
         self._eval_env = eval_env
         self._render_freq = render_freq
+        self._eval_freq = eval_freq
         self._render_dim = render_dim
         self._n_eval_episodes = n_eval_episodes
         self._deterministic = deterministic
@@ -538,34 +540,36 @@ class VideoRecorderCallback(BaseCallback):
             elif self.env_name == "Metaworld":
                 self._calc_and_record_metaworld_gt_reward(states, all_infos)
 
-            if self.calc_visual_reward:
-                obs_seq = self.get_obs_embeddings_from_screens(screens)
-            else:
-                obs_seq = self.get_obs_clean_states(states, geom_xposes)
+            # Only save a video every render_freq
+            if self.n_calls % self._render_freq == 0:
+                if self.calc_visual_reward:
+                    obs_seq = self.get_obs_embeddings_from_screens(screens)
+                else:
+                    obs_seq = self.get_obs_clean_states(states, geom_xposes)
 
-            infos_0th_env = self.calc_and_record_seq_matching_reward_for_0th_env(obs_seq, raw_screens, infos_0th_env)
+                infos_0th_env = self.calc_and_record_seq_matching_reward_for_0th_env(obs_seq, raw_screens, infos_0th_env)
 
-            # Plot info on the frames  
-            for i in range(len(screens)):
-                plot_info_on_frame(screens[i], infos_0th_env[i])
+                # Plot info on the frames  
+                for i in range(len(screens)):
+                    plot_info_on_frame(screens[i], infos_0th_env[i])
 
-            # Log to wandb
-            self.logger.record(
-                "trajectory/video",
-                Video(th.ByteTensor(array([[np.uint8(s).transpose(2, 0, 1) for s in screens]])), fps=40),
-                exclude=("stdout", "log", "json", "csv"),
-            )
+                # Log to wandb
+                self.logger.record(
+                    "trajectory/video",
+                    Video(th.ByteTensor(array([[np.uint8(s).transpose(2, 0, 1) for s in screens]])), fps=40),
+                    exclude=("stdout", "log", "json", "csv"),
+                )
 
-            # Save the rollouts locally    
-            with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_states.npy"), "wb") as f:
-                np.save(f, np.array(states))
-                
-            with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_rewards.npy"), "wb") as f:
-                np.save(f, np.array(rewards))
+                # Save the rollouts locally    
+                with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_states.npy"), "wb") as f:
+                    np.save(f, np.array(states))
+                    
+                with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_rewards.npy"), "wb") as f:
+                    np.save(f, np.array(rewards))
 
-            if self.use_geom_xpos:
-                with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_geom_xpos_states.npy"), "wb") as f:
-                    np.save(f, np.array(geom_xposes))
+                if self.use_geom_xpos:
+                    with open(os.path.join(self._rollout_save_path, f"{self.num_timesteps}_rollouts_geom_xpos_states.npy"), "wb") as f:
+                        np.save(f, np.array(geom_xposes))
 
         return True
 

@@ -20,6 +20,49 @@ def compute_final_frame_reward(obs, ref, cost_fn, tau=20):
 
     return final_reward, info
 
+def compute_log_coverage_reward(obs, ref, cost_fn, tau=1):
+
+    """
+    # max of coverage in previous learner timestep, coverage in current learner timestep up to previous state and occupying current state
+    covered[t, t'] = max(covered[t-1, t'], covered[t, t'-1] * exp(-cost(t, t')) ) 
+    covered[:, -1] = 1 # ref -1 is always covered
+    covered[-1, :] = 0 # nothing has been covered by learner frame -1
+    """
+    cost_matrix = cost_fn(obs, ref) 
+    prob_matrix = 1 - (1/tau)*cost_matrix
+
+    covered = np.zeros_like(prob_matrix)
+    covered[0,0] = prob_matrix[0,0]
+
+    for i in range(1, covered.shape[0]):
+        covered[i, 0] = max(covered[i-1, 0], prob_matrix[i, 0])
+
+    for j in range(1, covered.shape[1]):
+        covered[0, j] = covered[0, j-1] + prob_matrix[0, j]
+
+    for i in range(1, covered.shape[0]):
+        for j in range(1, covered.shape[1] - 1):
+            covered[i,j] = max(covered[i-1, j], covered[i, j-1] + prob_matrix[i, j])
+    
+    covered[:, -1] = covered[:, -2] + prob_matrix[:, -1]
+
+
+    # inverse_coverage = 1 - covered
+    # normed_inverse_coverage = inverse_coverage / np.linalg.norm(inverse_coverage, axis=1, keepdims=True)
+    # # Reward should be probability of being in states with low coverage
+    # coverage_scaled_probabilities = prob_matrix * normed_inverse_coverage
+
+    info = dict(
+        assignment=covered, # plot the inverse normalized cumulative cost
+        original_assignment=covered,
+        cost_matrix=prob_matrix,
+        transported_cost=covered,
+    )
+
+    # final_reward = coverage_scaled_probabilities.sum(axis=1)
+    final_reward = covered[:, -1]
+    return final_reward, info
+
 def compute_coverage_reward(obs, ref, cost_fn, tau=1):
 
     """

@@ -29,14 +29,15 @@ def bordered_identity_like(N, M, k):
         matrix[current_row:current_row + num_ones, col] = 1
         current_row += num_ones  # Move to the next starting row
 
-    # Create the border by adding k ones above and below each column's 1s
+    # Create the border by adding k ones to the left and right of each row's 1s
     bordered_matrix = np.zeros_like(matrix)
-    for col in range(M):
-        for row in range(N):
+
+    for row in range(N):
+        for col in range(M):
             if matrix[row, col] == 1:
-                start_row = max(0, row - k)
-                end_row = min(N, row + k + 1)
-                bordered_matrix[start_row:end_row, col] = 1
+                start_col  = max(0, col - k)
+                end_col = min(N, col + k + 1)
+                bordered_matrix[row, start_col:end_col] = 1
 
     return bordered_matrix
 

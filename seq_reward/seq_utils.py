@@ -11,7 +11,7 @@ from seq_reward.even_distribution import compute_even_distribution_reward
 from seq_reward.optimal_transport import compute_ot_reward
 from seq_reward.soft_dtw import compute_soft_dtw_reward
 from seq_reward.dtw import compute_dtw_reward
-from seq_reward.prob_based import compute_probability_reward, compute_log_probability_reward, compute_ordered_probability_reward, compute_diagonal_probability_reward, compute_coverage_reward, compute_final_frame_reward
+from seq_reward.prob_based import compute_probability_reward, compute_log_probability_reward, compute_ordered_probability_reward, compute_diagonal_probability_reward, compute_coverage_reward, compute_log_coverage_reward, compute_final_frame_reward
 from seq_reward.temporal_ot import compute_temporal_ot_reward
 from seq_reward.testing_dist_metric import compute_testing_dist_reward
 from seq_reward.cost_fns import COST_FN_DICT
@@ -303,6 +303,8 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
         fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_ordered_probability_reward(obs_seq, ref_seq, cost_fn, max_cost=float(fn_config.get("max_cost", 1))), fn_name
     elif "coverage" == fn_name:
         fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_coverage_reward(obs_seq, ref_seq, cost_fn, tau=fn_config.get("tau", 1)), fn_name
+    elif "log_coverage" == fn_name:
+        fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_log_coverage_reward(obs_seq, ref_seq, cost_fn, tau=fn_config.get("tau", 1)), fn_name
     elif "final_frame" == fn_name:
         fn, fn_name = lambda obs_seq, ref_seq, cost_fn=cost_fn, scale=scale: compute_final_frame_reward(obs_seq, ref_seq, cost_fn), fn_name
     elif "temporal_ot" == fn_name:

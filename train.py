@@ -209,6 +209,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             ),  
             rollout_save_path=os.path.join(cfg.logging.run_path, "eval"),
             render_freq=cfg.logging.video_save_freq // cfg.compute.n_cpu_workers,
+            eval_freq = cfg.logging.eval_freq // cfg.compute.n_cpu_workers,
             render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3),
             n_eval_episodes=cfg.compute.n_cpu_workers,
             use_geom_xpos="geom_xpos" in cfg.env.reward_type if "reward_type" in cfg.env else False,
