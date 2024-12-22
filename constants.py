@@ -4,8 +4,8 @@ METAWORLD_TASK_SEQ_DICT = {
     # ==================== Easy Tasks ====================
     "button-press-v2":
     {
-        "num_frames": 20,
-        "last_frame": 90,
+        "num_frames": 125, #20,
+        "last_frame": 125, #90,
         "task_type": "sequence_following",
         "sequences": {
             "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-11-25-125324_sb3_sac_envt=button-press-v2-goal-hidden_rm=hand_engineered_nt=ep-len=200_sparse/eval/1000000_rollouts_states.npy",
@@ -20,8 +20,8 @@ METAWORLD_TASK_SEQ_DICT = {
     },
     "door-close-v2":
     {
-        "num_frames": 20,
-        "last_frame": 76,
+        "num_frames": 125, #20,
+        "last_frame": 125, #76,
         "task_type": "sequence_following",
         "sequences": {
             "rl_expert": "/share/portal/hw575/CrossQ/train_logs/2024-11-25-124432_sb3_sac_envt=door-close-v2-goal-hidden_rm=hand_engineered_nt=ep-len=200_sparse/eval/1000000_rollouts_states.npy",
@@ -138,8 +138,8 @@ METAWORLD_TASK_SEQ_DICT = {
         }
     },
     "door-lock-v2": {
-        "num_frames": 20,
-        "last_frame": 85,
+        "num_frames": 125, #20,
+        "last_frame": 125, #85,
         "task_type": "sequence_following",
         "sequences": {
             "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/door-lock-v2/door-lock-v2_corner_0_states.npy"
@@ -160,8 +160,8 @@ METAWORLD_TASK_SEQ_DICT = {
         }
     },
     "box-close-v2": {
-        "num_frames": 20,
-        "last_frame": 109,
+        "num_frames": 175, # 20,
+        "last_frame": 175, # 109,
         "task_type": "sequence_following",
         "sequences": {
             "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/box-close-v2/box-close-v2_corner3_0_states.npy"
@@ -182,8 +182,8 @@ METAWORLD_TASK_SEQ_DICT = {
         }
     },
     "assembly-v2": {
-        "num_frames": 20,
-        "last_frame": 110,
+        "num_frames": 175, #20,
+        "last_frame": 175, #110,
         "task_type": "sequence_following",
         "sequences": {
             "hand_engineered_corner": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/assembly-v2/assembly-v2_corner_0_states.npy"
@@ -204,8 +204,8 @@ METAWORLD_TASK_SEQ_DICT = {
         }
     },
     "hammer-v2": {
-        "num_frames": 20,
-        "last_frame": 81,
+        "num_frames": 125, # 20,
+        "last_frame": 125, #81,
         "task_type": "sequence_following",
         "sequences": {
             "hand_engineered_corner3": "/share/portal/hw575/CrossQ/create_demo/metaworld_demos/hammer-v2/hammer-v2_corner3_0_states.npy"

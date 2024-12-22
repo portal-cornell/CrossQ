@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def compute_final_frame_reward(obs, ref, cost_fn, tau=20):
     """
     Reward = -d(obs, ref[-1])

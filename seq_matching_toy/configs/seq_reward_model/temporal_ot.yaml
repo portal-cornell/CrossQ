@@ -1,5 +1,5 @@
 name: temporal_ot
-mask_k: 2
+mask_k: 3
 scale: 1
 add_to_env_rew: false # True to add the environment rewards to the sequence matching rewards 
 pos_offset: 6

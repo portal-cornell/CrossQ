@@ -202,7 +202,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             make_vec_env(
                 make_env_fn,
                 n_envs=cfg.compute.n_cpu_workers,
-                seed=42,
+                seed=cfg.seed,
                 vec_env_cls=SubprocVecEnv,
                 use_gpu_ids=list(range(cfg.compute.n_gpu_workers)),
                 vec_env_kwargs=vec_env_kwargs,

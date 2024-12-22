@@ -12,7 +12,7 @@ def bordered_identity_like(N, M, k):
     """
     Create an identity-like matrix of shape (N, M), such that each column has N // M 1s,
     the remainder is distributed as evenly as possible starting from the last column,
-    and a border of width k is added around all the ones.
+    and a border of width k is added on each side of the ones
     """
     # Base number of 1s per column
     base_ones = N // M
@@ -61,7 +61,7 @@ def compute_temporal_ot_reward(obs, ref, cost_fn, mask_k=2, scale=1, niter=100, 
 
     cost_matrix = cost_fn(obs, ref)
 
-    mask = bordered_identity_like(cost_matrix.shape[0], cost_matrix.shape[1], k=2*mask_k + 1)
+    mask = bordered_identity_like(cost_matrix.shape[0], cost_matrix.shape[1], k=mask_k)
 
     # optimal weights 
     transport_plan = mask_optimal_transport_plan(obs,

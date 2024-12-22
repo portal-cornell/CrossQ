@@ -8,17 +8,18 @@ MEMORY=35GB
 TIME="4:00:00"
 
 # Training Parameters
-TAU=0.5
+TAU=1
 DISCOUNT_FACTOR=0.99
 ENV="Metaworld"
 ENV_REWARD_TYPE="none"
 TASK_NAME=("button-press-v2-goal-observable" "door-close-v2-goal-observable" "door-lock-v2-goal-observable" "hammer-v2-goal-observable" "box-close-v2-goal-observable" "assembly-v2-goal-observable")
 TEMPORAL_ENCODING="true"
-REWARD_MODEL="log_coverage"
+REWARD_MODEL="log_prob_reward"
 VISUAL_ENCODER="resnet50"
 COST_FN="diagonal_cosine"
 WANDB_MODE="online"
 LOG_FREQ=50000 # Log every LOG_FREQ steps
+SEED=42
 
 for task_name in "${TASK_NAME[@]}"; do
     sbatch <<EOF
@@ -43,7 +44,8 @@ python train.py \
     logging.wandb_mode=${WANDB_MODE} \
     logging.video_save_freq=${LOG_FREQ} \
     reward_model.tau=${TAU} \
-    rl_algo.discount_factor=${DISCOUNT_FACTOR}
+    rl_algo.discount_factor=${DISCOUNT_FACTOR} \
+    seed=${SEED}
 EOF
 sleep 1.1 # make sure the new wandb folder is different (seconds is the identifier)
 done

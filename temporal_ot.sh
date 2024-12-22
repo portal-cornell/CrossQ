@@ -8,7 +8,8 @@ MEMORY=35GB
 TIME="4:00:00"
 
 # Training Parameters
-TAU=0.5
+TAU=1
+MASK_K=10
 DISCOUNT_FACTOR=0.99
 ENV="Metaworld"
 ENV_REWARD_TYPE="none"
@@ -19,18 +20,19 @@ VISUAL_ENCODER="resnet50"
 COST_FN="diagonal_cosine"
 WANDB_MODE="online"
 LOG_FREQ=50000 # Log every LOG_FREQ steps
+SEED=123
 
 for task_name in "${TASK_NAME[@]}"; do
     sbatch <<EOF
 #!/bin/bash
-#SBATCH --job-name=train_tau_${tau}
+#SBATCH --job-name=train_${REWARD_MODEL}
 #SBATCH --partition=${PARTITION}
 #SBATCH --cpus-per-task=${CPUS}
 #SBATCH --gres=gpu:${GPUS}
 #SBATCH --mem=${MEMORY}
 #SBATCH --time=${TIME}
-#SBATCH --output=dump/train_tau_${tau}_%j.out
-#SBATCH --error=dump/train_tau_${tau}_%j.err
+#SBATCH --output=dump/train_%j.out
+#SBATCH --error=dump/train_%j.err
 
 python train.py \
     env=${ENV} \
@@ -43,7 +45,9 @@ python train.py \
     logging.wandb_mode=${WANDB_MODE} \
     logging.video_save_freq=${LOG_FREQ} \
     reward_model.tau=${TAU} \
-    rl_algo.discount_factor=${DISCOUNT_FACTOR}
+    rl_algo.discount_factor=${DISCOUNT_FACTOR} \
+    seed=${SEED} \
+    reward_model.mask_k=${MASK_K}
 EOF
 sleep 1.1 # make sure the new wandb folder is different (seconds is the identifier)
 done

@@ -20,6 +20,7 @@ VISUAL_ENCODER="resnet50"
 COST_FN="diagonal_cosine"
 WANDB_MODE="online"
 LOG_FREQ=50000 # Log every LOG_FREQ steps
+SEED=42
 
 for tau in "${TAU[@]}"; do
     for discount_factor in "${DISCOUNT_FACTOR[@]}"; do
@@ -45,7 +46,8 @@ python train.py \
     logging.wandb_mode=${WANDB_MODE} \
     logging.video_save_freq=${LOG_FREQ} \
     reward_model.tau=${tau} \
-    rl_algo.discount_factor=${discount_factor}
+    rl_algo.discount_factor=${discount_factor} \
+    seed=${SEED}
 EOF
 sleep 1.1 # make sure the new wandb folder is different (seconds is the identifier)
     done

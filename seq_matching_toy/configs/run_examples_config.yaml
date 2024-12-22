@@ -11,7 +11,7 @@ rl_algo:
 seq_matching_fns:
   - name: temporal_ot
     scale: 1
-    mask_k: 2
+    mask_k: 3
   - name: coverage
     scale: 1
   # - name: prob_reward
