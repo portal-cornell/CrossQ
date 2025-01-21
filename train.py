@@ -44,6 +44,9 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         stop_event: multiprocessing.Event
             The event to signal the workers to stop
     """
+    if cfg.seed == "r":
+        cfg.seed = np.random.randint(10000)
+
     # Save logging also into a file
     logger.add(os.path.join(cfg.logging.run_path, "logs.txt"), enqueue=True)
     use_vlm_for_reward = utils.use_vlm_for_reward(cfg)
@@ -119,10 +122,13 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         model.set_parameters(existing_checkpoint_path)
     logger.debug(f"Created the learned and initialized if needed: allocated={round(torch.cuda.memory_allocated(0)/1024**3,1)}, cached={round(torch.cuda.memory_reserved(0)/1024**3,1)}")
     
+
+    wandb_tags =['resnet','intermediate_10_frames', 'geom_xpos', 'reco','2M','visual_ref', cfg.env.task_name, cfg.matching_reward_model.name] + (['scale_before_match'] if cfg.visual_reward_model.scale_uncertainty_before_matching else [])
+
     with wandb.init(
         project=cfg.logging.wandb_project,
         name=cfg.logging.run_name,
-        tags=cfg.logging.wandb_tags,
+        tags=wandb_tags,
         sync_tensorboard=True,
         config=OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True),
         mode=cfg.logging.wandb_mode,
@@ -131,6 +137,8 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
         # Make an alias for the wandb in the run_path
         if cfg.logging.wandb_mode != "disabled":
             os.symlink(os.path.abspath(wandb_run.dir), os.path.join(cfg.logging.run_path, "wandb"), target_is_directory=True)
+
+        wandb_run.log({"train/seed": cfg.seed})
 
         checkpoint_dir = os.path.join(cfg.logging.run_path, "checkpoint")
 
@@ -145,7 +153,7 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             make_vec_env(
                 make_env_fn,
                 n_envs=cfg.compute.n_cpu_workers,
-                seed=42,
+                seed=cfg.seed,
                 vec_env_cls=SubprocVecEnv,
                 use_gpu_ids=list(range(cfg.compute.n_gpu_workers)),
                 vec_env_kwargs=dict(render_dim=(cfg.env.render_dim[0], cfg.env.render_dim[1], 3)),
@@ -164,30 +172,28 @@ def primary_worker(cfg: DictConfig, stop_event: Optional[multiprocessing.Event] 
             # For calculating success rate
             success_fn_cfg=dict(cfg.success_eval),
             # For joint based reward (this allow us to visualize the sequence matching reward in a rollout
-            matching_fn_cfg=dict(cfg.matching_reward_model) if cfg.matching_reward_model.name == "ot" or "dtw" in cfg.matching_reward_model.name else {},
+            matching_fn_cfg=dict(cfg.get("matching_reward_model", {})),
             visual_fn_cfg=dict(cfg.visual_reward_model),
             calc_visual_reward=use_vlm_for_reward or use_joint_vlm_for_reward,
         )
 
         callback_list = [wandb_callback, video_callback]
 
-        if cfg.matching_reward_model.name == "ot" or "dtw" in cfg.matching_reward_model.name:
-            # Add the OT reward callback if we are using joint_wasserstein as the reward model
-
-            if use_joint_vlm_for_reward:
-                callback_list.append(VisualJointBasedSeqRewardCallback(
-                                        task_name = cfg.env.task_name,
-                                        matching_fn_cfg = dict(cfg.matching_reward_model),
-                                        visual_model_cfg=dict(cfg.visual_reward_model),
-                                        use_geom_xpos = "geom_xpos" in cfg.env.reward_type,
-                                        use_image_for_ref=cfg.visual_reward_model.get("use_image_for_ref", False)
-                ))  
-            else:
-                callback_list.append(JointBasedSeqRewardCallback(
-                                        task_name = cfg.env.task_name,
-                                        matching_fn_cfg = dict(cfg.matching_reward_model),
-                                        use_geom_xpos = "geom_xpos" in cfg.env.reward_type
-                ))
+        if use_joint_vlm_for_reward:
+            callback_list.append(VisualJointBasedSeqRewardCallback(
+                                    task_name = cfg.env.task_name,
+                                    matching_fn_cfg = dict(cfg.matching_reward_model),
+                                    visual_model_cfg=dict(cfg.visual_reward_model),
+                                    use_geom_xpos = "geom_xpos" in cfg.env.reward_type,
+                                    scale_by_first_rollout = cfg.matching_reward_model.get("scale_by_first_rollout", False),
+                                    use_image_for_ref=cfg.visual_reward_model.get("use_image_for_ref", False)
+            ))  
+        else:
+            callback_list.append(JointBasedSeqRewardCallback(
+                                    task_name = cfg.env.task_name,
+                                    matching_fn_cfg = dict(cfg.matching_reward_model),
+                                    use_geom_xpos = "geom_xpos" in cfg.env.reward_type
+            ))
 
         model.learn(
             total_timesteps=cfg.total_timesteps, 

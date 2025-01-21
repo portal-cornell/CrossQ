@@ -40,7 +40,7 @@ class VisualJointBasedSeqRewardCallback(BaseCallback):
     Custom callback for calculating sequence matching rewards using visual model predictions
     for joint positions after rollouts are collected.
     """
-    def __init__(self, task_name, matching_fn_cfg, visual_model_cfg, use_geom_xpos, use_image_for_ref, verbose=0):
+    def __init__(self, task_name, matching_fn_cfg, visual_model_cfg, use_geom_xpos, use_image_for_ref,scale_by_first_rollout=False, verbose=0):
         super(VisualJointBasedSeqRewardCallback, self).__init__(verbose)
 
         self.use_geom_xpos = use_geom_xpos
@@ -71,6 +71,11 @@ class VisualJointBasedSeqRewardCallback(BaseCallback):
         self.scale_uncertainty_before_matching = self.visual_model_cfg.get('scale_uncertainty_before_matching', False)
         
         logger.info(f"[VisualSeqRewardCallback] Initialized with matching fn {self._matching_fn_name} and batch_size={self.batch_size}")
+
+        self.is_first_rollout = True
+        self.calculated_scale = 0
+        self.scale_by_first_rollout = scale_by_first_rollout
+
 
     def _on_training_start(self) -> None:
         if self.use_image_for_ref:
@@ -160,9 +165,20 @@ class VisualJointBasedSeqRewardCallback(BaseCallback):
             else:
                 matching_reward, _ = self._matching_fn(env_joint_positions, self._ref_seq) 
                 matching_reward *= env_confidence_weights
+            
+            
+            if self.scale_by_first_rollout and self.is_first_rollout:
+                rewards_sum = abs(matching_reward.sum())
+
+                # calculated scale is average of 1/sum(rewards) across 8 environments on the first rollout
+                self.calculated_scale += (1 / (rewards_sum + 1e-6)) / self.model.env.num_envs
+
             matching_reward_list.append(matching_reward)
         
         rewards = np.stack(matching_reward_list, axis=1)
+        if self.scale_by_first_rollout:
+            rewards *= self.calculated_scale
+            self.is_first_rollout = False # ensure no more changes to the reward scaling
         
         # Update replay buffer rewards
         if replay_buffer_pos - env_episode_timesteps >= 0:

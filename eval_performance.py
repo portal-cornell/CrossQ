@@ -468,7 +468,7 @@ if __name__ == "__main__":
         from workshop_experiments_folders import joint_based_experiments_dict, visual_based_experiments_dict, visual_rollout_gt_reference_experiments_dict, visual_rollout_gt_reference_pre_match_scaling, task_name_to_plot
         from visual_ref_experiments_folders import visual_rollout_visual_reference_pre_match_scaling
         
-        exp_labels = ['SDTW+', 'SDTW', 'DTW', 'OT', 'roboclip_sac']
+        exp_labels = ['Coverage', 'TemporalOT', 'DTW', 'OT'] #['SDTW+', 'SDTW', 'DTW', 'OT', 'roboclip_sac']
 
         if args.visual_result:
             # experiments_dict = visual_rollout_gt_reference_experiments_dict
@@ -514,7 +514,8 @@ if __name__ == "__main__":
                     performance = compute_performance_many_experiments(all_exp_dirs, performance_metric, ref_seq_name=sequence_type)
                     
                     plot_file = os.path.join(task_plot_folder, f"{task_name}_{performance_metric_name}_{sequence_type}")
-                    plot_multiple_directories(performance, labels=all_exp_labels, title=task_name_to_plot[task_name], output_file=plot_file)                  
+                    plot_multiple_directories(performance, labels=all_exp_labels, title=task_name_to_plot[task_name], output_file=plot_file)  
+                    print(f"saved eval to {plot_file}")                
     else:
         experiment_directories = [
         "/share/portal/hw575/CrossQ/train_logs/2024-10-04-004735_sb3_sac_envr=goal_only_euclidean_geom_xpos-t=right_arm_extend_wave_higher_rm=hand_engineered_nt=None", # training for reference rollout

@@ -1,0 +1,10 @@
+name: temporal_ot
+cost_fn: euclidean_arms_only
+mask_k: 10
+post_processing_method:
+- exp_reward
+scale: 1
+seq_name: null
+reward_vmin: 0
+reward_vmax: 1
+stage_bonus: 0

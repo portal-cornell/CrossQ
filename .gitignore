@@ -1,4 +1,6 @@
 debugging/
+dump/
+envs/Metaworld
 
 *.swp
 *.pyc

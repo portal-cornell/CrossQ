@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 from seq_reward.optimal_transport import compute_ot_reward
 from seq_reward.soft_dtw import compute_soft_dtw_reward
 from seq_reward.dtw import compute_dtw_reward
+from seq_reward.coverage import compute_coverage_reward
+from seq_reward.temporalot import compute_temporal_ot_reward
 from seq_reward.cost_fns import COST_FN_DICT
 
 from constants import TASK_SEQ_DICT
@@ -165,7 +167,7 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
         fn_name: str
             - The name of the function
     """
-    assert  fn_config["name"] in ["ot", "dtw", "soft_dtw"], f"Currently only supporting ['optimal_transport', 'dtw', 'soft_dtw'], got {fn_config['name']}"
+    assert  fn_config["name"] in ["ot", "dtw", "soft_dtw", "temporal_ot", "coverage"], f"not supporting {fn_config['name']}"
     logger.info(f"Loading the following reward model:\n{fn_config}")
 
     cost_fn = COST_FN_DICT[cost_fn_name]
@@ -186,6 +188,12 @@ def get_matching_fn(fn_config, cost_fn_name="nav_manhattan"):
         else:
             fn_name = f"{fn_name}_g={gamma}"
         fn = lambda obs_seq, ref_seq, cost_fn=cost_fn, gamma=gamma, scale=scale, uncertainty_scaling_matrix=None: compute_soft_dtw_reward(obs_seq, ref_seq, cost_fn, gamma, scale,inverted_cost=inverted_cost, uncertainty_scaling_matrix=uncertainty_scaling_matrix)
+    elif fn_name == "temporal_ot":
+        mask_k = float(fn_config["mask_k"])
+        fn = lambda obs_seq, ref_seq, uncertainty_scaling_matrix=None: compute_temporal_ot_reward(obs_seq, ref_seq, cost_fn, scale=scale, mask_k=mask_k)
+    elif fn_name == "coverage":
+        tau = float(fn_config["tau"])
+        fn = lambda obs_seq, ref_seq, uncertainty_scaling_matrix=None: compute_coverage_reward(obs_seq, ref_seq, cost_fn, scale=scale, tau=tau)
     else:
         raise NotImplementedError(f"Unknown sequence matching function: {fn_name}")
     
