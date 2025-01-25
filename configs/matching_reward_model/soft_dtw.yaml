@@ -6,6 +6,7 @@ seq_name: null
 post_processing_method:
 - exp_reward
 - stage_reward_based_on_last_state
+scale_by_first_rollout: True
 reward_vmin: 0
 reward_vmax: 1
 stage_bonus: 0

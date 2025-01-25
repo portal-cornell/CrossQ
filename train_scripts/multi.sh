@@ -8,7 +8,7 @@ MEMORY=35GB
 TIME="10:00:00"
 TASK_NAME=("right_arm_out") # "right_arm_out" "left_arm_out") #"both_arms_out") # #("both_arms_down") #
 REWARD_FN=("coverage") #"temporal_ot"
-SEED=("r")
+SEED=("r" "r")
 SCALE_BEFORE_MATCHING="False" # for coverage
 TAU=1 # for coverage
 WANDB_MODE="online"
@@ -30,7 +30,7 @@ for task_name_i in "${TASK_NAME[@]}"; do
 # Capture the Slurm job ID
 job_id=\$SLURM_JOB_ID
 
-echo "Running training for task: ${task_name_i}, job ID: \$job_id"
+echo "Running training for task: ${task_name_i}, job ID: \${job_id}"
 python -m train \
     "visual_reward_model=joint_pred_resnet" \
     "seed=${seed_i}"\

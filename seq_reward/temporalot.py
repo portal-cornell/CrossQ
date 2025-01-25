@@ -16,7 +16,8 @@ def compute_temporal_ot_reward(obs: np.ndarray, ref: np.ndarray, cost_fn,uncerta
                                                 niter,
                                                 ent_reg)
     
-
+    # normalize assignment across row
+    transport_plan /= transport_plan.sum(axis=1, keepdims=True)
     ot_cost = np.sum(transport_plan * cost_matrix, axis=1)
     ot_reward = -scale * ot_cost
 

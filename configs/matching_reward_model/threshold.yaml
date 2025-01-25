@@ -1,9 +1,7 @@
-name: temporal_ot
+name: threshold
 cost_fn: euclidean_arms_only
-mask_k: 2
-post_processing_method:
-- exp_reward
 scale_by_first_rollout: True
+threshold: 0.6
 scale: 1
 seq_name: null
 reward_vmin: 0

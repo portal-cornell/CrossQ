@@ -6,7 +6,7 @@ visual_rollout_visual_reference_pre_match_scaling = {
             "Last-Joint": "/share/portal/hw575/CrossQ/train_logs/workshop_results/right_arm_extend_wave_higher/2024-10-06-111557_sb3_sac_envr=goal_only_euclidean_geom_xpos-t=right_arm_extend_wave_higher_rm=hand_engineered_nt=None"
         },
         "intermediate_10_frames": {
-            "Coverage": "/share/portal/wph52/CrossQ/train_logs/2025-01-17-173642_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_mrm=coverage_vrm=joint_pred_resnet_nt=None",
+            "Coverage": "/share/portal/wph52/CrossQ/train_logs/2025-01-20-130359_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_mrm=coverage_vrm=joint_pred_resnet_nt=None",
             "TemporalOT": "/share/portal/wph52/CrossQ/train_logs/2025-01-17-142810_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_mrm=temporal_ot_vrm=joint_pred_resnet_nt=None",
             "SDTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-16-223632_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
             "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-153840_sb3_sac_envr=basic_r_geom_xpos-t=right_arm_extend_wave_higher_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
@@ -22,7 +22,7 @@ visual_rollout_visual_reference_pre_match_scaling = {
             "Last-Joint": "/share/portal/hw575/CrossQ/train_logs/workshop_results/left_arm_extend_wave_higher/2024-10-07-215648_sb3_sac_envr=goal_only_euclidean_geom_xpos-t=left_arm_extend_wave_higher_rm=hand_engineered_nt=None"
         },
         "intermediate_10_frames": {
-            "Coverage": "/share/portal/wph52/CrossQ/train_logs/2025-01-17-173547_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=coverage_vrm=joint_pred_resnet_nt=None",
+            "Coverage": "/share/portal/wph52/CrossQ/train_logs/2025-01-20-130150_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=coverage_vrm=joint_pred_resnet_nt=None",
             "TemporalOT": "/share/portal/wph52/CrossQ/train_logs/2025-01-17-142804_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=temporal_ot_vrm=joint_pred_resnet_nt=None",
             "SDTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-16-223435_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
             "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-101114_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_extend_wave_higher_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
@@ -54,7 +54,7 @@ visual_rollout_visual_reference_pre_match_scaling = {
             "Last-Joint": "/share/portal/hw575/CrossQ/train_logs/workshop_results/left_arm_out/2024-10-06-111708_sb3_sac_envr=goal_only_euclidean_geom_xpos-t=left_arm_out_rm=hand_engineered_nt=None"
         },
         'intermediate_10_frames': {
-            "Coverage": "/share/portal/wph52/CrossQ/train_logs/2025-01-17-173636_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_out_mrm=coverage_vrm=joint_pred_resnet_nt=None",
+            "Coverage": "/share/portal/wph52/CrossQ/train_logs/2025-01-18-152759_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_out_mrm=coverage_vrm=joint_pred_resnet_nt=None",
             "TemporalOT": "/share/portal/wph52/CrossQ/train_logs/2025-01-17-142808_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_out_mrm=temporal_ot_vrm=joint_pred_resnet_nt=None",
             "SDTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-16-223509_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_out_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
             "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-153754_sb3_sac_envr=basic_r_geom_xpos-t=left_arm_out_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
@@ -71,7 +71,7 @@ visual_rollout_visual_reference_pre_match_scaling = {
         },
         "intermediate_10_frames": 
         {
-            "Coverage": "/share/portal/wph52/CrossQ/train_logs/2025-01-18-090219_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=coverage_vrm=joint_pred_resnet_nt=None",
+            "Coverage": "/share/portal/wph52/CrossQ/train_logs/2025-01-20-212952_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=coverage_vrm=joint_pred_resnet_nt=None",
             "TemporalOT": "/share/portal/wph52/CrossQ/train_logs/2025-01-17-142745_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=temporal_ot_vrm=joint_pred_resnet_nt=None",
             "SDTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-16-223418_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
             "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-153857_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_out_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
@@ -88,8 +88,8 @@ visual_rollout_visual_reference_pre_match_scaling = {
         },
         "intermediate_10_frames": 
         {
-            "Coverage": "",
-            "TemporalOT": "",
+            "Coverage": "/share/portal/wph52/CrossQ/train_logs/2025-01-20-213555_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=coverage_vrm=joint_pred_resnet_nt=None",
+            "TemporalOT": "/share/portal/wph52/CrossQ/train_logs/2025-01-17-141643_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=temporal_ot_vrm=joint_pred_resnet_nt=None",
             "SDTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-16-223404_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
             "SDTW": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-153943_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=soft_dtw_vrm=joint_pred_resnet_nt=None",
             "DTW+": "/share/portal/wph52/CrossQ/train_logs/2024-10-17-154834_sb3_sac_envr=basic_r_geom_xpos-t=both_arms_down_mrm=dtw_vrm=joint_pred_resnet_nt=None",

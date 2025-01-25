@@ -1,5 +1,6 @@
 name: ot
 cost_fn: euclidean_arms_only
+scale_by_first_rollout: True
 scale: 1
 gamma: 0
 seq_name: null

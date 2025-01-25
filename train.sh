@@ -1,24 +1,39 @@
-python -m train "visual_reward_model=joint_pred_resnet" "matching_reward_model=coverage" "compute.n_gpu_workers=1" "logging.wandb_tags=['resnet', 'intermediate_10_frames', 'geom_xpos', 'both_arms_down', 'coverage', 'reco', '2M', 'visual_ref']" "env.task_name=both_arms_down" "env.reward_type=basic_r_geom_xpos" "visual_reward_model.use_image_for_ref=True" "matching_reward_model.seq_name=intermediate_10_frames" "logging.wandb_mode=disabled" 
+#!/bin/bash
 
-# python -m train "visual_reward_model=joint_pred_resnet" "matching_reward_model=soft_dtw" "compute.n_gpu_workers=1" "logging.wandb_tags=['resnet', 'intermediate_10_frames', 'geom_xpos', 'right_arm_extend_wave_higher', 'sdtw+', 'reco', '2M', 'gt_ref']" "env.task_name=right_arm_extend_wave_higher" "env.reward_type=basic_r_geom_xpos" "visual_reward_model.use_image_for_ref=False" "matching_reward_model.seq_name=intermediate_10_frames" "matching_reward_model.post_processing_method=['exp_reward', 'stage_reward_based_on_last_state']" "logging.wandb_mode=online" 
+# Job Parameters
+PARTITION="gpu"
+CPUS=8
+GPUS=1
+MEMORY=35GB
+TIME="10:00:00"
+TASK_NAME=("left_arm_extend_wave_higher") # "right_arm_out" "left_arm_out") #"both_arms_out") # #("both_arms_down") #
+REWARD_FN=("temporal_ot") #("dtw" "optimal_transport" "temporal_ot") #"temporal_ot"
+SEED=(2675) 
+SCALE_BEFORE_MATCHING="False"
+TAU=1 # for coverage
+MASK_K=1
+WANDB_MODE="online"
 
-# python -m train "visual_reward_model=joint_pred_resnet" "matching_reward_model=soft_dtw" "compute.n_gpu_workers=1" "logging.wandb_tags=['resnet', 'intermediate_10_frames', 'geom_xpos', 'right_arm_extend_wave_higher', 'sdtw', 'reco', '2M', 'gt_ref']" "env.task_name=right_arm_extend_wave_higher" "env.reward_type=basic_r_geom_xpos" "visual_reward_model.use_image_for_ref=False" "matching_reward_model.seq_name=intermediate_10_frames" "matching_reward_model.post_processing_method=['exp_reward']" "logging.wandb_mode=online" 
+for task_name_i in "${TASK_NAME[@]}"; do
+    for reward_fn_i in "${REWARD_FN[@]}"; do
+        for seed_i in "${SEED[@]}"; do
+            echo "Running training for task: ${task_name_i}"
 
-# python -m train "visual_reward_model=joint_pred_resnet" "matching_reward_model=dtw" "compute.n_gpu_workers=1" "logging.wandb_tags=['resnet', 'intermediate_10_frames', 'geom_xpos', 'right_arm_extend_wave_higher', 'dtw', 'reco', '2M', 'gt_ref']" "env.task_name=right_arm_extend_wave_higher" "env.reward_type=basic_r_geom_xpos" "visual_reward_model.use_image_for_ref=False" "matching_reward_model.seq_name=intermediate_10_frames" "logging.wandb_mode=online" 
+            python -m train \
+                "visual_reward_model=joint_pred_resnet" \
+                "seed=${seed_i}"\
+                "matching_reward_model=${reward_fn_i}" \
+                "compute.n_gpu_workers=1" \
+                "env.task_name=${task_name_i}" \
+                "env.reward_type=basic_r_geom_xpos" \
+                "visual_reward_model.scale_uncertainty_before_matching=${SCALE_BEFORE_MATCHING}" \
+                "visual_reward_model.use_image_for_ref=True" \
+                "logging.wandb_mode=${WANDB_MODE}" \
+                "++matching_reward_model.tau=${TAU}" \
+                "++matching_reward_model.mask_k=${MASK_K}" \
+                "matching_reward_model.seq_name=intermediate_10_frames"
 
-# python -m train "visual_reward_model=joint_pred_resnet" "matching_reward_model=ot" "compute.n_gpu_workers=1" "logging.wandb_tags=['resnet', 'intermediate_10_frames', 'geom_xpos', 'right_arm_extend_wave_higher', 'ot', 'reco', '2M', 'gt_ref']" "env.task_name=right_arm_extend_wave_higher" "env.reward_type=basic_r_geom_xpos" "visual_reward_model.use_image_for_ref=False" "matching_reward_model.seq_name=intermediate_10_frames" "logging.wandb_mode=online" 
-
-
-# python -m train "visual_reward_model=joint_pred_resnet" "matching_reward_model=soft_dtw" "compute.n_gpu_workers=1" "logging.wandb_tags=['resnet', 'intermediate_10_frames', 'geom_xpos', 'right_arm_extend_wave_higher', 'sdtw+', 'reco', '2M', 'visual_ref']" "env.task_name=right_arm_extend_wave_higher" "env.reward_type=basic_r_geom_xpos" "matching_reward_model.seq_name=intermediate_10_frames" "logging.wandb_mode=online" 
-
-# python -m train "visual_reward_model=joint_pred_resnet" "matching_reward_model=soft_dtw" "compute.n_gpu_workers=1" "logging.wandb_tags=['resnet', 'intermediate_10_frames', 'geom_xpos', 'left_arm_out', 'sdtw+', 'reco', '2M', 'visual_ref']" "env.task_name=left_arm_out" "env.reward_type=basic_r_geom_xpos" "matching_reward_model.seq_name=intermediate_10_frames" "logging.wandb_mode=online" 
-
-
-# python -m train "visual_reward_model=joint_pred_resnet" "matching_reward_model=soft_dtw" "compute.n_gpu_workers=1" "logging.wandb_tags=['resnet', 'intermediate_40_frames', 'geom_xpos', 'right_arm_extend_wave_higher', 'sdtw+', 'reco', '2M', 'visual_ref']" "env.task_name=right_arm_extend_wave_higher" "env.reward_type=basic_r_geom_xpos" "matching_reward_model.seq_name=intermediate_40_frames" "logging.wandb_mode=online" 
-
-
-# python -m train "reward_model=joint_pred_resnet" "compute.n_gpu_workers=1" "logging.wandb_tags=['resnet', 'conf', 'goal_reaching', 'geom_xpos', 'both_arms_out']"  "reward_model.target_joint_state=/share/portal/hw575/CrossQ/create_demo/demos/left-arm-extend-wave-higher_geom-xpos.npy" "env.reward_type=both_arms_out_basic_r_geom_xpos"
-
-# python -m train "reward_model=joint_pred_resnet" "compute.n_gpu_workers=1" "logging.wandb_tags=['resnet', 'conf', 'goal_reaching', 'geom_xpos', 'left_arm_out']"  "reward_model.target_joint_state=/share/portal/hw575/CrossQ/create_demo/demos/left-arm-extend-wave-higher_geom-xpos.npy" "env.reward_type=left_arm_out_basic_r_geom_xpos"
-
-# python -m train "reward_model=joint_pred_resnet" "compute.n_gpu_workers=1" "logging.wandb_tags=['resnet', 'conf', 'goal_reaching', 'geom_xpos', 'right_arm_out']"  "reward_model.target_joint_state=/share/portal/hw575/CrossQ/create_demo/demos/left-arm-extend-wave-higher_geom-xpos.npy" "env.reward_type=right_arm_out_basic_r_geom_xpos"
+            sleep 1.1 # Ensure a unique timestamp for each run
+        done
+    done
+done

@@ -23,6 +23,10 @@ import scipy.stats as stats
 from torchvision.utils import save_image
 import argparse
 
+from workshop_experiments_folders import joint_based_experiments_dict, visual_based_experiments_dict, visual_rollout_gt_reference_experiments_dict, visual_rollout_gt_reference_pre_match_scaling, task_name_to_plot
+from visual_ref_experiments_folders import visual_rollout_visual_reference_pre_match_scaling
+
+
 def weighted_euclidean_distance(batch_1, batch_2, weights):
     """
     Computes the weighted distance matrix between two batches of samples.
@@ -300,9 +304,9 @@ def load_ref(directory: str, seq_name: str = ""):
     with open(config_path, "r") as file:
         config = yaml.safe_load(file)
 
-    task_name = config.get("env").get("task_name", "right_arm_extend_wave_higher")
+    task_name = config["env"]["task_name"]
     if seq_name == "":
-        seq_name = config.get("reward_model").get("seq_name", "key_frames")
+        seq_name = config["reward_model"]["seq_name"]
     use_geom_xpos = True
 
     # Because we want to compare all runs against the same reference sequence, this reference sequence should be key_frames
@@ -351,14 +355,20 @@ def interquartile_mean_and_ci(values, confidence=0.95):
     
     return interquartile_mean, ci_lower, ci_upper
 
-def compute_performance(rollout_directory, performance_metric, ref_seq_name=""):
+def mean_and_se(values):
+    mean = np.mean(values)
+    se = np.std(values) / np.sqrt(len(values))
+    return mean, se
+
+def compute_performance(rollout_directory, performance_metric, ref_seq_name="", eval_metric="iqm"):
     
     ref = load_ref(rollout_directory, seq_name=ref_seq_name)
     rollouts, timesteps, rollout_qpos = load_rollouts(rollout_directory)
 
     performances = []
-    cis_lower = []
-    cis_upper = []
+    lower_bounds = []
+    upper_bounds = []
+    ses = []
     for i in range(len(rollouts)):
         rollouts_for_a_timestep = rollouts[i]
         rollouts_qpos_for_a_timestep = rollout_qpos[i]
@@ -375,22 +385,85 @@ def compute_performance(rollout_directory, performance_metric, ref_seq_name=""):
             sample_qpos = rollouts_qpos_for_a_timestep[j]
             performance, _ = performance_metric(sample, ref, sample_qpos)
             rollout_performances.append(performance)
-        iqm, ci_lower, ci_upper = interquartile_mean_and_ci(rollout_performances)
-        performances.append(iqm)
-        cis_lower.append(ci_lower)
-        cis_upper.append(ci_upper)
-    return performances, cis_lower, cis_upper, timesteps
+        
+        if eval_metric is None:
+            performances.append(rollout_performances)
+        elif eval_metric == "iqm":
+            performance, lower, upper = interquartile_mean_and_ci(rollout_performances)
+            performances.append(performance)
+            lower_bounds.append(lower)
+            upper_bounds.append(upper)           
 
-def compute_performance_many_experiments(rollout_directories, performance_metric, ref_seq_name=""):
+    if eval_metric is None: # no reduce on eval step performances
+        return performances, timesteps
+    if eval_metric == "iqm":
+        return performances, lower_bounds, upper_bounds, timesteps
+
+def compute_performance_many_experiments(rollout_directories, performance_metric, ref_seq_name="", eval_metric="iqm"):
     all_rollout_performances = {}
     for rollout_directory in rollout_directories:
         if not rollout_directory: # may have empty directories (if for example an experiment has not finished yet)
             continue
         print(f"Computing performance for {rollout_directory}")
-        rollout_performances, cis_lower, cis_upper, timesteps = compute_performance(rollout_directory, performance_metric, ref_seq_name=ref_seq_name)
-        all_rollout_performances[rollout_directory] = (rollout_performances,cis_lower, cis_upper, timesteps)
+        metrics = compute_performance(rollout_directory, performance_metric, ref_seq_name=ref_seq_name, eval_metric=eval_metric)
+        all_rollout_performances[rollout_directory] = metrics
     
     return all_rollout_performances
+
+
+def metric(rollout, reference, rollout_qpos=None):
+    """
+    Compute based on the entire body's joint positions
+    """
+    N_timesteps_threshold = 3
+    joint_distance_threshold = .45
+
+    return rollout_matching_metric(rollout, reference, joint_distance_threshold, N_timesteps_threshold)
+
+def torso_metric(rollout, reference, rollout_qpos=None):
+    """
+    Compute based on the
+    - Torso height
+    - Arms
+    """
+    N_timesteps_threshold = 3
+    joint_distance_threshold = .5
+    joint_weights = np.zeros((18, 3))
+    joint_weights[1] = 1  # torso height
+    joint_weights[12:] = 1
+
+    return rollout_matching_metric(rollout, reference, joint_distance_threshold, N_timesteps_threshold, joint_weights)
+def arms_metric(rollout, reference, rollout_qpos=None):
+    """
+    Compute based on the
+    - Arms
+    """
+    N_timesteps_threshold = 3
+    joint_distance_threshold = .5
+    joint_weights = np.zeros((18, 3))
+    joint_weights[12:] = 1 # Just the arms
+
+    return rollout_matching_metric(rollout, reference, joint_distance_threshold, N_timesteps_threshold, joint_weights)
+
+def workshop_metric(rollout, reference, rollout_qpos):
+    """
+    Compute based on the
+    - Torso height
+    - Arms
+
+    Arms are based on weighted euclidean distance. Torso height is an indicator function. 
+        If the torso height is above a certain threshold, we look at arm based success. Otherwise, there's no success. 
+
+    Because rollout is using geom_xpos (it has already been normalized with respect to the torso)
+        Instead, to get the torso height, we will use the qpos of the rollout
+    """
+    N_timesteps_threshold = 3
+    joint_distance_threshold = .5
+    joint_weights = np.zeros((18, 3))
+    joint_weights[12:] = 1
+    min_torso_height = 1.1
+
+    return rollout_matching_metric_with_torso_height(rollout, reference, rollout_qpos, joint_distance_threshold, N_timesteps_threshold, joint_weights, min_torso_height)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -398,60 +471,6 @@ if __name__ == "__main__":
     parser.add_argument("-v", "--visual_result", default=False,  action="store_true", help="Generate plots for the visual reward results for the workshop experiments defined in workshop_experiments_folders.py")
 
     args = parser.parse_args()
-
-    def metric(rollout, reference, rollout_qpos=None):
-        """
-        Compute based on the entire body's joint positions
-        """
-        N_timesteps_threshold = 3
-        joint_distance_threshold = .45
-
-        return rollout_matching_metric(rollout, reference, joint_distance_threshold, N_timesteps_threshold)
-    
-    def torso_metric(rollout, reference, rollout_qpos=None):
-        """
-        Compute based on the
-        - Torso height
-        - Arms
-        """
-        N_timesteps_threshold = 3
-        joint_distance_threshold = .5
-        joint_weights = np.zeros((18, 3))
-        joint_weights[1] = 1  # torso height
-        joint_weights[12:] = 1
-
-        return rollout_matching_metric(rollout, reference, joint_distance_threshold, N_timesteps_threshold, joint_weights)
-    def arms_metric(rollout, reference, rollout_qpos=None):
-        """
-        Compute based on the
-        - Arms
-        """
-        N_timesteps_threshold = 3
-        joint_distance_threshold = .5
-        joint_weights = np.zeros((18, 3))
-        joint_weights[12:] = 1 # Just the arms
-
-        return rollout_matching_metric(rollout, reference, joint_distance_threshold, N_timesteps_threshold, joint_weights)
-    
-    def workshop_metric(rollout, reference, rollout_qpos):
-        """
-        Compute based on the
-        - Torso height
-        - Arms
-
-        Arms are based on weighted euclidean distance. Torso height is an indicator function. 
-            If the torso height is above a certain threshold, we look at arm based success. Otherwise, there's no success. 
-
-        Because rollout is using geom_xpos (it has already been normalized with respect to the torso)
-            Instead, to get the torso height, we will use the qpos of the rollout
-        """
-        N_timesteps_threshold = 3
-        joint_distance_threshold = .5
-        joint_weights = np.zeros((18, 3))
-        joint_weights[12:] = 1
-        min_torso_height = 1.1
-
-        return rollout_matching_metric_with_torso_height(rollout, reference, rollout_qpos, joint_distance_threshold, N_timesteps_threshold, joint_weights, min_torso_height)
     
     plot_folder = "workshop_figs"
 
@@ -465,10 +484,8 @@ if __name__ == "__main__":
         Create plots for the workshop paper's visual-based distance metrics (the plots are stored in workshop_figs/visual_distance_metric_exp_figs/{task_name}/)
             python eval_performance.py -w -v
         """
-        from workshop_experiments_folders import joint_based_experiments_dict, visual_based_experiments_dict, visual_rollout_gt_reference_experiments_dict, visual_rollout_gt_reference_pre_match_scaling, task_name_to_plot
-        from visual_ref_experiments_folders import visual_rollout_visual_reference_pre_match_scaling
-        
-        exp_labels = ['Coverage', 'TemporalOT', 'DTW', 'OT'] #['SDTW+', 'SDTW', 'DTW', 'OT', 'roboclip_sac']
+
+        exp_labels = ['Coverage', 'TemporalOT', 'DTW', 'OT', 'roboclip_sac'] #['SDTW+', 'SDTW', 'DTW', 'OT', 'roboclip_sac']
 
         if args.visual_result:
             # experiments_dict = visual_rollout_gt_reference_experiments_dict
@@ -510,6 +527,7 @@ if __name__ == "__main__":
                     # No goal joint baseline
                     all_exp_labels = exp_labels
                     all_exp_dirs = exp_dirs
+                    breakpoint()
 
                     performance = compute_performance_many_experiments(all_exp_dirs, performance_metric, ref_seq_name=sequence_type)
                     

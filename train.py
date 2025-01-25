@@ -1,8 +1,7 @@
 import utils
 
-utils.set_os_vars()
-
 import os
+import uuid
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import wandb
 
@@ -318,4 +317,6 @@ if __name__ == "__main__":
 
     # solve a weird bug that sometimes occurs with global hydra being already initialized
     GlobalHydra.instance().clear()
+
+    OmegaConf.register_new_resolver("uuid", lambda: str(uuid.uuid4())[:6])
     main()

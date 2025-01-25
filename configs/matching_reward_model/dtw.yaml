@@ -1,5 +1,6 @@
 name: dtw
 cost_fn: euclidean_arms_only
+scale_by_first_rollout: True
 scale: 1
 seq_name: null
 post_processing_method:
